@@ -6,10 +6,16 @@
 //
 
 import SwiftUI
+import FirebaseCore
 
 @main
 struct Mind_ResetApp: App {
     let persistenceController = PersistenceController.shared
+
+    init() {
+        // Configure Firebase
+        FirebaseApp.configure()
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -18,3 +24,7 @@ struct Mind_ResetApp: App {
         }
     }
 }
+
+
+
+

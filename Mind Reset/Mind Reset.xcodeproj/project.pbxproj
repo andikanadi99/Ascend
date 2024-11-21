@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		48D4B7932CEFC94A0031EBA1 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 48D4B7922CEFC94A0031EBA1 /* FirebaseAuth */; };
+		48D4B7952CEFC94A0031EBA1 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 48D4B7942CEFC94A0031EBA1 /* FirebaseFirestore */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		48D4B75D2CEFB63B0031EBA1 /* Mind Reset.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Mind Reset.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +28,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				48D4B7932CEFC94A0031EBA1 /* FirebaseAuth in Frameworks */,
+				48D4B7952CEFC94A0031EBA1 /* FirebaseFirestore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +72,8 @@
 			);
 			name = "Mind Reset";
 			packageProductDependencies = (
+				48D4B7922CEFC94A0031EBA1 /* FirebaseAuth */,
+				48D4B7942CEFC94A0031EBA1 /* FirebaseFirestore */,
 			);
 			productName = "Mind Reset";
 			productReference = 48D4B75D2CEFB63B0031EBA1 /* Mind Reset.app */;
@@ -94,6 +103,9 @@
 			);
 			mainGroup = 48D4B7542CEFB63B0031EBA1;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				48D4B7912CEFC94A0031EBA1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 48D4B75E2CEFB63B0031EBA1 /* Products */;
 			projectDirPath = "";
@@ -322,6 +334,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		48D4B7912CEFC94A0031EBA1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.5.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		48D4B7922CEFC94A0031EBA1 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 48D4B7912CEFC94A0031EBA1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		48D4B7942CEFC94A0031EBA1 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 48D4B7912CEFC94A0031EBA1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 48D4B7552CEFB63B0031EBA1 /* Project object */;
 }

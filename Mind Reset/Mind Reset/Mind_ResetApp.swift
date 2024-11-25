@@ -10,6 +10,8 @@ import FirebaseCore
 
 @main
 struct Mind_ResetApp: App {
+    // Instantiate SessionStore as a StateObject
+    @StateObject var session = SessionStore()
     let persistenceController = PersistenceController.shared
 
     init() {
@@ -21,6 +23,7 @@ struct Mind_ResetApp: App {
         WindowGroup {
             ContentView()
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                .environmentObject(session) // Inject SessionStore into the environment
         }
     }
 }

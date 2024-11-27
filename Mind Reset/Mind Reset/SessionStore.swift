@@ -53,8 +53,10 @@ class SessionStore: ObservableObject {
     func signIn(email: String, password: String) {
         Auth.auth().signIn(withEmail: email, password: password) { [weak self] result, error in
             if let error = error {
+                print("helooooooo")
                 self?.auth_error = error.localizedDescription
             } else if let user = result?.user {
+                print(user)
                 self?.current_user = user
             }
         }

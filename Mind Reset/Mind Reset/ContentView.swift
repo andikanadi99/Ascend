@@ -11,15 +11,17 @@ struct ContentView: View {
     @EnvironmentObject var session: SessionStore
 
     var body: some View {
-        Group {
-            if session.current_user != nil {
-                MainTabView()
-            } else {
-                LoginView()
+        NavigationView{
+            Group {
+                if session.current_user != nil {
+                    HomeView()
+                } else {
+                    LoginView()
+                }
             }
-        }
-        .onAppear {
-            session.listen()
+            .onAppear {
+                session.listen()
+            }
         }
     }
 }

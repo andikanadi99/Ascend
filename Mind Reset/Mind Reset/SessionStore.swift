@@ -38,26 +38,30 @@ class SessionStore: ObservableObject {
     /*
         Purpose: Creates a new account for user with provided email and password.
     */
-    func createAccount(email:String, password:String){
+    func createAccount(email: String, password: String){
         Auth.auth().createUser(withEmail: email, password: password) { [weak self] result, error in
-                if let error = error {
-                    self?.auth_error = error.localizedDescription
+            DispatchQueue.main.async {
+                if let error = error as NSError? {
+                    self?.auth_error = self?.mapAuthError(error)
                 } else if let user = result?.user {
+                    print("Sign Up Success: \(user.email ?? "No Email")")
                     self?.current_user = user
                 }
             }
+        }
     }
     /*
         Purpose: Handles Sign in events
     */
     func signIn(email: String, password: String) {
         Auth.auth().signIn(withEmail: email, password: password) { [weak self] result, error in
-            if let error = error {
-                print("helooooooo")
-                self?.auth_error = error.localizedDescription
-            } else if let user = result?.user {
-                print(user)
-                self?.current_user = user
+            DispatchQueue.main.async {
+                if let error = error as NSError? {
+                    self?.auth_error = self?.mapAuthError(error)
+                } else if let user = result?.user {
+                    print("Sign In Success: \(user.email ?? "No Email")")
+                    self?.current_user = user
+                }
             }
         }
     }
@@ -67,9 +71,38 @@ class SessionStore: ObservableObject {
     func signOut() {
         do {
             try Auth.auth().signOut()
-            self.current_user = nil
+            DispatchQueue.main.async {
+                print("Sign Out Success")
+                self.current_user = nil
+            }
         } catch let signOutError as NSError {
-            self.auth_error = signOutError.localizedDescription
+            DispatchQueue.main.async {
+                print("Sign Out Error: \(signOutError.localizedDescription)")
+                self.auth_error = "Failed to sign out. Please try again."
+            }
+        }
+    }
+    // Map Firebase AuthErrorCode to custom messages
+    private func mapAuthError(_ error: NSError) -> String {
+        guard let errorCode = AuthErrorCode(rawValue: error.code) else {
+            return error.localizedDescription
+        }
+        
+        switch errorCode {
+        case .invalidEmail:
+            return "The email address is badly formatted."
+        case .emailAlreadyInUse:
+            return "The email address is already in use by another account."
+        case .weakPassword:
+            return "The password is too weak. Please choose a stronger password."
+        case .wrongPassword:
+            return "Incorrect password. Please try again."
+        case .userNotFound:
+            return "No account found with this email. Please sign up."
+        case .networkError:
+            return "Network error. Please check your internet connection and try again."
+        default:
+            return error.localizedDescription
         }
     }
     deinit {

@@ -91,8 +91,11 @@ struct LoginView: View {
                 .padding(.horizontal)
                 
                 //Re-direction to create an account
+                NavigationLink("Forget Password?",destination: ForgetPasswordView())
+                //Re-direction to create an account
                 NavigationLink("Don't have an account? Please sign up",destination: SignUpView())
                     .padding()
+                    .offset(y: -10) 
             }
             .padding()
             .background(Color(UIColor.systemBackground))

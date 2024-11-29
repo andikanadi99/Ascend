@@ -21,6 +21,7 @@ struct SignUpView: View {
     @State private var confirm_password = ""
     @State private var show_password = false
     @State private var show_confirm_password = false
+    @State private var isShowingAlert = false
     
     var body: some View {
             ScrollView{
@@ -145,8 +146,8 @@ struct SignUpView: View {
         Purpose: Takes an email and checks if its valoid to register
     */
     func isEmailValid(_email: String) -> Bool{
-        let emailRegEx = "(?:[A-Z0-9a-z._%+-]+)@(?:[A-Za-z0-9-]+\\.)+[A-Za-z]{2,64}"
-        let emailPred = NSPredicate(format:"SELF MATCHES %@", emailRegEx)
+        let emailRegEx = "(?:[A-Z0-9a-z._%+-]+)@(?:[A-Za-z0-9-]+\\.)+(?:com|org|net|edu|gov|mil|int)"
+        let emailPred = NSPredicate(format: "SELF MATCHES %@", emailRegEx)
         return emailPred.evaluate(with: email)
     }
     /*
@@ -181,7 +182,13 @@ struct SignUpView: View {
         }
         
         // Call the signUp method from SessionStore
-        session.createAccount(email: email, password: password)
+        session.createAccount(email: email, password: password) { success in
+            if success {
+                isShowingAlert = true
+            } else {
+                // Handle error (auth_error is already updated in SessionStore)
+            }
+        }
     }
 }
 

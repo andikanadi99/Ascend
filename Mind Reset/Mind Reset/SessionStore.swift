@@ -18,11 +18,32 @@ class SessionStore: ObservableObject {
     @Published var auth_error: String?
     //Firebase optional list handler. Listens when a user authentication changes
     private var handle: AuthStateDidChangeListenerHandle?
+    
     // Listens to authentication changes when an instance is created
     init() {
         listen()
     }
     /* All functions associated with this class */
+    /*
+        Purpose: Sends an email verification after a user successfully signs up
+     */
+        func sendEmailVerification(completion: @escaping (Bool) -> Void) {
+            guard let user = Auth.auth().currentUser else {
+                self.auth_error = "Unable to retrieve user information."
+                completion(false)
+                return
+            }
+
+            user.sendEmailVerification { [weak self] error in
+                if let error = error as NSError? {
+                    self?.auth_error = self?.mapAuthError(error)
+                    completion(false)
+                } else {
+                    print("Email verification sent.")
+                    completion(true)
+                }
+            }
+        }
     
     /*
         Purpose: Sets up a listener to monitor authentication state changes. Ensure that app keeps track of when a user logs in or out
@@ -38,14 +59,16 @@ class SessionStore: ObservableObject {
     /*
         Purpose: Creates a new account for user with provided email and password.
     */
-    func createAccount(email: String, password: String){
+    func createAccount(email: String, password: String, completion: @escaping (Bool) -> Void) {
         Auth.auth().createUser(withEmail: email, password: password) { [weak self] result, error in
             DispatchQueue.main.async {
                 if let error = error as NSError? {
                     self?.auth_error = self?.mapAuthError(error)
+                    completion(false)
                 } else if let user = result?.user {
                     print("Sign Up Success: \(user.email ?? "No Email")")
                     self?.current_user = user
+                    completion(true)
                 }
             }
         }
@@ -58,6 +81,7 @@ class SessionStore: ObservableObject {
             DispatchQueue.main.async {
                 if let error = error as NSError? {
                     self?.auth_error = self?.mapAuthError(error)
+                
                 } else if let user = result?.user {
                     print("Sign In Success: \(user.email ?? "No Email")")
                     self?.current_user = user
@@ -82,12 +106,28 @@ class SessionStore: ObservableObject {
             }
         }
     }
+    /*
+        Purpose: Handles Reset Password events
+    */
+    func resetPassword(email: String, completion: @escaping (Bool) -> Void) {
+        Auth.auth().sendPasswordReset(withEmail: email) { [weak self] error in
+            DispatchQueue.main.async {
+                if let error = error as NSError? {
+                    self?.auth_error = self?.mapAuthError(error)
+                    completion(false)
+                } else {
+                    print("Password reset email sent.")
+                    completion(true)
+                }
+            }
+        }
+    }
     // Map Firebase AuthErrorCode to custom messages
     private func mapAuthError(_ error: NSError) -> String {
         guard let errorCode = AuthErrorCode(rawValue: error.code) else {
             return error.localizedDescription
         }
-        
+    
         switch errorCode {
         case .invalidEmail:
             return "The email address is badly formatted."
@@ -101,6 +141,8 @@ class SessionStore: ObservableObject {
             return "No account found with this email. Please sign up."
         case .networkError:
             return "Network error. Please check your internet connection and try again."
+        case .invalidCredential:
+                return "The email address or password you entered is incorrect. Please double-check your credentials and try again."
         default:
             return error.localizedDescription
         }

@@ -1,7 +1,7 @@
 //
 //  MainTabView.swift
 //  Mind Reset
-//
+//  This View handles the landing page of the app
 //  Created by Andika Yudhatrisna on 11/25/24.
 //
 import SwiftUI
@@ -16,7 +16,15 @@ struct HomeView: View {
                 .fontWeight(.semibold)
                 .multilineTextAlignment(.center)
                 .padding()
-            
+            // NavigationLink to HabitTrackerView
+            NavigationLink(destination: HabitTrackerView()) {
+                Text("Go to Habit Tracker")
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .cornerRadius(8)
+                }
             // Sign Out Button
             Button(action: {
                 signOut()

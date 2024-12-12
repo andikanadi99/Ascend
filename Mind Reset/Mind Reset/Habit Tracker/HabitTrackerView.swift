@@ -12,6 +12,7 @@ import FirebaseAuth
 struct HabitTrackerView: View {
     @StateObject private var viewModel = HabitViewModel()
     @EnvironmentObject var session: SessionStore
+    @State private var showingAddHabit = false
     var body: some View {
         NavigationView{
             //List container so that user can scroll through each habit
@@ -46,17 +47,22 @@ struct HabitTrackerView: View {
             .navigationTitle("Habit Tracker")
                 .navigationBarItems(trailing:
                     Button(action: {
-                        addDummyHabit()
+                        showingAddHabit = true
                     }) {
                         Image(systemName: "plus")
                     }
                 )
-            .onAppear {
-                // Fetch habits when the view appears
-                if let userId = session.current_user?.uid {
-                    viewModel.fetchHabits(for: userId)
-                }
+            .sheet(isPresented: $showingAddHabit) {
+                AddHabitView(viewModel: viewModel)
+                    .environmentObject(session) // Pass session down
             }
+            .onAppear {
+               if let userId = session.current_user?.uid {
+                   viewModel.fetchHabits(for: userId)
+               } else {
+                   print("No authenticated user found.")
+               }
+           }
         }
     }
     

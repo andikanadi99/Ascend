@@ -11,6 +11,7 @@
 
 import SwiftUI
 import FirebaseAuth
+import FirebaseFirestore
 
 class SessionStore: ObservableObject {
     // Declares a current user and authentication error string.
@@ -18,6 +19,8 @@ class SessionStore: ObservableObject {
     @Published var auth_error: String?
     //Firebase optional list handler. Listens when a user authentication changes
     private var handle: AuthStateDidChangeListenerHandle?
+    // Firestore reference
+    private var db = Firestore.firestore()
     
     // Listens to authentication changes when an instance is created
     init() {
@@ -68,7 +71,10 @@ class SessionStore: ObservableObject {
                 } else if let user = result?.user {
                     print("Sign Up Success: \(user.email ?? "No Email")")
                     self?.current_user = user
-                    completion(true)
+                    // After successful sign-up, create or verify user document
+                    self?.createOrVerifyUserDocument(for: user, email: email) {
+                        completion(true)
+                    }
                 }
             }
         }
@@ -85,6 +91,8 @@ class SessionStore: ObservableObject {
                 } else if let user = result?.user {
                     print("Sign In Success: \(user.email ?? "No Email")")
                     self?.current_user = user
+                    // After sign-in, ensure the user doc exists
+                    self?.createOrVerifyUserDocument(for: user, email: email) { }
                 }
             }
         }
@@ -121,6 +129,48 @@ class SessionStore: ObservableObject {
                 }
             }
         }
+    }
+    /*
+        Purpose: Create or Verify the user document in Firestore
+     */
+    private func createOrVerifyUserDocument(for user: User, email: String, completion: @escaping () -> Void) {
+        let userRef = db.collection("users").document(user.uid)
+        //Creates the user data in the collection in Firebase
+        userRef.getDocument { [weak self] (document, error) in
+            //Error Check
+            if let error = error {
+                print("Error checking user doc: \(error)")
+                completion()
+                return
+            }
+            
+            //Creating of document
+            if document?.exists == true{
+                completion()
+            }
+            else{
+                // Create a new user doc with default values
+                let userData: [String: Any] = [
+                    "email": email,
+                    "displayName": "", // Can be empty for now or prompt user to set it later
+                    "totalPoints": 0,
+                    "createdAt": FieldValue.serverTimestamp(),
+                     "meditationTime": 0,
+                     "deepWorkTime": 0,
+                     "preferences": [String: Any]()
+                ]
+                //Set reference of created user with the base data
+                userRef.setData(userData) { error in
+                    if let error = error {
+                        print("Error creating user doc: \(error)")
+                    } else {
+                        print("User doc created successfully.")
+                    }
+                    completion()
+                }
+            }
+        }
+        
     }
     // Map Firebase AuthErrorCode to custom messages
     private func mapAuthError(_ error: NSError) -> String {

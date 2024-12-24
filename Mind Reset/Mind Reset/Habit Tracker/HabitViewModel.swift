@@ -77,6 +77,35 @@ class HabitViewModel: ObservableObject {
             }
         }
     
+    /*
+        Purpose: Award points to user based on completed habit
+    */
+        func awardPointsToUser(userId: String, points: Int) {
+            let userRef = db.collection("users").document(userId)
+            
+            // Use a transaction or FieldValue increment to safely update points
+            db.runTransaction({ (transaction, errorPointer) -> Any? in
+                do {
+                    let userSnapshot = try transaction.getDocument(userRef)
+                    let currentPoints = userSnapshot.data()?["totalPoints"] as? Int ?? 0
+                    transaction.updateData(["totalPoints": currentPoints + points], forDocument: userRef)
+                } catch {
+                    // If an error occurs, set errorPointer if you want Firestore to know about the error
+                    if let errPointer = errorPointer {
+                        errPointer.pointee = error as NSError
+                    }
+                    return nil
+                }
+                return nil
+            }) { (result, error) in
+                if let error = error {
+                    print("Error awarding points: \(error)")
+                } else {
+                    print("Points awarded successfully.")
+                }
+            }
+        }
+    
         // Remove the listener when not needed
         deinit {
             listenerRegistration?.remove()

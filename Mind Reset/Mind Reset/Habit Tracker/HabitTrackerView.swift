@@ -84,10 +84,15 @@ struct HabitTrackerView: View {
         Purpose: Mark habit as finished for the day.
     */
     private func markHabitAsDone(_ habit:Habit){
+        guard let userId = session.current_user?.uid else { return }
+        
         var updatedHabit = habit
         updatedHabit.isCompletedToday = true
         updatedHabit.streak += 1
         viewModel.updateHabit(updatedHabit)
+        
+        // After updating the habit, award points
+        viewModel.awardPointsToUser(userId: userId, points: 10)
     }
     /*
         Purpose: Delete the specified habit

@@ -13,142 +13,171 @@
 
 import SwiftUI
 
+@available(iOS 16.0, *)
 struct LoginView: View {
-    //Access the shared instance of SessionStore
     @EnvironmentObject var session: SessionStore
-    //Declaring email and password variables
+
     @State private var email = ""
     @State private var password = ""
     @State private var showPassword = false
-    //Body of Login View
+
+    // Color definitions
+    let backgroundBlack = Color.black
+    let neonCyan = Color(red: 0, green: 1, blue: 1)  // #00FFFF
+    let fieldBackground = Color(red: 0.102, green: 0.102, blue: 0.102) // #1A1A1A
+
     var body: some View {
-            //Main Stack lineup
-            VStack(spacing:20){
-                //Welcome message
+        ZStack {
+            // Main black background
+            backgroundBlack
+                .ignoresSafeArea()
+
+            VStack(spacing: 20) {
+                // Title in neonCyan
                 Text("Welcome Back")
                     .font(.largeTitle)
                     .fontWeight(.bold)
-                //Email Field
-                TextField("Enter Your Email",text:$email)
-                    .keyboardType(.emailAddress)
-                    .autocapitalization(.none)
-                    .padding()
-                    .background(Color(UIColor.secondarySystemBackground))
-                    .cornerRadius(8)
-                    .padding(.horizontal)
-                    .onChange(of: email, initial: false) { oldValue, newValue in
-                        session.auth_error = nil
-                    }
-                // Password Field
-                ZStack(alignment: .trailing){
+                    .foregroundColor(neonCyan)
+
+                // 1) Email Field with .prompt placeholders (iOS 16+)
+                TextField(
+                    "",
+                    text: $email,
+                    prompt: Text("Enter Your Email")
+                        .foregroundColor(.white.opacity(0.8))
+                )
+                .foregroundColor(.white.opacity(0.8))
+                .autocapitalization(.none)
+                .keyboardType(.emailAddress)
+                .padding()
+                .background(fieldBackground)
+                .cornerRadius(8)
+                .padding(.horizontal)
+                .onChange(of: email, initial: false) { _, _ in
+                    session.auth_error = nil
+                }
+
+                // 2) Password Field with show/hide icon *inside*
+                ZStack(alignment: .trailing) {
                     if showPassword {
-                        TextField("Enter Your Password", text: $password)
-                            .padding()
-                            .background(Color(UIColor.secondarySystemBackground))
-                            .cornerRadius(8)
-                            .padding(.horizontal)
-                            .onChange(of: password, initial: false) { oldValue, newValue in
-                                session.auth_error = nil
-                            }
+                        TextField(
+                            "",
+                            text: $password,
+                            prompt: Text("Enter Your Password")
+                                .foregroundColor(.white.opacity(0.8))
+                        )
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(fieldBackground)
+                        .cornerRadius(8)
+                        .onChange(of: password, initial: false) { _, _ in
+                            session.auth_error = nil
+                        }
+                    } else {
+                        SecureField(
+                            "",
+                            text: $password,
+                            prompt: Text("Enter Your Password")
+                                .foregroundColor(.white.opacity(0.8))
+                        )
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(fieldBackground)
+                        .cornerRadius(8)
+                        .onChange(of: password, initial: false) { _, _ in
+                            session.auth_error = nil
+                        }
                     }
-                    else {
-                        SecureField("Enter Your Password", text: $password)
-                            .padding()
-                            .background(Color(UIColor.secondarySystemBackground))
-                            .cornerRadius(8)
-                            .padding(.horizontal)
-                            .onChange(of: password, initial: false) { oldValue, newValue in
-                                session.auth_error = nil
-                            }
-                    }
-                    // Button to toggle password visibility
+
+                    // Eye icon inside the same field area
                     Button(action: {
                         showPassword.toggle()
-                    }){
-                        Image(systemName: self.showPassword ? "eye.slash.fill" : "eye.fill")
+                    }) {
+                        Image(systemName: showPassword ? "eye.slash.fill" : "eye.fill")
                             .foregroundColor(.gray)
-                            .padding(.trailing, 35)
+                            .padding(.trailing, 15)
                     }
                 }
-                //Error message conditional pop-up
-                if let error_message = session.auth_error{
-                    Text(error_message)
+                .padding(.horizontal)
+
+                // Error message
+                if let errorMessage = session.auth_error {
+                    Text(errorMessage)
                         .foregroundColor(.red)
                         .padding(.horizontal)
                 }
-                
-                //Login Button
+
+                // Login button: #00FFFF background, black text
                 Button(action: {
                     login()
-                }){
+                }) {
                     Text("Login")
-                        .foregroundColor(.white)
+                        .foregroundColor(.black)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.blue)
+                        .background(neonCyan)
                         .cornerRadius(8)
                 }
                 .padding(.horizontal)
-                
-                //Re-direction to create an account
-                NavigationLink("Forget Password?",destination: ForgetPasswordView())
-                //Re-direction to create an account
-                NavigationLink("Don't have an account? Please sign up",destination: SignUpView())
-                    .padding()
-                    .offset(y: -10) 
+
+                // Links in neonCyan
+                NavigationLink(destination: ForgetPasswordView()) {
+                    Text("Forget Password?")
+                        .foregroundColor(neonCyan)
+                }
+
+                NavigationLink(destination: SignUpView()) {
+                    Text("Don't have an account? Please sign up")
+                        .foregroundColor(neonCyan)
+                }
+                .offset(y: -10)
             }
             .padding()
-            .background(Color(UIColor.systemBackground))
-            .onTapGesture{
-                hideLoginKeyboard()
-            }
             .navigationBarHidden(true)
+        }
+        .onTapGesture {
+            hideLoginKeyboard()
+        }
     }
-    
-    /*
-        Purpose: Takes an email and checks if its valoid to register
-    */
-    func isEmailValid(_email: String) -> Bool{
+
+    // MARK: - Helper Methods
+
+    func isEmailValid(_email: String) -> Bool {
         let emailRegEx = "(?:[A-Z0-9a-z._%+-]+)@(?:[A-Za-z0-9-]+\\.)+[A-Za-z]{2,64}"
         let emailPred = NSPredicate(format:"SELF MATCHES %@", emailRegEx)
         return emailPred.evaluate(with: email)
     }
-    
-    /*
-        Purpose: Check if credentials inputed by user is valid and sign users in using the SessionStore class
-    */
-    func login(){
-        //Check if email or password field is empty
+
+    func login() {
         guard !email.isEmpty, !password.isEmpty else {
             session.auth_error = "Please enter both email and password."
             return
         }
-        guard isEmailValid(_email: email) else{
+        guard isEmailValid(_email: email) else {
             session.auth_error = "Please enter a valid email address."
             return
         }
-        
-        //Call the sign-in method from SessionStore class
-        session.signIn(email:email,password:password)
+        session.signIn(email: email, password: password)
     }
-    
-    
 }
 
-/*
-    If Conditional to hide the keyboard if UIKit is present
-*/
 #if canImport(UIKit)
 extension View {
     func hideLoginKeyboard() {
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                        to: nil, from: nil, for: nil)
     }
 }
 #endif
 
 struct LoginView_Previews: PreviewProvider {
     static var previews: some View {
-        LoginView()
-            .environmentObject(SessionStore())
+        NavigationView {
+            LoginView()
+                .environmentObject(SessionStore())
+        }
     }
 }
+
+
+

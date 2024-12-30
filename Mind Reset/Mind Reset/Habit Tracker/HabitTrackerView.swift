@@ -68,19 +68,6 @@ struct HabitTrackerView: View {
     
     /* Functions Associated with the habit tracker */
     /*
-        Purpose: Create a dummy habit. Used for an example to show to new user
-    */
-    private func addDummyHabit() {
-        guard let userId = session.current_user?.uid else { return }
-        let newHabit = Habit(
-            title: "New Habit",
-            description: "Description",
-            startDate: Date(),
-            ownerId: userId
-        )
-        viewModel.addHabit(newHabit)
-    }
-    /*
         Purpose: Mark habit as finished for the day.
     */
     private func markHabitAsDone(_ habit:Habit){

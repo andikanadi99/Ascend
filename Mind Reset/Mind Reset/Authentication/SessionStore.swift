@@ -47,6 +47,41 @@ class SessionStore: ObservableObject {
                 }
             }
         }
+    /*
+        Purpose: Updates the user class to update their own meditation time
+    */
+    func awardMeditationTime(userId: String, additionalMinutes: Int) {
+        let userRef = db.collection("users").document(userId)
+        
+        db.runTransaction({ (transaction, _) -> Any? in
+            
+            // We do a 'do-catch' block so we do NOT make this closure throwing.
+            do {
+                let snapshot = try transaction.getDocument(userRef)
+                let currentTime = snapshot.data()?["meditationTime"] as? Int ?? 0
+                let newTime = currentTime + additionalMinutes
+                
+                transaction.updateData(["meditationTime": newTime], forDocument: userRef)
+                
+            } catch {
+                // If there's any error calling 'transaction.getDocument', we handle it here
+                print("Transaction error awarding meditation time: \(error.localizedDescription)")
+                // Return nil to abort the transaction
+                return nil
+            }
+            
+            // If everything succeeds, return nil to indicate success
+            return nil
+            
+        }) { (_, error) in
+            // In the completion, the 'error' param will be non-nil if the transaction failed.
+            if let error = error {
+                print("Error updating meditation time: \(error.localizedDescription)")
+            } else {
+                print("Successfully added \(additionalMinutes) minutes to user's meditationTime.")
+            }
+        }
+    }
     
     /*
         Purpose: Sets up a listener to monitor authentication state changes. Ensure that app keeps track of when a user logs in or out

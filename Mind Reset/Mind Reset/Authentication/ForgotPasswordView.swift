@@ -12,51 +12,70 @@
 
 import SwiftUI
 
+@available(iOS 16.0, *)
 struct ForgetPasswordView: View {
-    @EnvironmentObject var session: SessionStore // Access SessionStore
+    @EnvironmentObject var session: SessionStore
     @Environment(\.presentationMode) var presentationMode
-
+    
     @State private var email = ""
     @State private var isShowingAlert = false
     
+    // Color definitions
+    let backgroundBlack = Color.black
+    let neonCyan = Color(red: 0, green: 1, blue: 1)  // #00FFFF
+    let fieldBackground = Color(red: 0.102, green: 0.102, blue: 0.102) // #1A1A1A
+    
     var body: some View {
-        VStack(spacing: 30) {
-            // Page Title
-            Text("Reset Password")
-                .font(.title)
-                .fontWeight(.semibold)
-                .multilineTextAlignment(.center)
-                .padding()
+        ZStack {
+            // Main black background
+            backgroundBlack
+                .ignoresSafeArea()
             
-            //Email Field
-            TextField("Enter Your Email", text:$email)
+            VStack(spacing: 30) {
+                // Page Title in neonCyan
+                Text("Reset Password")
+                    .font(.title)
+                    .fontWeight(.semibold)
+                    .foregroundColor(neonCyan)
+                    .multilineTextAlignment(.center)
+                    .padding()
+                
+                // Email Field with .prompt placeholders
+                TextField(
+                    "",
+                    text: $email,
+                    prompt: Text("Enter Your Email").foregroundColor(.white.opacity(0.8))
+                )
+                .foregroundColor(.white)
                 .keyboardType(.emailAddress)
                 .autocapitalization(.none)
                 .padding()
-                .background(Color(UIColor.secondarySystemBackground))
+                .background(fieldBackground)
                 .cornerRadius(8)
                 .padding(.horizontal)
-                .onChange(of: email, initial: false) { oldValue, newValue in
+                .onChange(of: email, initial: false) { _, _ in
                     session.auth_error = nil
                 }
-            // Error Message
-            if let errorMessage = session.auth_error {
-                Text(errorMessage)
-                    .foregroundColor(.red)
-                    .padding(.horizontal)
-            }
-            // Reset Password Button
-            Button(action: {
-                resetPassword()
-            }) {
-                Text("Reset Password")
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.orange)
-                    .cornerRadius(8)
-            }
-            .padding(.horizontal)
+                
+                // Error message
+                if let errorMessage = session.auth_error {
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                        .padding(.horizontal)
+                }
+                
+                // Reset Password Button with #00FFFF background, black text
+                Button(action: {
+                    resetPassword()
+                }) {
+                    Text("Reset Password")
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(neonCyan)
+                        .cornerRadius(8)
+                }
+                .padding(.horizontal)
                 .alert(isPresented: $isShowingAlert) {
                     Alert(
                         title: Text("Password Reset Email Sent"),
@@ -67,57 +86,59 @@ struct ForgetPasswordView: View {
                         }
                     )
                 }
-
+                
                 Spacer()
-
-        }
-        .padding()
-        .background(Color(UIColor.systemBackground))
-        .onTapGesture {
-            hideKeyboard()
+            }
+            .padding()
+            .onTapGesture {
+                hideKeyboard()
+            }
         }
     }
+    
     /*
-        Purpose: Restes password after all fields are verified and checked.
+     Purpose: Resets password after field is verified and checked.
     */
     func resetPassword() {
         guard !email.isEmpty else {
             session.auth_error = "Please enter your email address."
             return
         }
-
+        
         guard isEmailValid(email) else {
             session.auth_error = "Please enter a valid email address."
             return
         }
-
+        
         session.resetPassword(email: email) { success in
             if success {
                 isShowingAlert = true
             }
         }
     }
-    //Function to check if email is valid
+    
+    // Validate email
     func isEmailValid(_ email: String) -> Bool {
         let emailRegEx = "(?:[A-Z0-9a-z._%+-]+)@(?:[A-Za-z0-9-]+\\.)+[A-Za-z]{2,64}"
-        let emailPred = NSPredicate(format: "SELF MATCHES %@", emailRegEx)
+        let emailPred = NSPredicate(format:"SELF MATCHES %@", emailRegEx)
         return emailPred.evaluate(with: email)
     }
-
 }
 
-// Hide Keyboard Extension
 #if canImport(UIKit)
 extension View {
     func hideKeyboard() {
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                        to: nil, from: nil, for: nil)
     }
 }
 #endif
 
 struct ForgetPasswordView_Previews: PreviewProvider {
     static var previews: some View {
-        ForgetPasswordView()
-            .environmentObject(SessionStore())
+        NavigationView {
+            ForgetPasswordView()
+                .environmentObject(SessionStore())
+        }
     }
 }

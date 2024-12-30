@@ -12,9 +12,11 @@
 
 import SwiftUI
 
+@available(iOS 16.0, *)
 struct SignUpView: View {
     //Access the shared instance of SessionStore
     @EnvironmentObject var session: SessionStore
+    
     //Variables for the file
     @State private var email = ""
     @State private var password = ""
@@ -23,175 +25,198 @@ struct SignUpView: View {
     @State private var show_confirm_password = false
     @State private var isShowingAlert = false
     
+    // Color definitions
+    let backgroundBlack = Color.black
+    let neonCyan = Color(red: 0, green: 1, blue: 1)          // #00FFFF
+    let fieldBackground = Color(red: 0.102, green: 0.102, blue: 0.102) // #1A1A1A
+
     var body: some View {
-            ScrollView{
-                
-                //Main Stack lineup
-                VStack(spacing:20){
-                    //Title section
+        ZStack {
+            // Main black background
+            backgroundBlack
+                .ignoresSafeArea()
+            
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Title section
                     Text("Create Account")
                         .font(.largeTitle)
                         .fontWeight(.bold)
+                        .foregroundColor(neonCyan)
                         .padding(.top, 40)
-                    //Email Field
-                    TextField("Enter Your Email",text:$email)
-                        .keyboardType(.emailAddress)
-                        .autocapitalization(.none)
-                        .padding()
-                        .background(Color(UIColor.secondarySystemBackground))
-                        .cornerRadius(8)
-                        .padding(.horizontal)
-                        .onChange(of: email, initial: false) { oldValue, newValue in
-                            session.auth_error = nil
+                    
+                    // Email Field using .prompt placeholders
+                    TextField(
+                        "",
+                        text: $email,
+                        prompt: Text("Enter Your Email").foregroundColor(.white.opacity(0.8))
+                    )
+                    .foregroundColor(.white)
+                    .autocapitalization(.none)
+                    .keyboardType(.emailAddress)
+                    .padding()
+                    .background(fieldBackground)
+                    .cornerRadius(8)
+                    .padding(.horizontal)
+                    .onChange(of: email, initial: false) { _, _ in
+                        session.auth_error = nil
+                    }
+                    
+                    // Password Field
+                    ZStack(alignment: .trailing) {
+                        if show_password {
+                            TextField(
+                                "",
+                                text: $password,
+                                prompt: Text("Enter Your Password").foregroundColor(.white.opacity(0.8))
+                            )
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(fieldBackground)
+                            .cornerRadius(8)
+                            .onChange(of: password, initial: false) { _, _ in
+                                session.auth_error = nil
+                            }
+                        } else {
+                            SecureField(
+                                "",
+                                text: $password,
+                                prompt: Text("Enter Your Password").foregroundColor(.white.opacity(0.8))
+                            )
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(fieldBackground)
+                            .cornerRadius(8)
+                            .onChange(of: password, initial: false) { _, _ in
+                                session.auth_error = nil
+                            }
                         }
-                    //Zstack for password field.
-                    ZStack(alignment: .trailing){
-                        //If-Else, depending on if user wants password to be shown or not
-                        if show_password{
-                            TextField("Enter Your Password",text:$password)
-                                .padding()
-                                .background(Color(UIColor.secondarySystemBackground))
-                                .cornerRadius(8)
-                                .padding(.horizontal)
-                                .onChange(of: password, initial: false) { oldValue, newValue in
-                                    session.auth_error = nil
-                                }
-                        }
-                        else{
-                            SecureField("Enter Your Password",text:$password)
-                                .padding()
-                                .background(Color(UIColor.secondarySystemBackground))
-                                .cornerRadius(8)
-                                .padding(.horizontal)
-                                .onChange(of: password, initial: false) { oldValue, newValue in
-                                    session.auth_error = nil
-                                }
-                        }
-                        //Button to toggle between show and not show
+                        
+                        // Eye icon
                         Button(action: {
                             show_password.toggle()
-                        }){
-                            Image(systemName: self.show_password ? "eye.slash.fill" : "eye.fill")
+                        }) {
+                            Image(systemName: show_password ? "eye.slash.fill" : "eye.fill")
                                 .foregroundColor(.gray)
-                                .padding(.trailing, 35)
+                                .padding(.trailing, 15)
                         }
                     }
-                    //Zstack for confirm password field.
-                    ZStack(alignment: .trailing){
-                        //If-Else, depending on if user wants password to be shown or not
-                        if show_confirm_password{
-                            TextField("Confirm Your Password",text:$confirm_password)
-                                .padding()
-                                .background(Color(UIColor.secondarySystemBackground))
-                                .cornerRadius(8)
-                                .padding(.horizontal)
-                                .onChange(of: confirm_password, initial: false) { oldValue, newValue in
-                                    session.auth_error = nil
-                                }
+                    .padding(.horizontal)
+                    
+                    // Confirm Password Field
+                    ZStack(alignment: .trailing) {
+                        if show_confirm_password {
+                            TextField(
+                                "",
+                                text: $confirm_password,
+                                prompt: Text("Confirm Your Password").foregroundColor(.white.opacity(0.8))
+                            )
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(fieldBackground)
+                            .cornerRadius(8)
+                            .onChange(of: confirm_password, initial: false) { _, _ in
+                                session.auth_error = nil
+                            }
+                        } else {
+                            SecureField(
+                                "",
+                                text: $confirm_password,
+                                prompt: Text("Confirm Your Password").foregroundColor(.white.opacity(0.8))
+                            )
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(fieldBackground)
+                            .cornerRadius(8)
+                            .onChange(of: confirm_password, initial: false) { _, _ in
+                                session.auth_error = nil
+                            }
                         }
-                        else{
-                            SecureField("Confirm Your Password",text:$confirm_password)
-                                .padding()
-                                .background(Color(UIColor.secondarySystemBackground))
-                                .cornerRadius(8)
-                                .padding(.horizontal)
-                                .onChange(of: confirm_password, initial: false) { oldValue, newValue in
-                                    session.auth_error = nil
-                                }
-                        }
-                        //Button to toggle between show and not show
+                        
+                        // Eye icon
                         Button(action: {
                             show_confirm_password.toggle()
-                        }){
-                            Image(systemName: self.show_confirm_password ? "eye.slash.fill" : "eye.fill")
+                        }) {
+                            Image(systemName: show_confirm_password ? "eye.slash.fill" : "eye.fill")
                                 .foregroundColor(.gray)
-                                .padding(.trailing, 35)
+                                .padding(.trailing, 15)
                         }
                     }
-                    //Error message conditional pop-up
-                    if let error_message = session.auth_error{
+                    .padding(.horizontal)
+                    
+                    // Error message conditional pop-up
+                    if let error_message = session.auth_error {
                         Text(error_message)
                             .foregroundColor(.red)
                             .padding(.horizontal)
                     }
-                    //Sign Up Button
-                    Button(action:{
+                    
+                    // Sign Up Button (using #00FFFF background, black text)
+                    Button(action: {
                         signUp()
-                    }){
+                    }) {
                         Text("Sign Up")
-                            .foregroundColor(.white)
+                            .foregroundColor(.black)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Color.green)
+                            .background(neonCyan)
                             .cornerRadius(8)
                     }
                     .padding(.horizontal)
                     
-                    //Navigation to LoginView if account already exist
+                    // Navigation to LoginView if account already exist
                     NavigationLink("Already have an account? Log In", destination: LoginView())
+                        .foregroundColor(neonCyan)
                         .padding()
                 }
                 .padding()
-                .background(Color(UIColor.systemBackground))
                 .onTapGesture {
                     hideSignUpKeyboard()
                 }
             }
             .navigationBarHidden(true)
+        }
     }
     
-    //Functions associated with page
+    // MARK: - Functions associated with page
     
-    /*
-        Purpose: Takes an email and checks if its valoid to register
-    */
-    func isEmailValid(_email: String) -> Bool{
+    func isEmailValid(_email: String) -> Bool {
         let emailRegEx = "(?:[A-Z0-9a-z._%+-]+)@(?:[A-Za-z0-9-]+\\.)+(?:com|org|net|edu|gov|mil|int)"
         let emailPred = NSPredicate(format: "SELF MATCHES %@", emailRegEx)
         return emailPred.evaluate(with: email)
     }
-    /*
-        Purpose: Takes an email and checks if its valoid to register
-    */
-    func isPasswordValid(_password: String) -> Bool{
+    
+    func isPasswordValid(_password: String) -> Bool {
         return password.count >= 6
     }
-    /*
-        Purpose: Handles user sign up.
-    */
-    func signUp(){
-        //Check if any field is empty
-        guard !email.isEmpty, !password.isEmpty , !confirm_password.isEmpty else{
+    
+    func signUp() {
+        guard !email.isEmpty, !password.isEmpty, !confirm_password.isEmpty else {
             session.auth_error = "Please fill in all fields."
             return
         }
-        //Check if confirm password does not match password
-        guard password == confirm_password else{
+        guard password == confirm_password else {
             session.auth_error = "Passwords do not match."
             return
         }
-        //Check if email is valid
-        guard isEmailValid(_email:email) else{
+        guard isEmailValid(_email: email) else {
             session.auth_error = "Please enter a valid email address."
             return
         }
-        //Check if password is valid is valid
-        guard isPasswordValid(_password:password) else{
+        guard isPasswordValid(_password: password) else {
             session.auth_error = "Passwords must be at least 6 characters."
             return
         }
         
-        // Call the signUp method from SessionStore
         session.createAccount(email: email, password: password) { success in
             if success {
                 isShowingAlert = true
             } else {
-                // Handle error (auth_error is already updated in SessionStore)
+                // handle error
             }
         }
     }
 }
-
 
 #if canImport(UIKit)
 extension View {
@@ -202,10 +227,11 @@ extension View {
 }
 #endif
 
-
 struct SignUpView_Previews: PreviewProvider {
     static var previews: some View {
-        SignUpView()
-            .environmentObject(SessionStore())
+        NavigationView {
+            SignUpView()
+                .environmentObject(SessionStore())
+        }
     }
 }

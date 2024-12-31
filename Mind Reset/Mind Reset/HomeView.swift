@@ -6,59 +6,99 @@
 //
 import SwiftUI
 
-struct HomeView: View {
-    @EnvironmentObject var session: SessionStore // Access SessionStore
+struct MainTabView: View {
+    @EnvironmentObject var session: SessionStore
+
     var body: some View {
-        VStack(spacing: 30) {
-            // Welcome Message
-            Text("Welcome, \(userEmail)!")
-                .font(.title)
-                .fontWeight(.semibold)
-                .multilineTextAlignment(.center)
-                .padding()
-            // NavigationLink to HabitTrackerView
-            NavigationLink(destination: HabitTrackerView()) {
-                Text("Go to Habit Tracker")
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .cornerRadius(8)
+        TabView {
+            // 1) Habit Tracker as Home
+            HabitTrackerView()
+                .tabItem {
+                    Label("Home", systemImage: "house.fill")
                 }
-            // Sign Out Button
-            Button(action: {
-                signOut()
-            }) {
-                Text("Sign Out")
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.red)
-                    .cornerRadius(8)
-            }
-            .padding(.horizontal)
-            
-            Spacer()
+
+            // 2) Progress Tab
+            ProgressViewPlaceholder()
+                .tabItem {
+                    Label("Progress", systemImage: "chart.bar.fill")
+                }
+
+            // 3) Settings Tab (Sign Out button moved here)
+            SettingsViewPlaceholder(session: _session)
+                .tabItem {
+                    Label("Settings", systemImage: "gearshape.fill")
+                }
         }
-        .padding()
-        .navigationBarHidden(true) // Hide the navigation bar if present
+        .accentColor(.cyan) // The color of the selected tab icon/label
     }
-    
-    // Computed property to get the user's email
-    private var userEmail: String {
-        return session.current_user?.email ?? "User"
+}
+
+// MARK: - ProgressViewPlaceholder
+// A placeholder view for the Progress tab until you implement real progress logic
+struct ProgressViewPlaceholder: View {
+    var body: some View {
+        NavigationView {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                Text("Progress Page (Placeholder)")
+                    .foregroundColor(.white)
+            }
+            .navigationBarHidden(true)
+        }
     }
-    
+}
+
+// MARK: - SettingsViewPlaceholder
+// The Settings tab now includes the sign-out button.
+struct SettingsViewPlaceholder: View {
+    @EnvironmentObject var session: SessionStore
+
+    // Or inject it directly as a parameter if you prefer:
+    // let session: SessionStore
+
+    var body: some View {
+        NavigationView {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                VStack(spacing: 30) {
+                    Text("Settings (Placeholder)")
+                        .foregroundColor(.white)
+                        .font(.title)
+                        .fontWeight(.semibold)
+                        .padding()
+
+                    // Sign Out Button Moved Here
+                    Button(action: {
+                        signOut()
+                    }) {
+                        Text("Sign Out")
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.red)
+                            .cornerRadius(8)
+                            .padding(.horizontal)
+                    }
+
+                    Spacer()
+                }
+            }
+            .navigationBarHidden(true)
+        }
+    }
+
     // Sign Out Function
     private func signOut() {
         session.signOut()
     }
 }
 
-struct HomeView_Previews: PreviewProvider {
+// MARK: - Preview
+struct MainTabView_Previews: PreviewProvider {
     static var previews: some View {
-        HomeView()
+        MainTabView()
             .environmentObject(SessionStore())
     }
 }
+
 

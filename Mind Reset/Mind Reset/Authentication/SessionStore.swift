@@ -192,7 +192,8 @@ class SessionStore: ObservableObject {
                     "createdAt": FieldValue.serverTimestamp(),
                      "meditationTime": 0,
                      "deepWorkTime": 0,
-                     "preferences": [String: Any]()
+                     "preferences": [String: Any](),
+                    "defaultHabitsCreated": false
                 ]
                 //Set reference of created user with the base data
                 userRef.setData(userData) { error in

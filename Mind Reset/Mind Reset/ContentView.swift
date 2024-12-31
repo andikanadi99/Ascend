@@ -14,7 +14,8 @@ struct ContentView: View {
         NavigationView{
             Group {
                 if session.current_user != nil {
-                    HomeView()
+                    // Show the MainTabView once user is authenticated
+                    MainTabView()
                 } else {
                     LoginView()
                 }

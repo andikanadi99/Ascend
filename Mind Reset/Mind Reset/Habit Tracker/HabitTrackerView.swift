@@ -95,7 +95,7 @@ struct HabitTrackerView: View {
 //Preview
 struct HabitTrackerView_Previews: PreviewProvider {
     static var previews: some View {
-        HabitTrackerView()
+        HabitTrackerViewOl()
             .environmentObject(SessionStore())
     }
 }

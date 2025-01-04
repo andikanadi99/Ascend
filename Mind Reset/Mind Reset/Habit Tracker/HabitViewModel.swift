@@ -11,8 +11,38 @@ import Combine
 
 class HabitViewModel: ObservableObject {
     @Published var habits: [Habit] = []
-    private var db = Firestore.firestore()
-    private var listenerRegistration: ListenerRegistration?
+        private var db = Firestore.firestore()
+        private var listenerRegistration: ListenerRegistration?
+        
+        // Called on app start or onAppear to ensure daily reset
+        func dailyResetIfNeeded() {
+            let todayString = dateFormatter.string(from: Date())
+            
+            // For each habit that’s loaded, check if we need to reset
+            for habit in habits {
+                // Compare lastReset to today’s date
+                let habitLastResetString = habit.lastReset == nil
+                    ? ""
+                    : dateFormatter.string(from: habit.lastReset!)
+                
+                // If we haven't reset this habit today
+                if habitLastResetString != todayString {
+                    // Make a copy
+                    var updatedHabit = habit
+                    updatedHabit.isCompletedToday = false
+                    updatedHabit.lastReset = Date()
+                    // Update in Firestore
+                    updateHabit(updatedHabit)
+                }
+            }
+        }
+        
+        // This date formatter ensures we only compare day, month, year
+        private var dateFormatter: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd" // or "dd/MM/yyyy"
+            return formatter
+        }()
 
     // MARK: - Fetch Habits
     func fetchHabits(for userId: String) {

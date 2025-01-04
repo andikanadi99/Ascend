@@ -28,6 +28,9 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView().environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+    ContentView()
+        .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
         .environmentObject(SessionStore())
+        .environmentObject(HabitViewModel())
+        .preferredColorScheme(.dark)
 }

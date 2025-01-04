@@ -58,19 +58,20 @@ struct HabitTrackerView: View {
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         ForEach(viewModel.habits) { habit in
-                            HabitRow(
-                                habit: habit,
-                                accentCyan: accentCyan,
-                                onTap: { tappedHabit in
-                                    navigateToHabit(tappedHabit)
-                                },
-                                onToggle: { toggledHabit in
-                                    toggleHabitCompletion(toggledHabit)
-                                },
-                                onDelete: { deletedHabit in
-                                    deleteHabit(deletedHabit)
-                                }
-                            )
+                            // Instead of manually handling onTap,
+                            // we use NavigationLink to push HabitDetailView.
+                            NavigationLink(
+                                destination: HabitDetailView(habit: habit)
+                            ) {
+                                // Our row item
+                                HabitRow(
+                                    habit: habit,
+                                    accentCyan: accentCyan,
+                                    onDelete: { deletedHabit in
+                                        deleteHabit(deletedHabit)
+                                    }
+                                )
+                            }
                         }
                     }
                     .padding(.top, 10)
@@ -89,6 +90,12 @@ struct HabitTrackerView: View {
                 viewModel.fetchHabits(for: userId)
                 // 2) Setup default habits if needed (only once)
                 viewModel.setupDefaultHabitsIfNeeded(for: userId)
+                
+                // Then do a daily reset check
+                // (or you can do it in completion of fetchHabits if asynchronous)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    viewModel.dailyResetIfNeeded()
+                }
             }
             
             // Floating + button for adding new habits
@@ -154,43 +161,37 @@ struct HabitTrackerView: View {
 struct HabitRow: View {
     let habit: Habit
     let accentCyan: Color
-    let onTap: (Habit) -> Void
-    let onToggle: (Habit) -> Void
     let onDelete: (Habit) -> Void
     
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
+                // Title
                 Text(habit.title)
                     .font(.headline)
                     .foregroundColor(.white)
+                
+                // Description
                 Text(habit.description)
                     .font(.subheadline)
                     .foregroundColor(.white.opacity(0.7))
             }
             Spacer()
             
-            // Toggling a habit => arrow or checkmark, both in accentCyan
-            Button {
-                onToggle(habit)
-            } label: {
-                if habit.isCompletedToday {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(accentCyan)
-                } else {
-                    Image(systemName: "chevron.right")
-                        .foregroundColor(accentCyan)
-                }
+            // “Done Today” if isCompletedToday
+            if habit.isCompletedToday {
+                Text("Done Today")
+                    .foregroundColor(.green)
+                    .padding(.trailing, 8)
             }
             
-            // Trash icon to delete
+            // Trash icon
             Button {
                 onDelete(habit)
             } label: {
                 Image(systemName: "trash")
                     .foregroundColor(.red)
             }
-            .padding(.leading, 8)
         }
         .padding()
         .background(
@@ -201,11 +202,10 @@ struct HabitRow: View {
                 )
         )
         .cornerRadius(8)
-        .onTapGesture {
-            onTap(habit)
-        }
     }
 }
+
+
 
 
 // MARK: - Preview

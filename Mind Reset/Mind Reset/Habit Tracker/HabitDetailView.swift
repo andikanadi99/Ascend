@@ -18,6 +18,9 @@ struct HabitDetailView: View {
     // MARK: - Dismiss Environment for Navigation Back
     @Environment(\.presentationMode) var presentationMode
     
+    // Access SessionStore to get current user
+    @EnvironmentObject var session: SessionStore
+    
     // MARK: - Editable Local Fields
     @State private var editableTitle: String
     @State private var editableDescription: String
@@ -254,7 +257,7 @@ extension HabitDetailView {
             
             // Intensity & Focus
             HStack {
-                Text("Intensity: \(habit.streak)").foregroundColor(.white)
+                Text("Streak: \(habit.currentStreak)").foregroundColor(.white)
                 Spacer()
                 Text("Focused: \(formatTime(totalFocusTime))").foregroundColor(.white)
             }
@@ -394,12 +397,11 @@ extension HabitDetailView {
 // MARK: - Habit Update & Edits
 extension HabitDetailView {
     private func toggleHabitDone() {
-        var updated = habit
-        updated.isCompletedToday.toggle()
-        if updated.isCompletedToday {
-            updated.streak += 1
+        guard let userId = session.current_user?.uid else {
+            print("Error: Unable to find userId for habit.")
+            return
         }
-        viewModel.updateHabit(updated)
+        viewModel.toggleHabitCompletion(habit, userId: userId)
     }
     
     private func saveEditsToHabit() {

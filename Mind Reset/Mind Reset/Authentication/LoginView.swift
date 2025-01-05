@@ -142,7 +142,7 @@ struct LoginView: View {
 
     // MARK: - Helper Methods
 
-    func isEmailValid(_email: String) -> Bool {
+    func isEmailValid(_ email: String) -> Bool {
         let emailRegEx = "(?:[A-Z0-9a-z._%+-]+)@(?:[A-Za-z0-9-]+\\.)+[A-Za-z]{2,64}"
         let emailPred = NSPredicate(format:"SELF MATCHES %@", emailRegEx)
         return emailPred.evaluate(with: email)
@@ -153,7 +153,7 @@ struct LoginView: View {
             session.auth_error = "Please enter both email and password."
             return
         }
-        guard isEmailValid(_email: email) else {
+        guard isEmailValid(email) else {
             session.auth_error = "Please enter a valid email address."
             return
         }
@@ -162,10 +162,18 @@ struct LoginView: View {
 }
 
 #if canImport(UIKit)
+import UIKit
+
 extension View {
     func hideLoginKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                         to: nil, from: nil, for: nil)
+    }
+}
+#else
+extension View {
+    func hideLoginKeyboard() {
+        // No-op for environments where UIKit is not available (e.g., previews)
     }
 }
 #endif
@@ -175,9 +183,8 @@ struct LoginView_Previews: PreviewProvider {
         NavigationView {
             LoginView()
                 .environmentObject(SessionStore())
+                .environmentObject(HabitViewModel())
         }
+        .preferredColorScheme(.dark)
     }
 }
-
-
-

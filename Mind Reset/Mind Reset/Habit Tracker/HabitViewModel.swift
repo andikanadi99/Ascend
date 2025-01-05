@@ -11,39 +11,23 @@ import Combine
 
 class HabitViewModel: ObservableObject {
     @Published var habits: [Habit] = []
-        private var db = Firestore.firestore()
-        private var listenerRegistration: ListenerRegistration?
-        
-        // Called on app start or onAppear to ensure daily reset
-        func dailyResetIfNeeded() {
-            let todayString = dateFormatter.string(from: Date())
-            
-            // For each habit that’s loaded, check if we need to reset
-            for habit in habits {
-                // Compare lastReset to today’s date
-                let habitLastResetString = habit.lastReset == nil
-                    ? ""
-                    : dateFormatter.string(from: habit.lastReset!)
-                
-                // If we haven't reset this habit today
-                if habitLastResetString != todayString {
-                    // Make a copy
-                    var updatedHabit = habit
-                    updatedHabit.isCompletedToday = false
-                    updatedHabit.lastReset = Date()
-                    // Update in Firestore
-                    updateHabit(updatedHabit)
-                }
-            }
-        }
-        
-        // This date formatter ensures we only compare day, month, year
-        private var dateFormatter: DateFormatter = {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd" // or "dd/MM/yyyy"
-            return formatter
-        }()
-
+    private var db = Firestore.firestore()
+    private var listenerRegistration: ListenerRegistration?
+    
+    // MARK: - Scoring System Constants
+    private let dailyCompletionPoint = 1
+    private let weeklyStreakBonus = 10
+    private let monthlyStreakBonus = 50
+    private let yearlyStreakBonus = 100 // Example value
+    
+    // MARK: - Date Formatter
+    // Ensures only day, month, year are compared
+    private var dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd" // Adjust as needed
+        return formatter
+    }()
+    
     // MARK: - Fetch Habits
     func fetchHabits(for userId: String) {
         listenerRegistration = db.collection("habits")
@@ -75,7 +59,7 @@ class HabitViewModel: ObservableObject {
         do {
             try db.collection("habits").document(id).setData(from: habit)
         } catch {
-            print("Error adding habit: \(error)")
+            print("Error updating habit: \(error)")
         }
     }
 
@@ -163,22 +147,49 @@ class HabitViewModel: ObservableObject {
     private func createDefaultHabits(for userId: String) {
         let defaultHabits = [
             Habit(
+                id: nil,
                 title: "Meditation",
                 description: "Spend 10 minutes meditating",
                 startDate: Date(),
-                ownerId: userId
+                ownerId: userId,
+                isCompletedToday: false,
+                lastReset: nil,
+                points: 0,
+                currentStreak: 0,
+                longestStreak: 0,
+                weeklyStreakBadge: false,
+                monthlyStreakBadge: false,
+                yearlyStreakBadge: false
             ),
             Habit(
+                id: nil,
                 title: "Exercise",
                 description: "Do some physical activity",
                 startDate: Date(),
-                ownerId: userId
+                ownerId: userId,
+                isCompletedToday: false,
+                lastReset: nil,
+                points: 0,
+                currentStreak: 0,
+                longestStreak: 0,
+                weeklyStreakBadge: false,
+                monthlyStreakBadge: false,
+                yearlyStreakBadge: false
             ),
             Habit(
+                id: nil,
                 title: "Journaling",
                 description: "Write down your thoughts",
                 startDate: Date(),
-                ownerId: userId
+                ownerId: userId,
+                isCompletedToday: false,
+                lastReset: nil,
+                points: 0,
+                currentStreak: 0,
+                longestStreak: 0,
+                weeklyStreakBadge: false,
+                monthlyStreakBadge: false,
+                yearlyStreakBadge: false
             )
         ]
         for habit in defaultHabits {
@@ -186,6 +197,78 @@ class HabitViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Daily Reset
+    /// Resets the `isCompletedToday` flag for all habits if a new day has started.
+    func dailyResetIfNeeded() {
+        let todayString = dateFormatter.string(from: Date())
+
+        // For each habit that’s loaded, check if we need to reset
+        for habit in habits {
+            // Compare lastReset to today’s date
+            let habitLastResetString = habit.lastReset == nil
+                ? ""
+                : dateFormatter.string(from: habit.lastReset!)
+
+            // If we haven't reset this habit today
+            if habitLastResetString != todayString {
+                // Make a copy
+                var updatedHabit = habit
+                updatedHabit.isCompletedToday = false
+                updatedHabit.lastReset = Date()
+                // Update in Firestore
+                updateHabit(updatedHabit)
+            }
+        }
+    }
+
+    // MARK: - Toggle Habit Completion
+    /// Toggles the completion status of a habit for today and updates points and streaks accordingly.
+    /// - Parameters:
+    ///   - habit: The habit to toggle.
+    ///   - userId: The ID of the current user.
+    func toggleHabitCompletion(_ habit: Habit, userId: String) {
+        var updatedHabit = habit
+        let todayString = dateFormatter.string(from: Date())
+
+        // Handle unmarking habit as done
+        if updatedHabit.isCompletedToday {
+            updatedHabit.isCompletedToday = false
+            updatedHabit.currentStreak = max(updatedHabit.currentStreak - 1, 0) // Decrement streak by 1
+            updatedHabit.lastReset = nil // Reset the last reset date for the day
+        } else {
+            // Handle marking habit as done
+            let habitLastResetString = updatedHabit.lastReset == nil
+                ? ""
+                : dateFormatter.string(from: updatedHabit.lastReset!)
+
+            if habitLastResetString != todayString {
+                updatedHabit.currentStreak += 1 // Increment streak by 1
+                updatedHabit.lastReset = Date() // Set last reset date to today
+            }
+
+            updatedHabit.isCompletedToday = true
+        }
+
+        // Update habit in Firestore
+        updateHabit(updatedHabit)
+
+        // Handle points only when marking as done
+        if updatedHabit.isCompletedToday {
+            var totalAwardedPoints = dailyCompletionPoint + updatedHabit.currentStreak
+            if updatedHabit.currentStreak == 7 {
+                totalAwardedPoints += weeklyStreakBonus
+            }
+            if updatedHabit.currentStreak == 30 {
+                totalAwardedPoints += monthlyStreakBonus
+            }
+            if updatedHabit.currentStreak == 365 {
+                totalAwardedPoints += yearlyStreakBonus
+            }
+            awardPointsToUser(userId: userId, points: totalAwardedPoints)
+        }
+    }
+
+    
     // MARK: - Deinit
     deinit {
         listenerRegistration?.remove()

@@ -1,7 +1,7 @@
 //
 //  HabitDetailView.swift
 //  Mind Reset
-//  Objective: Serves as an individual habit page. Display specific statisics, goals and description of said habit
+//  Objective: Displays details/stats of a single habit (streak, timers, notes, etc.)
 //  Created by Andika Yudhatrisna on 1/3/25.
 //
 
@@ -10,9 +10,8 @@ import Combine
 
 struct HabitDetailView: View {
     // MARK: - The Habit Being Displayed
-    let habit: Habit
-    
-    // Access your HabitViewModel (optional)
+    @Binding var habit: Habit
+    // Access your HabitViewModel
     @EnvironmentObject var viewModel: HabitViewModel
     
     // MARK: - Dismiss Environment for Navigation Back
@@ -37,7 +36,7 @@ struct HabitDetailView: View {
     // For demonstration, track totalFocusTime
     @State private var totalFocusTime: Int = 0
     
-    // The user picks hours/minutes for a custom countdown; defaults to 0/0
+    // The user picks hours/min for a custom countdown
     @State private var selectedHours: Int = 0
     @State private var selectedMinutes: Int = 0
     
@@ -48,7 +47,7 @@ struct HabitDetailView: View {
     // Long-term goal
     @State private var longTermGoal: String = ""
     
-    // For transitions or animations if desired
+    // For transitions/animations if desired
     @Namespace private var animation
     @State private var showCharts: Bool = false
     
@@ -57,11 +56,17 @@ struct HabitDetailView: View {
     let accentCyan          = Color(red: 0, green: 1, blue: 1)
     let textFieldBackground = Color(red: 0.15, green: 0.15, blue: 0.15)
     
+    // MARK: - Local Streak Tracking (optional example)
+    @State private var localStreaks: [String: Int] = [:]
+    
+    // MARK: - Combine Subscriptions
+    @State private var cancellables: Set<AnyCancellable> = []
+    
     // MARK: - Init
-    init(habit: Habit) {
-        self.habit = habit
-        _editableTitle       = State(initialValue: habit.title)
-        _editableDescription = State(initialValue: habit.description)
+    init(habit: Binding<Habit>) {
+        self._habit = habit
+        _editableTitle       = State(initialValue: habit.wrappedValue.title)
+        _editableDescription = State(initialValue: habit.wrappedValue.description)
     }
     
     // MARK: - Body
@@ -69,13 +74,11 @@ struct HabitDetailView: View {
         ZStack {
             backgroundBlack.ignoresSafeArea()
             
-            // Wrap the main content in a ScrollView so it's scrollable if content grows.
+            // Main Scrollable Content
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 15) {
                     
-                    // Removed the spacer to bring the title area closer to the top.
-                    
-                    // MARK: - Top Bar: Back + Editable Title
+                    // Top Bar: Back + Title
                     HStack {
                         Button {
                             presentationMode.wrappedValue.dismiss()
@@ -99,7 +102,7 @@ struct HabitDetailView: View {
                         Spacer().frame(width: 40)
                     }
                     
-                    // MARK: - Editable Description
+                    // Editable Description
                     TextField("Habit Description", text: $editableDescription)
                         .multilineTextAlignment(.center)
                         .foregroundColor(.white.opacity(0.8))
@@ -110,9 +113,9 @@ struct HabitDetailView: View {
                         .background(Color.black.opacity(0.2))
                         .cornerRadius(8)
                     
-                    // MARK: - Long-Term Goal
+                    // Long-Term Goal
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Long-Term Goal")
+                        Text("Goals Related to Habit:")
                             .foregroundColor(accentCyan)
                             .font(.headline)
                         
@@ -133,19 +136,24 @@ struct HabitDetailView: View {
                                     RoundedRectangle(cornerRadius: 8)
                                         .stroke(accentCyan.opacity(0.6), lineWidth: 1)
                                 )
-                                .frame(minHeight: 60, maxHeight: 100)
+                                .frame(minHeight: 60, maxHeight: 200)
+                                .scrollContentBackground(.hidden)
                         }
                     }
                     
-                    // MARK: - Segmented Tabs for Focus / Progress / Notes
+                    // Segment Tabs for Focus / Progress / Notes
                     Picker("Tabs", selection: $selectedTabIndex) {
                         Text("Focus").tag(0)
                         Text("Progress").tag(1)
                         Text("Notes").tag(2)
                     }
                     .pickerStyle(SegmentedPickerStyle())
+                    .tint(.gray)
+                    .background(.gray)
+                    .cornerRadius(8)
+                    .padding(.horizontal, 10)
                     
-                    // Display subview based on selectedTabIndex
+                    // Subview per selectedTabIndex
                     Group {
                         switch selectedTabIndex {
                         case 0:
@@ -157,7 +165,7 @@ struct HabitDetailView: View {
                         }
                     }
                     
-                    // MARK: - Mark Habit as Done
+                    // Mark Habit as Done
                     Button {
                         toggleHabitDone()
                     } label: {
@@ -169,16 +177,36 @@ struct HabitDetailView: View {
                             .background(habit.isCompletedToday ? Color.red : .cyan)
                             .cornerRadius(8)
                     }
-                    // Keep a little extra bottom padding for easy tapping
                     .padding(.bottom, 30)
                 }
-                .padding() // general padding around content
+                .padding()
             }
         }
         .navigationBarBackButtonHidden(true)
         .navigationBarTitleDisplayMode(.inline)
-        .onDisappear(perform: saveEditsToHabit)
-        // Whenever hours/minutes change, update countdownSeconds if timer isn't running
+        .onAppear {
+            guard let userId = session.current_user?.uid else {
+                print("No authenticated user found.")
+                return
+            }
+            // 1) Fetch existing habits
+            viewModel.fetchHabits(for: userId)
+            // 2) Setup defaults if needed
+            viewModel.setupDefaultHabitsIfNeeded(for: userId)
+            
+            // Then do a daily reset check & init local streaks
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                viewModel.dailyResetIfNeeded()
+                initializeLocalStreaks()
+            }
+            
+            // Observe changes in habits to possibly re-init localStreaks
+            viewModel.$habits
+                .sink { _ in
+                    self.initializeLocalStreaks()
+                }
+                .store(in: &cancellables)
+        }
         .onChange(of: selectedHours) { _ in
             if !isTimerRunning && !isTimerPaused {
                 countdownSeconds = selectedHours * 3600 + selectedMinutes * 60
@@ -189,15 +217,20 @@ struct HabitDetailView: View {
                 countdownSeconds = selectedHours * 3600 + selectedMinutes * 60
             }
         }
+        .onDisappear {
+            saveEditsToHabit()
+        }
     }
 }
 
 // MARK: - Subviews & Timer Logic
 extension HabitDetailView {
-    // MARK: - Focus Tab
+    // Focus Tab
     private var focusTab: some View {
         VStack(spacing: 16) {
-            // Timer Circle
+            let habitID = habit.id ?? UUID().uuidString
+            let localStreakValue = localStreaks[habitID] ?? 0
+            
             ZStack {
                 Circle()
                     .stroke(accentCyan.opacity(0.2), lineWidth: 10)
@@ -211,9 +244,7 @@ extension HabitDetailView {
                     .foregroundColor(.white)
             }
             
-            // Only show if not currently running or paused
             if !isTimerRunning && !isTimerPaused {
-                // Container for Hours/Minutes
                 HStack(spacing: 20) {
                     timePickerBlock(label: "HRS", range: 0..<24, selection: $selectedHours)
                     timePickerBlock(label: "MIN", range: 0..<60, selection: $selectedMinutes)
@@ -236,7 +267,6 @@ extension HabitDetailView {
                 if !isTimerRunning && !isTimerPaused {
                     Button("Start") {
                         if countdownSeconds == 0 {
-                            // If user never scrolled pickers
                             countdownSeconds = selectedHours * 3600 + selectedMinutes * 60
                         }
                         startTimer()
@@ -255,16 +285,17 @@ extension HabitDetailView {
                 }
             }
             
-            // Intensity & Focus
+            // Display Streak Info
             HStack {
-                Text("Streak: \(habit.currentStreak)").foregroundColor(.white)
+                Text("Streak: \(max(localStreakValue, habit.currentStreak))")
+                    .foregroundColor(.white)
                 Spacer()
-                Text("Focused: \(formatTime(totalFocusTime))").foregroundColor(.white)
+                Text("Focused: \(formatTime(totalFocusTime))")
+                    .foregroundColor(.white)
             }
         }
     }
     
-    // MARK: - Smaller time picker block
     private func timePickerBlock(label: String, range: Range<Int>, selection: Binding<Int>) -> some View {
         VStack(spacing: 4) {
             Text(label)
@@ -286,7 +317,7 @@ extension HabitDetailView {
         }
     }
     
-    // MARK: - Progress Tab
+    // Progress Tab
     private var progressTab: some View {
         VStack(spacing: 16) {
             Text("Progress Tracking")
@@ -304,13 +335,13 @@ extension HabitDetailView {
             }
             
             Button("View Previous Notes") {
-                // Possibly show a detail screen
+                // Possibly show details or expanded view
             }
             .foregroundColor(accentCyan)
         }
     }
     
-    // MARK: - Notes Tab
+    // Notes Tab
     private var notesTab: some View {
         VStack(spacing: 16) {
             Text("Session Notes")
@@ -321,8 +352,13 @@ extension HabitDetailView {
                 .foregroundColor(.white)
                 .background(textFieldBackground)
                 .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(accentCyan.opacity(0.6), lineWidth: 1)
+                )
                 .frame(minHeight: 80)
                 .padding(.horizontal, 4)
+                .scrollContentBackground(.hidden)
             
             Button("Save Note") {
                 saveNote()
@@ -344,6 +380,7 @@ extension HabitDetailView {
                         .background(textFieldBackground)
                         .cornerRadius(8)
                         .padding(.vertical, 2)
+                        .scrollContentBackground(.hidden)
                 }
             }
         }
@@ -372,7 +409,7 @@ extension HabitDetailView {
     }
     
     private func pauseTimer() {
-        guard isTimerRunning, !isTimerPaused else { return }
+        guard isTimerRunning && !isTimerPaused else { return }
         isTimerPaused = true
         timer?.invalidate()
     }
@@ -397,21 +434,28 @@ extension HabitDetailView {
 // MARK: - Habit Update & Edits
 extension HabitDetailView {
     private func toggleHabitDone() {
-        guard let userId = session.current_user?.uid else {
-            print("Error: Unable to find userId for habit.")
+        guard let habitID = habit.id else { return }
+        let localVal = localStreaks[habitID] ?? habit.currentStreak
+        
+        if habit.isCompletedToday {
+            // Unmark as done
+            localStreaks[habitID] = max(localVal - 1, 0)
+        } else {
+            // Mark as done
+            localStreaks[habitID] = localVal + 1
+        }
+        
+        // Actually update via the ViewModel
+        viewModel.toggleHabitCompletion(habit, userId: habit.ownerId)
+    }
+
+    private func saveEditsToHabit() {
+        guard editableTitle != habit.title || editableDescription != habit.description else {
             return
         }
-        viewModel.toggleHabitCompletion(habit, userId: userId)
-    }
-    
-    private func saveEditsToHabit() {
-        guard editableTitle != habit.title || editableDescription != habit.description else { return }
-        
-        var updatedHabit = habit
-        updatedHabit.title       = editableTitle
-        updatedHabit.description = editableDescription
-        
-        viewModel.updateHabit(updatedHabit)
+        habit.title       = editableTitle
+        habit.description = editableDescription
+        viewModel.updateHabit(habit)
     }
 }
 
@@ -421,6 +465,21 @@ extension HabitDetailView {
         guard !sessionNotes.isEmpty else { return }
         pastSessionNotes.insert(sessionNotes, at: 0)
         sessionNotes = ""
+    }
+}
+
+// MARK: - Local Streak Initialization
+extension HabitDetailView {
+    private func initializeLocalStreaks() {
+        guard let habitID = habit.id else { return }
+        
+        // If lastReset was today, do nothing
+        if let lastReset = habit.lastReset, Calendar.current.isDateInToday(lastReset) {
+            // no new day needed
+        } else {
+            // New day => set localStreaks to max(current local, habit.currentStreak)
+            localStreaks[habitID] = max(localStreaks[habitID] ?? 0, habit.currentStreak)
+        }
     }
 }
 
@@ -446,26 +505,34 @@ fileprivate struct HolographicButtonStyle: ButtonStyle {
 struct HabitDetailView_Previews: PreviewProvider {
     static var previews: some View {
         let sampleHabit = Habit(
+            id: "sampleHabitId",
             title: "Daily Coding",
             description: "Review Swift concepts",
             startDate: Date(),
-            ownerId: "testOwner"
+            ownerId: "testOwner",
+            isCompletedToday: true,
+            lastReset: nil,
+            points: 100,
+            currentStreak: 5,
+            longestStreak: 10,
+            weeklyStreakBadge: false,
+            monthlyStreakBadge: false,
+            yearlyStreakBadge: false
+        )
+        
+        // Create a Binding for the sample habit
+        let habitBinding = Binding<Habit>(
+            get: { sampleHabit },
+            set: { newValue in
+                // For preview purposes, no-op
+                print("Habit updated in preview.")
+            }
         )
         
         NavigationView {
-            HabitDetailView(habit: sampleHabit)
+            HabitDetailView(habit: habitBinding)
                 .environmentObject(HabitViewModel())
         }
         .preferredColorScheme(.dark)
     }
 }
-
-
-
-
-
-
-
-
-
-

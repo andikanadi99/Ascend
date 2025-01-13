@@ -1,10 +1,8 @@
 //
 //  Habit.swift
 //  Mind Reset
-//  Class definition of a Habit on MindReset
-//  Created by Andika Yudhatrisna on 12/1/24.
+//  Defines the data model for habits.
 //
-
 import Foundation
 import FirebaseFirestore
 
@@ -13,29 +11,25 @@ struct Habit: Identifiable, Codable {
     var title: String
     var description: String
     var startDate: Date
-    var ownerId: String
-
+    var ownerId: String            // Must match the authenticated user’s UID
+    
     // Tracks if the habit is done for the current day
     var isCompletedToday: Bool = false
 
-    // (optional) Last date we marked it undone
+    // The last date we reset this habit (could be used to check if new day has started)
     var lastReset: Date? = nil
 
-    /// The total points accumulated for this habit
+    // Points associated with this habit
     var points: Int = 0
 
-    /// The current streak count for this habit
+    // Current consecutive streak
     var currentStreak: Int = 0
 
-    /// The longest streak ever achieved for this habit
+    // The longest consecutive streak
     var longestStreak: Int = 0
 
-    /// Indicates if the user is currently on a 7-day streak
+    // Badges: Weekly, Monthly, Yearly
     var weeklyStreakBadge: Bool = false
-
-    /// Indicates if the user is currently on a 30-day streak
     var monthlyStreakBadge: Bool = false
-
-    /// Indicates if the user is currently on a 365-day streak
     var yearlyStreakBadge: Bool = false
 }

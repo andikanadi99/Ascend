@@ -7,6 +7,7 @@
 
 import SwiftUI
 import FirebaseAuth
+
 @available(iOS 16.0, *)
 struct AddHabitView: View {
     @Environment(\.presentationMode) var presentationMode
@@ -59,9 +60,6 @@ struct AddHabitView: View {
                         .padding()
                         .background(textFieldBackground)
                         .cornerRadius(8)
-                        .onChange(of: habitTitle) { _, _ in
-                            session.auth_error = nil
-                        }
                     }
                     
                     // MARK: Habit Description Field
@@ -82,10 +80,8 @@ struct AddHabitView: View {
                         .padding()
                         .background(textFieldBackground)
                         .cornerRadius(8)
-                        .onChange(of: habitDescription) { _, _ in
-                            session.auth_error = nil
-                        }
                     }
+                    
                     // MARK: Start Date Picker
                     VStack(alignment: .leading, spacing: 5) {
                        Text("Start Date")
@@ -99,12 +95,12 @@ struct AddHabitView: View {
                        )
                        .datePickerStyle(WheelDatePickerStyle())
                        .padding()
-                       .background(accentColor.opacity(0.8)) //
+                       .background(accentColor.opacity(0.8))
                        .cornerRadius(8)
                        .accentColor(accentColor)
-                   }
+                    }
                     
-                    // MARK: Target Field
+                    // MARK: Target Field (optional usage)
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Target")
                             .foregroundColor(accentColor)
@@ -122,12 +118,9 @@ struct AddHabitView: View {
                         .padding()
                         .background(textFieldBackground)
                         .cornerRadius(8)
-                        .onChange(of: target) { _, _ in
-                            session.auth_error = nil
-                        }
                     }
                     
-                    // MARK: Reminder Toggle
+                    // MARK: Reminder Toggle (optional usage)
                     VStack(alignment: .leading, spacing: 5) {
                         Toggle(isOn: $setReminder) {
                             Text("Reminder")
@@ -151,9 +144,7 @@ struct AddHabitView: View {
                     .cornerRadius(8)
                     
                     // MARK: Create Habit Button
-                    Button(action: {
-                        createHabit()
-                    }) {
+                    Button(action: createHabit) {
                         Text("Create Habit")
                             .foregroundColor(.black)
                             .fontWeight(.bold)
@@ -165,7 +156,7 @@ struct AddHabitView: View {
                     .padding(.top, 10)
                     .disabled(habitTitle.isEmpty || habitDescription.isEmpty)
                     
-                    // Cancel Button / or close view
+                    // Cancel Button
                     Button(action: {
                         presentationMode.wrappedValue.dismiss()
                     }) {
@@ -185,7 +176,7 @@ struct AddHabitView: View {
     // MARK: - Create Habit Action
     private func createHabit() {
         guard let userId = session.current_user?.uid else {
-            print("No authenticated user found, cannot add habit.")
+            print("No authenticated user found; cannot add habit.")
             return
         }
         
@@ -199,15 +190,12 @@ struct AddHabitView: View {
         // Insert into Firestore
         viewModel.addHabit(newHabit)
         
-        // Optionally handle target or reminderTime if you plan to store them in Firestore:
-        // e.g., you might extend your Habit model or do additional logic
-        
-        // Close this view
+        // Close this sheet
         presentationMode.wrappedValue.dismiss()
     }
 }
 
-//Preview
+// MARK: - Preview
 struct AddHabitView_Previews: PreviewProvider {
     static var previews: some View {
         // Mock dependencies

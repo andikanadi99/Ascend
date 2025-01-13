@@ -6,14 +6,16 @@
 //
 
 import SwiftUI
-import Firebase 
+import Firebase
 import FirebaseCore
 import FirebaseFirestore
 
 @main
 struct Mind_ResetApp: App {
-    // Instantiate SessionStore as a StateObject
+    // MARK: - State Objects
     @StateObject var session = SessionStore()
+    @StateObject var habitViewModel = HabitViewModel()
+    
     let persistenceController = PersistenceController.shared
 
     init() {
@@ -24,12 +26,12 @@ struct Mind_ResetApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                // Inject your Core Data context
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
-                .environmentObject(session) // Inject SessionStore into the environment
+                // Inject SessionStore
+                .environmentObject(session)
+                // Inject HabitViewModel
+                .environmentObject(habitViewModel)
         }
     }
 }
-
-
-
-

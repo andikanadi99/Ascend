@@ -1,7 +1,10 @@
 //
 //  HabitTrackerView.swift
 //  Mind Reset
-//  Objective: Serves as the main user interface for the habit-tracking feature of the app. It displays a list of habits, allows users to add new habits, mark habits as completed, and delete habits.
+//  Objective: Serves as the main user interface for the habit-tracking feature of the app.
+//  Displays a list of habits, allows users to add new habits, mark them as completed,
+//  and delete them.
+//
 //  Created by Andika Yudhatrisna on 12/1/24.
 //
 
@@ -11,35 +14,31 @@ import Combine
 
 @available(iOS 16.0, *)
 struct HabitTrackerView: View {
-    // MARK: - State & Environment
-    @StateObject private var viewModel: HabitViewModel
+    // MARK: - Environment Objects
+    @EnvironmentObject var viewModel: HabitViewModel
     @EnvironmentObject var session: SessionStore
-    
+
     @State private var showingAddHabit = false
-    
+
     // Dark theme & accent
     let backgroundBlack = Color.black
-    let accentCyan      = Color(red: 0, green: 1, blue: 1) // #00FFFF
+    let accentCyan      = Color(red: 0, green: 1, blue: 1)
 
     // Placeholder daily quote
     let dailyQuote = "Focus on what matters today."
-    
-    // Placeholder for total sessions
-    @State private var totalSessions: Int = 0
+
+    // Tracks how many habits were finished today
+    @State private var habitsFinishedToday: Int = 0
 
     // MARK: - Combine Cancellables
     @State private var cancellables = Set<AnyCancellable>()
-    
-    // MARK: - Initializer for Dependency Injection
-    init(viewModel: HabitViewModel = HabitViewModel()) {
-        _viewModel = StateObject(wrappedValue: viewModel)
-    }
 
     var body: some View {
-        NavigationView { // Wrapped in NavigationView to enable navigation links
+        NavigationView {
             ZStack {
-                backgroundBlack.ignoresSafeArea()
-                
+                backgroundBlack
+                    .ignoresSafeArea()
+
                 VStack(alignment: .leading, spacing: 16) {
                     // Personalized Greeting
                     Text(greetingMessage)
@@ -47,30 +46,33 @@ struct HabitTrackerView: View {
                         .fontWeight(.heavy)
                         .foregroundColor(.white)
                         .shadow(color: .white.opacity(0.8), radius: 4)
-                    
-                    // Daily Motivational Quote
+
+                    // Daily Quote
                     Text(dailyQuote)
                         .font(.subheadline)
                         .foregroundColor(accentCyan)
 
-                    // Total Sessions
+                    // Habits Finished Today
                     HStack {
-                        Text("Total Sessions: \(totalSessions)")
+                        Text("Habits Finished Today: \(habitsFinishedToday)")
                             .foregroundColor(.white)
                     }
                     .padding(.vertical, 10)
-                    
+
                     // Habit List
                     ScrollView {
                         LazyVStack(spacing: 12) {
-                            ForEach(viewModel.habits) { habit in
-                                // Use NavigationLink to navigate to HabitDetailView
+                            ForEach(viewModel.habits.indices, id: \.self) { index in
+                                let habit = viewModel.habits[index]
+                                
+                                // Navigate to detail screen
                                 NavigationLink(
-                                    destination: HabitDetailView(habit: habit)
+                                    destination: HabitDetailView(habit: $viewModel.habits[index])
                                 ) {
-                                    // Our row item
+                                    // Show currentStreak from the habit model directly
                                     HabitRow(
                                         habit: habit,
+                                        currentStreak: habit.currentStreak,
                                         accentCyan: accentCyan,
                                         onDelete: { deletedHabit in
                                             deleteHabit(deletedHabit)
@@ -84,37 +86,36 @@ struct HabitTrackerView: View {
                         }
                         .padding(.top, 10)
                     }
-                    
+
                     Spacer()
                 }
                 .padding()
-                // **Important**: Check user doc for defaultHabitsCreated & fetch existing
                 .onAppear {
                     guard let userId = session.current_user?.uid else {
-                        print("No authenticated user found.")
+                        print("No authenticated user found; cannot fetch habits.")
                         return
                     }
                     // 1) Fetch existing habits
                     viewModel.fetchHabits(for: userId)
-                    // 2) Setup default habits if needed (only once)
+                    // 2) Setup default habits if needed
                     viewModel.setupDefaultHabitsIfNeeded(for: userId)
-                    
-                    // Then do a daily reset check
+
+                    // 3) Perform a daily reset check after a short delay
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         viewModel.dailyResetIfNeeded()
                     }
-                    
-                    // Update total sessions based on habits
-                    updateTotalSessions()
-                    
-                    // Observe changes in habits to update totalSessions
+
+                    // Update habitsFinishedToday
+                    updateHabitsFinishedToday()
+
+                    // Observe changes in habits to re-calc how many finished
                     viewModel.$habits
                         .sink { _ in
-                            updateTotalSessions()
+                            updateHabitsFinishedToday()
                         }
                         .store(in: &cancellables)
                 }
-                
+
                 // Floating + button for adding new habits
                 VStack {
                     Spacer()
@@ -124,8 +125,11 @@ struct HabitTrackerView: View {
                             showingAddHabit = true
                         } label: {
                             Image(systemName: "plus")
-                                .frame(width: 50, height: 50)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 20, height: 20)
                                 .foregroundColor(.black)
+                                .padding()
                                 .background(accentCyan)
                                 .clipShape(Circle())
                                 .shadow(color: accentCyan.opacity(0.6), radius: 5)
@@ -137,6 +141,7 @@ struct HabitTrackerView: View {
             .sheet(isPresented: $showingAddHabit) {
                 AddHabitView(viewModel: viewModel)
                     .environmentObject(session)
+                    .environmentObject(viewModel)
             }
             .navigationBarHidden(true)
         }
@@ -147,58 +152,59 @@ struct HabitTrackerView: View {
         let userName = session.current_user?.email ?? "User"
         return "Welcome back, let’s get started!"
     }
-    
+
+    // MARK: - Update Habits Finished Today
+    private func updateHabitsFinishedToday() {
+        // Count how many habits have isCompletedToday == true
+        habitsFinishedToday = viewModel.habits.filter { $0.isCompletedToday }.count
+    }
+
     // MARK: - Toggle Completion
     private func toggleHabitCompletion(_ habit: Habit) {
-        guard let userId = session.current_user?.uid else { return }
-        viewModel.toggleHabitCompletion(habit, userId: userId)
+        viewModel.toggleHabitCompletion(habit, userId: habit.ownerId)
     }
-    
+
     // MARK: - Delete Habit
     private func deleteHabit(_ habit: Habit) {
         viewModel.deleteHabit(habit)
-    }
-    
-    // MARK: - Update Total Sessions
-    private func updateTotalSessions() {
-        // Assuming totalSessions is the count of habits where isCompletedToday is true
-        totalSessions = viewModel.habits.filter { $0.isCompletedToday }.count
     }
 }
 
 // MARK: - HabitRow
 struct HabitRow: View {
     let habit: Habit
+    let currentStreak: Int
     let accentCyan: Color
     let onDelete: (Habit) -> Void
     let onToggleCompletion: () -> Void
-    
+
     var body: some View {
         HStack {
+            // Left side: Title + Description + Streak info
             VStack(alignment: .leading, spacing: 4) {
                 // Title
                 Text(habit.title)
                     .font(.headline)
                     .foregroundColor(.white)
-                
+
                 // Description
                 Text(habit.description)
                     .font(.subheadline)
                     .foregroundColor(.white.opacity(0.7))
-                
-                // Streak Information
+
+                // Streak Info
                 HStack(spacing: 8) {
-                    // Current Streak
-                    Text("Streak: \(habit.currentStreak)")
+                    // Use whichever is greater between habit.currentStreak or the param
+                    Text("Current Streak: \(max(currentStreak, habit.currentStreak))")
                         .font(.caption)
-                        .foregroundColor(.white)
-                    
+                        .foregroundColor(habit.currentStreak > 0 ? .green : .white)
+
                     // Longest Streak
-                    Text("Longest: \(habit.longestStreak)")
+                    Text("Longest Streak: \(habit.longestStreak)")
                         .font(.caption)
-                        .foregroundColor(.white)
-                    
-                    // Badges
+                        .foregroundColor(habit.longestStreak > 0 ? .green : .white)
+
+                    // Possibly show badges
                     if habit.weeklyStreakBadge {
                         StreakBadge(text: "7-Day", color: .green)
                     }
@@ -211,31 +217,28 @@ struct HabitRow: View {
                 }
             }
             Spacer()
-            
-            // Toggle Completion Button
-            Button(action: {
-                onToggleCompletion()
-            }) {
+
+            // Toggle Completion
+            Button(action: onToggleCompletion) {
                 if habit.isCompletedToday {
-                    Text("✓")
+                    Image(systemName: "checkmark.circle.fill")
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundColor(.green)
                         .frame(width: 30, height: 30)
-                        .background(Color.green)
+                        .background(Color.green.opacity(0.2))
                         .clipShape(Circle())
                 } else {
-                    Text("+")
+                    Image(systemName: "circle")
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundColor(accentCyan)
                         .frame(width: 30, height: 30)
-                        .background(accentCyan)
+                        .background(accentCyan.opacity(0.2))
                         .clipShape(Circle())
                 }
             }
             .buttonStyle(PlainButtonStyle())
-            .padding(.trailing, 8)
-            
-            // Trash icon
+
+            // Trash button
             Button {
                 onDelete(habit)
             } label: {
@@ -255,7 +258,6 @@ struct HabitRow: View {
     }
 }
 
-// MARK: - StreakBadge Component
 struct StreakBadge: View {
     let text: String
     let color: Color
@@ -274,13 +276,11 @@ struct StreakBadge: View {
 // MARK: - Preview
 struct HabitTrackerView_Previews: PreviewProvider {
     static var previews: some View {
-        // Create a mock SessionStore
+        // Mock dependencies
         let session = SessionStore()
-        
-        // Create a mock HabitViewModel with sample habits
         let mockViewModel = HabitViewModel()
-        
-        // Sample Habits with corrected parameter order
+
+        // Create sample habits
         let sampleHabit1 = Habit(
             id: "1",
             title: "Daily Coding",
@@ -296,7 +296,6 @@ struct HabitTrackerView_Previews: PreviewProvider {
             monthlyStreakBadge: false,
             yearlyStreakBadge: false
         )
-        
         let sampleHabit2 = Habit(
             id: "2",
             title: "Meditation",
@@ -312,13 +311,13 @@ struct HabitTrackerView_Previews: PreviewProvider {
             monthlyStreakBadge: true,
             yearlyStreakBadge: false
         )
-        
-        // Assign sample habits to the mock view model
+
         mockViewModel.habits = [sampleHabit1, sampleHabit2]
-        
+
         return NavigationView {
-            HabitTrackerView(viewModel: mockViewModel)
+            HabitTrackerView()
                 .environmentObject(session)
+                .environmentObject(mockViewModel)
         }
         .preferredColorScheme(.dark)
     }

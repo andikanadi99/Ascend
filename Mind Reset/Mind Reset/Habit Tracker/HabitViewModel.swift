@@ -1,80 +1,130 @@
 //
 //  HabitViewModel.swift
 //  Mind Reset
-//  Habit model for the habit tracker on the app.
-//  Created by Andika Yudhatrisna on 12/1/24.
+//  Manages the fetching and updating of Habit data in Firestore.
 //
 
 import Foundation
 import FirebaseFirestore
 import Combine
+import FirebaseAuth           // only if you want to guard ownerId == currentUser?.uid
 
 class HabitViewModel: ObservableObject {
+    // MARK: - Published Properties
     @Published var habits: [Habit] = []
+    
+    // MARK: - Firestore & Cancellations
     private var db = Firestore.firestore()
     private var listenerRegistration: ListenerRegistration?
-    
+
+    // Optional for Combine
+    private var cancellables = Set<AnyCancellable>()
+
     // MARK: - Scoring System Constants
     private let dailyCompletionPoint = 1
-    private let weeklyStreakBonus = 10
-    private let monthlyStreakBonus = 50
-    private let yearlyStreakBonus = 100 // Example value
-    
+    private let weeklyStreakBonus    = 10
+    private let monthlyStreakBonus   = 50
+    private let yearlyStreakBonus    = 100
+
     // MARK: - Date Formatter
-    // Ensures only day, month, year are compared
-    private var dateFormatter: DateFormatter = {
+    /// A simple date-only formatter (YYYY-MM-DD) used to compare lastReset with today's date.
+    private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd" // Adjust as needed
+        formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
-    
+
+    // MARK: - Lifecycle
+    init() {
+        // Optionally perform an initial fetch, or nothing.
+        // e.g. fetchHabits(for: someUserId) ...
+    }
+
+    deinit {
+        listenerRegistration?.remove()
+    }
+
     // MARK: - Fetch Habits
+    /// Listens (in real-time) for habits in Firestore that belong to the given userId.
     func fetchHabits(for userId: String) {
+        // If there's an existing listener, remove it before adding a new one
+        listenerRegistration?.remove()
+
         listenerRegistration = db.collection("habits")
             .whereField("ownerId", isEqualTo: userId)
             .order(by: "startDate", descending: true)
-            .addSnapshotListener { [weak self] (querySnapshot, error) in
+            .addSnapshotListener { [weak self] querySnapshot, error in
+                guard let self = self else { return }
                 if let error = error {
                     print("Error fetching habits: \(error)")
                     return
                 }
-                self?.habits = querySnapshot?.documents.compactMap { document in
-                    try? document.data(as: Habit.self)
+                // Convert the snapshot into an array of Habit
+                self.habits = querySnapshot?.documents.compactMap { doc in
+                    try? doc.data(as: Habit.self)
                 } ?? []
             }
     }
 
     // MARK: - Add New Habit
+    /// Creates a new habit in Firestore. Must have `habit.ownerId` == the user's UID.
     func addHabit(_ habit: Habit) {
+        // Optional check that the habit.ownerId matches the current user (if you wish):
+        /*
+        guard let currentUid = Auth.auth().currentUser?.uid,
+              habit.ownerId == currentUid else {
+            print("Refusing to add Habit, because ownerId != current user's UID.")
+            return
+        }
+        */
+
         do {
+            // The `from: habit` uses Firestore's Codable support
             _ = try db.collection("habits").addDocument(from: habit)
+            print("Added habit titled '\(habit.title)' for user: \(habit.ownerId)")
         } catch {
-            print("Error adding habit: \(error)")
+            print("Error adding habit: \(error.localizedDescription)")
         }
     }
 
     // MARK: - Update Existing Habit
+    /// Overwrites habit data in Firestore.
     func updateHabit(_ habit: Habit) {
-        guard let id = habit.id else { return }
+        guard let id = habit.id else {
+            print("updateHabit: No ID found on Habit. Skipping.")
+            return
+        }
+        // Optional check that the habit.ownerId matches the current user:
+        /*
+        guard let currentUid = Auth.auth().currentUser?.uid,
+              habit.ownerId == currentUid else {
+            print("Refusing to update Habit, because ownerId != current user's UID.")
+            return
+        }
+        */
+
         do {
             try db.collection("habits").document(id).setData(from: habit)
+            print("Updated habit ID: \(id) titled '\(habit.title)'")
         } catch {
-            print("Error updating habit: \(error)")
+            print("Error updating habit: \(error.localizedDescription)")
         }
     }
 
     // MARK: - Delete Habit
+    /// Deletes a habit from Firestore and removes it locally.
     func deleteHabit(_ habit: Habit) {
         guard let id = habit.id else {
-            print("Habit ID is nil, cannot delete.")
+            print("deleteHabit: Habit ID is nil; cannot delete.")
             return
         }
         db.collection("habits").document(id).delete { [weak self] error in
-            if let error = error {
-                print("Error deleting habit: \(error)")
+            if let err = error {
+                print("Error deleting habit: \(err)")
             } else {
                 print("Successfully deleted habit with ID: \(id)")
                 DispatchQueue.main.async {
+                    // Remove from local array
                     self?.habits.removeAll { $0.id == id }
                 }
             }
@@ -82,13 +132,15 @@ class HabitViewModel: ObservableObject {
     }
 
     // MARK: - Award Points
+    /// Adds `points` to a user's totalPoints in the "users" collection.
     func awardPointsToUser(userId: String, points: Int) {
         let userRef = db.collection("users").document(userId)
-        
         db.runTransaction({ (transaction, errorPointer) -> Any? in
             do {
-                let userSnapshot = try transaction.getDocument(userRef)
-                let currentPoints = userSnapshot.data()?["totalPoints"] as? Int ?? 0
+                // Try to get the user doc
+                let userSnap = try transaction.getDocument(userRef)
+                let currentPoints = userSnap.data()?["totalPoints"] as? Int ?? 0
+                // Add the new points
                 transaction.updateData(["totalPoints": currentPoints + points], forDocument: userRef)
             } catch {
                 if let errPointer = errorPointer {
@@ -98,179 +150,126 @@ class HabitViewModel: ObservableObject {
             }
             return nil
         }) { (result, error) in
-            if let error = error {
-                print("Error awarding points: \(error)")
+            if let err = error {
+                print("Error awarding points: \(err)")
             } else {
-                print("Points awarded successfully.")
+                print("Points awarded successfully: +\(points)")
             }
         }
     }
 
     // MARK: - Default Habits Setup
-
-    /// Checks the user doc for `defaultHabitsCreated`.
-    /// If false, inserts default habits and sets it to true.
+    /// Checks if the user doc has `defaultHabitsCreated == true`. If not, it creates the 3 standard defaults.
     func setupDefaultHabitsIfNeeded(for userId: String) {
         let userRef = db.collection("users").document(userId)
-
-        userRef.getDocument { [weak self] document, error in
+        userRef.getDocument { [weak self] docSnapshot, error in
             if let error = error {
                 print("Error fetching user doc: \(error)")
                 return
             }
-            guard let doc = document, doc.exists else {
-                print("No user doc found; cannot set up default habits.")
+            guard let doc = docSnapshot, doc.exists else {
+                print("No user doc found for \(userId); can't set up default habits.")
                 return
             }
-            let data = doc.data()
-            let defaultsCreated = data?["defaultHabitsCreated"] as? Bool ?? false
+            let data = doc.data() ?? [:]
+            let defaultsCreated = data["defaultHabitsCreated"] as? Bool ?? false
 
             if !defaultsCreated {
-                // Insert the 3 default habits
+                print("No default habits yet; creating defaults for \(userId)...")
                 self?.createDefaultHabits(for: userId)
 
-                // Update `defaultHabitsCreated` to true
-                userRef.updateData(["defaultHabitsCreated": true]) { updateError in
-                    if let e = updateError {
-                        print("Error updating user doc with defaultHabitsCreated: \(e)")
+                // Mark the user doc so we do not re-create next time
+                userRef.updateData(["defaultHabitsCreated": true]) { err in
+                    if let e = err {
+                        print("Error updating defaultHabitsCreated: \(e)")
                     } else {
-                        print("defaultHabitsCreated set to true for user: \(userId)")
+                        print("Default habits set for user: \(userId)")
                     }
                 }
             } else {
-                print("Default habits already created for user: \(userId). Doing nothing.")
+                print("Default habits already exist for user \(userId); doing nothing.")
             }
         }
     }
 
-    /// Inserts the three standard default habits for a new user.
+    /// Creates the 3 standard default habits for a user’s first time.
     private func createDefaultHabits(for userId: String) {
-        let defaultHabits = [
-            Habit(
-                id: nil,
-                title: "Meditation",
-                description: "Spend 10 minutes meditating",
-                startDate: Date(),
-                ownerId: userId,
-                isCompletedToday: false,
-                lastReset: nil,
-                points: 0,
-                currentStreak: 0,
-                longestStreak: 0,
-                weeklyStreakBadge: false,
-                monthlyStreakBadge: false,
-                yearlyStreakBadge: false
-            ),
-            Habit(
-                id: nil,
-                title: "Exercise",
-                description: "Do some physical activity",
-                startDate: Date(),
-                ownerId: userId,
-                isCompletedToday: false,
-                lastReset: nil,
-                points: 0,
-                currentStreak: 0,
-                longestStreak: 0,
-                weeklyStreakBadge: false,
-                monthlyStreakBadge: false,
-                yearlyStreakBadge: false
-            ),
-            Habit(
-                id: nil,
-                title: "Journaling",
-                description: "Write down your thoughts",
-                startDate: Date(),
-                ownerId: userId,
-                isCompletedToday: false,
-                lastReset: nil,
-                points: 0,
-                currentStreak: 0,
-                longestStreak: 0,
-                weeklyStreakBadge: false,
-                monthlyStreakBadge: false,
-                yearlyStreakBadge: false
-            )
+        let defaultHabits: [Habit] = [
+            Habit(title: "Meditation",
+                  description: "Spend 10 minutes meditating",
+                  startDate: Date(),
+                  ownerId: userId),
+            Habit(title: "Exercise",
+                  description: "Do some physical activity",
+                  startDate: Date(),
+                  ownerId: userId),
+            Habit(title: "Journaling",
+                  description: "Write down your thoughts",
+                  startDate: Date(),
+                  ownerId: userId)
         ]
-        for habit in defaultHabits {
-            addHabit(habit)
+
+        for newHabit in defaultHabits {
+            addHabit(newHabit)
         }
     }
 
     // MARK: - Daily Reset
-    /// Resets the `isCompletedToday` flag for all habits if a new day has started.
+    /// Clears `isCompletedToday` if a new calendar day has started.
     func dailyResetIfNeeded() {
-        let todayString = dateFormatter.string(from: Date())
-
-        // For each habit that’s loaded, check if we need to reset
-        for habit in habits {
-            // Compare lastReset to today’s date
-            let habitLastResetString = habit.lastReset == nil
+        let todayStr = dateFormatter.string(from: Date())
+        for var habit in habits {
+            let lastResetStr = habit.lastReset == nil
                 ? ""
                 : dateFormatter.string(from: habit.lastReset!)
 
-            // If we haven't reset this habit today
-            if habitLastResetString != todayString {
-                // Make a copy
-                var updatedHabit = habit
-                updatedHabit.isCompletedToday = false
-                updatedHabit.lastReset = Date()
-                // Update in Firestore
-                updateHabit(updatedHabit)
+            if lastResetStr != todayStr {
+                habit.isCompletedToday = false
+                habit.lastReset        = Date()
+                updateHabit(habit)
             }
         }
     }
 
-    // MARK: - Toggle Habit Completion
-    /// Toggles the completion status of a habit for today and updates points and streaks accordingly.
-    /// - Parameters:
-    ///   - habit: The habit to toggle.
-    ///   - userId: The ID of the current user.
+    // MARK: - Toggle Completion
+    /// Toggles the habit's completion status for the day, updates Firestore, and handles streak logic.
     func toggleHabitCompletion(_ habit: Habit, userId: String) {
         var updatedHabit = habit
-        let todayString = dateFormatter.string(from: Date())
+        let todayStr = dateFormatter.string(from: Date())
+        let lastResetStr = updatedHabit.lastReset == nil
+            ? ""
+            : dateFormatter.string(from: updatedHabit.lastReset!)
 
-        // Handle unmarking habit as done
         if updatedHabit.isCompletedToday {
+            // Unmark as done
             updatedHabit.isCompletedToday = false
-            updatedHabit.currentStreak = max(updatedHabit.currentStreak - 1, 0) // Decrement streak by 1
-            updatedHabit.lastReset = nil // Reset the last reset date for the day
+            updatedHabit.currentStreak = max(updatedHabit.currentStreak - 1, 0)
+            updatedHabit.lastReset = nil
         } else {
-            // Handle marking habit as done
-            let habitLastResetString = updatedHabit.lastReset == nil
-                ? ""
-                : dateFormatter.string(from: updatedHabit.lastReset!)
+            // Mark as done
+            if lastResetStr != todayStr {
+                updatedHabit.currentStreak += 1
+                updatedHabit.lastReset = Date()
 
-            if habitLastResetString != todayString {
-                updatedHabit.currentStreak += 1 // Increment streak by 1
-                updatedHabit.lastReset = Date() // Set last reset date to today
+                // Possibly update longest streak
+                if updatedHabit.currentStreak > updatedHabit.longestStreak {
+                    updatedHabit.longestStreak = updatedHabit.currentStreak
+                }
             }
-
             updatedHabit.isCompletedToday = true
         }
 
-        // Update habit in Firestore
+        // Write changes to Firestore
         updateHabit(updatedHabit)
 
-        // Handle points only when marking as done
+        // If newly marked as done, handle awarding points
         if updatedHabit.isCompletedToday {
-            var totalAwardedPoints = dailyCompletionPoint + updatedHabit.currentStreak
-            if updatedHabit.currentStreak == 7 {
-                totalAwardedPoints += weeklyStreakBonus
-            }
-            if updatedHabit.currentStreak == 30 {
-                totalAwardedPoints += monthlyStreakBonus
-            }
-            if updatedHabit.currentStreak == 365 {
-                totalAwardedPoints += yearlyStreakBonus
-            }
-            awardPointsToUser(userId: userId, points: totalAwardedPoints)
-        }
-    }
+            var totalPoints = dailyCompletionPoint + updatedHabit.currentStreak
+            if updatedHabit.currentStreak == 7   { totalPoints += weeklyStreakBonus }
+            if updatedHabit.currentStreak == 30  { totalPoints += monthlyStreakBonus }
+            if updatedHabit.currentStreak == 365 { totalPoints += yearlyStreakBonus }
 
-    
-    // MARK: - Deinit
-    deinit {
-        listenerRegistration?.remove()
+            awardPointsToUser(userId: userId, points: totalPoints)
+        }
     }
 }

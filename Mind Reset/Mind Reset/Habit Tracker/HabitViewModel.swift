@@ -3,7 +3,6 @@
 //  Mind Reset
 //  Manages the fetching and updating of Habit data in Firestore.
 //
-
 import Foundation
 import FirebaseFirestore
 import FirebaseAuth
@@ -14,15 +13,16 @@ class HabitViewModel: ObservableObject {
     @Published var habits: [Habit] = []
     @Published var errorMessage: String? = nil
     
-    // MARK: - Local Streak Dictionary
-    // Key: habit.id, Value: local 'currentStreak'
+    // MARK: - Local Streak Dictionaries
+    // Key: habitID, Value: local "currentStreak" or "longestStreak"
     @Published var localStreaks: [String: Int] = [:]
+    @Published var localLongestStreaks: [String: Int] = [:]
 
     // MARK: - Firestore & Listener
     private var db = Firestore.firestore()
     private var listenerRegistration: ListenerRegistration?
 
-    // Combine (optional)
+    // For Combine (optional)
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Scoring System Constants
@@ -40,7 +40,7 @@ class HabitViewModel: ObservableObject {
 
     // MARK: - Lifecycle
     init() {
-        // Possibly do nothing until a user ID is known
+        // Optionally do nothing until user logs in
     }
 
     deinit {
@@ -49,6 +49,7 @@ class HabitViewModel: ObservableObject {
 
     // MARK: - Fetch Habits
     func fetchHabits(for userId: String) {
+        // Remove any previous listener
         listenerRegistration?.remove()
 
         listenerRegistration = db.collection("habits")
@@ -61,7 +62,7 @@ class HabitViewModel: ObservableObject {
                     self.errorMessage = "Failed to fetch habits."
                     return
                 }
-                // Convert snapshot into [Habit]
+
                 let fetched: [Habit] = querySnapshot?.documents.compactMap { doc in
                     try? doc.data(as: Habit.self)
                 } ?? []
@@ -69,19 +70,20 @@ class HabitViewModel: ObservableObject {
                 // Update local array
                 self.habits = fetched
 
-                // For each habit, also sync localStreaks if needed
+                // Sync localStreaks & localLongestStreaks if they’re behind
                 for habit in fetched {
                     guard let habitID = habit.id else { continue }
-                    // If there's no localStreak, or localStreak is out-of-date,
-                    // we can sync from the Firestore-provided habit
-                    let currentLocal = self.localStreaks[habitID] ?? 0
-                    if habit.currentStreak > currentLocal {
-                        // Overwrite the local with the higher official streak
+
+                    // currentStreak
+                    let localCurrent = self.localStreaks[habitID] ?? 0
+                    if habit.currentStreak > localCurrent {
                         self.localStreaks[habitID] = habit.currentStreak
                     }
-                    else if habit.currentStreak < currentLocal {
-                        // Possibly we had a local increase that isn't reflected in Firestore yet,
-                        // so keep the localStreak. (This is optional logic.)
+
+                    // longestStreak
+                    let localLongest = self.localLongestStreaks[habitID] ?? 0
+                    if habit.longestStreak > localLongest {
+                        self.localLongestStreaks[habitID] = habit.longestStreak
                     }
                 }
             }
@@ -125,7 +127,8 @@ class HabitViewModel: ObservableObject {
                 print("Habit (ID: \(id)) deleted successfully.")
                 DispatchQueue.main.async {
                     self?.habits.removeAll { $0.id == id }
-                    self?.localStreaks.removeValue(forKey: id) // Also remove local streak
+                    self?.localStreaks.removeValue(forKey: id)
+                    self?.localLongestStreaks.removeValue(forKey: id)
                 }
             }
         }
@@ -174,6 +177,7 @@ class HabitViewModel: ObservableObject {
                 print("Creating default habits for user: \(userId).")
                 self?.createDefaultHabits(for: userId)
 
+                // Mark defaultHabitsCreated = true in Firestore
                 userRef.updateData(["defaultHabitsCreated": true]) { updateErr in
                     if let ue = updateErr {
                         print("Error updating defaultHabitsCreated: \(ue)")
@@ -202,8 +206,14 @@ class HabitViewModel: ObservableObject {
                   startDate: Date(),
                   ownerId: userId),
         ]
+        // Add them to Firestore
         for habit in defaultHabits {
             addHabit(habit)
+        }
+
+        // Also show them immediately in the local array so there's no delay.
+        DispatchQueue.main.async {
+            self.habits.append(contentsOf: defaultHabits)
         }
     }
 
@@ -219,15 +229,15 @@ class HabitViewModel: ObservableObject {
                 habit.lastReset        = Date()
                 updateHabit(habit)
 
-                // Also update localStreaks if you want to unify them
                 if let id = habit.id {
-                    localStreaks[id] = habit.currentStreak
+                    localStreaks[id]        = habit.currentStreak
+                    localLongestStreaks[id] = habit.longestStreak
                 }
             }
         }
     }
 
-    // MARK: - Toggle Completion (LocalStreak + Optimistic Update)
+    // MARK: - Toggle Completion (LocalStreak + LocalLongestStreak + Optimistic)
     func toggleHabitCompletion(_ habit: Habit, userId: String) {
         guard
             let idx = habits.firstIndex(where: { $0.id == habit.id }),
@@ -237,11 +247,23 @@ class HabitViewModel: ObservableObject {
         let oldHabit = habits[idx]
         var updated  = habit
 
+        // Decide if marking or unmarking
         if updated.isCompletedToday {
-            // Unmark as done
+            // Unmark
             updated.isCompletedToday = false
-            updated.currentStreak    = max(updated.currentStreak - 1, 0)
-            updated.lastReset        = nil
+
+            // currentStreak
+            updated.currentStreak = max(updated.currentStreak - 1, 0)
+
+            // If the user's longestStreak was directly 'tied' to currentStreak,
+            // we reduce it if applicable:
+            if updated.currentStreak < updated.longestStreak,
+               oldHabit.currentStreak == oldHabit.longestStreak {
+                // Subtract by 1, or set to updated.currentStreak
+                updated.longestStreak = updated.currentStreak
+            }
+
+            updated.lastReset = nil
         } else {
             // Mark as done
             let todayStr = dateFormatter.string(from: Date())
@@ -251,6 +273,7 @@ class HabitViewModel: ObservableObject {
 
             if lastResetStr != todayStr {
                 updated.currentStreak += 1
+                // Possibly update longestStreak if needed
                 if updated.currentStreak > updated.longestStreak {
                     updated.longestStreak = updated.currentStreak
                 }
@@ -259,28 +282,46 @@ class HabitViewModel: ObservableObject {
             updated.isCompletedToday = true
         }
 
-        // 1) Update localStreaks right away
+        // 1) Update localStreaks & localLongestStreaks immediately
         let localVal = localStreaks[habitId] ?? habit.currentStreak
-        // If unmarking
+        let localLongestVal = localLongestStreaks[habitId] ?? habit.longestStreak
+
         if habit.isCompletedToday {
+            // We are unmarking
             localStreaks[habitId] = max(localVal - 1, 0)
+
+            // If oldHabit was "equal" => reduce localLongest
+            if oldHabit.currentStreak == oldHabit.longestStreak,
+               (localStreaks[habitId] ?? 0) < (localLongestVal)
+            {
+                // Subtract or set to new localStreak
+                localLongestStreaks[habitId] = localStreaks[habitId] ?? 0
+            }
+
         } else {
+            // We are marking as done
             localStreaks[habitId] = localVal + 1
+
+            // If new currentStreak > localLongestVal => update
+            if (localStreaks[habitId] ?? 0) > localLongestVal {
+                localLongestStreaks[habitId] = (localStreaks[habitId] ?? 0)
+            }
         }
 
-        // 2) Optimistic update of the main array
+        // 2) Optimistic update of main array
         habits[idx] = updated
-        
-        // 3) Firestore
+
+        // 3) Write to Firestore
         do {
             try db.collection("habits").document(habitId).setData(from: updated)
+
             // If newly done => award points
             if updated.isCompletedToday {
                 var totalPoints = dailyCompletionPoint + updated.currentStreak
                 if updated.currentStreak == 7   { totalPoints += weeklyStreakBonus }
                 if updated.currentStreak == 30  { totalPoints += monthlyStreakBonus }
                 if updated.currentStreak == 365 { totalPoints += yearlyStreakBonus }
-
+                
                 awardPointsToUser(userId: userId, points: totalPoints)
             }
 
@@ -288,10 +329,10 @@ class HabitViewModel: ObservableObject {
             // 4) Revert on failure
             print("Error updating habit in Firestore: \(error.localizedDescription)")
             habits[idx] = oldHabit
-            // revert localStreaks too
-            if let oldID = oldHabit.id {
-                localStreaks[oldID] = oldHabit.currentStreak
-            }
+
+            // Revert localStreaks
+            localStreaks[habitId]        = oldHabit.currentStreak
+            localLongestStreaks[habitId] = oldHabit.longestStreak
         }
     }
 }

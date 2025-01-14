@@ -28,7 +28,7 @@ struct HabitTrackerView: View {
     // Placeholder daily quote
     let dailyQuote = "Focus on what matters today."
 
-    // Tracks how many habits were finished today
+    // How many habits are finished today
     @State private var habitsFinishedToday: Int = 0
 
     // Combine Cancellables
@@ -37,7 +37,8 @@ struct HabitTrackerView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                backgroundBlack.ignoresSafeArea()
+                backgroundBlack
+                    .ignoresSafeArea()
 
                 VStack(alignment: .leading, spacing: 16) {
                     // Personalized Greeting
@@ -47,7 +48,7 @@ struct HabitTrackerView: View {
                         .foregroundColor(.white)
                         .shadow(color: .white.opacity(0.8), radius: 4)
 
-                    // Daily Motivational Quote
+                    // Daily Quote
                     Text(dailyQuote)
                         .font(.subheadline)
                         .foregroundColor(accentCyan)
@@ -59,21 +60,25 @@ struct HabitTrackerView: View {
                     }
                     .padding(.vertical, 10)
 
-                    // Habit List
+                    // Scrollable Habit List
                     ScrollView {
                         LazyVStack(spacing: 12) {
                             ForEach(viewModel.habits.indices, id: \.self) { index in
                                 let habit = viewModel.habits[index]
-                                // We’ll fetch local streak from viewModel.localStreaks
-                                let localStreak = viewModel.localStreaks[habit.id ?? ""] ?? habit.currentStreak
+                                let habitId = habit.id ?? ""
+
+                                // localStreak + localLongestStreak
+                                let localStreak  = viewModel.localStreaks[habitId] ?? habit.currentStreak
+                                let localLongest = viewModel.localLongestStreaks[habitId] ?? habit.longestStreak
 
                                 NavigationLink(
                                     destination: HabitDetailView(habit: $viewModel.habits[index])
                                 ) {
-                                    // Pass the local streak
+                                    // Pass local values so the row updates instantly
                                     HabitRow(
                                         habit: habit,
                                         currentStreak: localStreak,
+                                        localLongestStreak: localLongest,
                                         accentCyan: accentCyan,
                                         onDelete: { deletedHabit in
                                             deleteHabit(deletedHabit)
@@ -109,7 +114,7 @@ struct HabitTrackerView: View {
                     // Update habitsFinishedToday
                     updateHabitsFinishedToday()
 
-                    // Observe changes in habits
+                    // Observe changes in .habits
                     viewModel.$habits
                         .sink { _ in
                             updateHabitsFinishedToday()
@@ -117,7 +122,7 @@ struct HabitTrackerView: View {
                         .store(in: &cancellables)
                 }
 
-                // Floating + button for adding new habits
+                // Floating + button
                 VStack {
                     Spacer()
                     HStack {
@@ -139,6 +144,7 @@ struct HabitTrackerView: View {
                     }
                 }
             }
+            // Present AddHabitView
             .sheet(isPresented: $showingAddHabit) {
                 AddHabitView(viewModel: viewModel)
                     .environmentObject(session)
@@ -173,36 +179,35 @@ struct HabitTrackerView: View {
 // MARK: - HabitRow
 struct HabitRow: View {
     let habit: Habit
-    let currentStreak: Int   // This is from localStreaks or habit.currentStreak
+    let currentStreak: Int
+    let localLongestStreak: Int
     let accentCyan: Color
     let onDelete: (Habit) -> Void
     let onToggleCompletion: () -> Void
 
     var body: some View {
         HStack {
-            // Left side
+            // Title/Description area
             VStack(alignment: .leading, spacing: 4) {
-                // Title
                 Text(habit.title)
                     .font(.headline)
                     .foregroundColor(.white)
 
-                // Description
                 Text(habit.description)
                     .font(.subheadline)
                     .foregroundColor(.white.opacity(0.7))
 
                 // Streak Info
                 HStack(spacing: 8) {
-                    // The local streak immediately changes, so the UI feels instant
+                    // For immediate UI: whichever is higher, local or Firestore
                     Text("Current Streak: \(max(currentStreak, habit.currentStreak))")
                         .font(.caption)
-                        .foregroundColor( (currentStreak > 0) ? .green : .white)
+                        .foregroundColor((max(currentStreak, habit.currentStreak) > 0) ? .green : .white)
 
-                    // Longest Streak
-                    Text("Longest Streak: \(habit.longestStreak)")
+                    // For longest streak, do the same
+                    Text("Longest Streak: \(max(localLongestStreak, habit.longestStreak))")
                         .font(.caption)
-                        .foregroundColor(habit.longestStreak > 0 ? .green : .white)
+                        .foregroundColor((max(localLongestStreak, habit.longestStreak) > 0) ? .green : .white)
 
                     // Possibly show badges
                     if habit.weeklyStreakBadge {
@@ -218,7 +223,7 @@ struct HabitRow: View {
             }
             Spacer()
 
-            // Toggle Completion
+            // Toggle Completion Button
             Button(action: onToggleCompletion) {
                 if habit.isCompletedToday {
                     Image(systemName: "checkmark.circle.fill")
@@ -258,7 +263,6 @@ struct HabitRow: View {
     }
 }
 
-
 // MARK: - StreakBadge
 struct StreakBadge: View {
     let text: String
@@ -274,6 +278,7 @@ struct StreakBadge: View {
             .clipShape(Capsule())
     }
 }
+
 
 
 // MARK: - Preview

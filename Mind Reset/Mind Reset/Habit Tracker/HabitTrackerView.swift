@@ -1,6 +1,7 @@
 //
 //  HabitTrackerView.swift
 //  Mind Reset
+//
 //  Objective: Serves as the main user interface for the habit-tracking feature of the app.
 //  Displays a list of habits, allows users to add new habits, mark them as completed,
 //  and delete them.
@@ -30,14 +31,13 @@ struct HabitTrackerView: View {
     // Tracks how many habits were finished today
     @State private var habitsFinishedToday: Int = 0
 
-    // MARK: - Combine Cancellables
+    // Combine Cancellables
     @State private var cancellables = Set<AnyCancellable>()
 
     var body: some View {
         NavigationView {
             ZStack {
-                backgroundBlack
-                    .ignoresSafeArea()
+                backgroundBlack.ignoresSafeArea()
 
                 VStack(alignment: .leading, spacing: 16) {
                     // Personalized Greeting
@@ -47,7 +47,7 @@ struct HabitTrackerView: View {
                         .foregroundColor(.white)
                         .shadow(color: .white.opacity(0.8), radius: 4)
 
-                    // Daily Quote
+                    // Daily Motivational Quote
                     Text(dailyQuote)
                         .font(.subheadline)
                         .foregroundColor(accentCyan)
@@ -64,15 +64,16 @@ struct HabitTrackerView: View {
                         LazyVStack(spacing: 12) {
                             ForEach(viewModel.habits.indices, id: \.self) { index in
                                 let habit = viewModel.habits[index]
-                                
-                                // Navigate to detail screen
+                                // We’ll fetch local streak from viewModel.localStreaks
+                                let localStreak = viewModel.localStreaks[habit.id ?? ""] ?? habit.currentStreak
+
                                 NavigationLink(
                                     destination: HabitDetailView(habit: $viewModel.habits[index])
                                 ) {
-                                    // Show currentStreak from the habit model directly
+                                    // Pass the local streak
                                     HabitRow(
                                         habit: habit,
-                                        currentStreak: habit.currentStreak,
+                                        currentStreak: localStreak,
                                         accentCyan: accentCyan,
                                         onDelete: { deletedHabit in
                                             deleteHabit(deletedHabit)
@@ -100,7 +101,7 @@ struct HabitTrackerView: View {
                     // 2) Setup default habits if needed
                     viewModel.setupDefaultHabitsIfNeeded(for: userId)
 
-                    // 3) Perform a daily reset check after a short delay
+                    // Then do daily reset
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         viewModel.dailyResetIfNeeded()
                     }
@@ -108,7 +109,7 @@ struct HabitTrackerView: View {
                     // Update habitsFinishedToday
                     updateHabitsFinishedToday()
 
-                    // Observe changes in habits to re-calc how many finished
+                    // Observe changes in habits
                     viewModel.$habits
                         .sink { _ in
                             updateHabitsFinishedToday()
@@ -155,7 +156,6 @@ struct HabitTrackerView: View {
 
     // MARK: - Update Habits Finished Today
     private func updateHabitsFinishedToday() {
-        // Count how many habits have isCompletedToday == true
         habitsFinishedToday = viewModel.habits.filter { $0.isCompletedToday }.count
     }
 
@@ -173,14 +173,14 @@ struct HabitTrackerView: View {
 // MARK: - HabitRow
 struct HabitRow: View {
     let habit: Habit
-    let currentStreak: Int
+    let currentStreak: Int   // This is from localStreaks or habit.currentStreak
     let accentCyan: Color
     let onDelete: (Habit) -> Void
     let onToggleCompletion: () -> Void
 
     var body: some View {
         HStack {
-            // Left side: Title + Description + Streak info
+            // Left side
             VStack(alignment: .leading, spacing: 4) {
                 // Title
                 Text(habit.title)
@@ -194,10 +194,10 @@ struct HabitRow: View {
 
                 // Streak Info
                 HStack(spacing: 8) {
-                    // Use whichever is greater between habit.currentStreak or the param
+                    // The local streak immediately changes, so the UI feels instant
                     Text("Current Streak: \(max(currentStreak, habit.currentStreak))")
                         .font(.caption)
-                        .foregroundColor(habit.currentStreak > 0 ? .green : .white)
+                        .foregroundColor( (currentStreak > 0) ? .green : .white)
 
                     // Longest Streak
                     Text("Longest Streak: \(habit.longestStreak)")
@@ -238,7 +238,7 @@ struct HabitRow: View {
             }
             .buttonStyle(PlainButtonStyle())
 
-            // Trash button
+            // Delete Button
             Button {
                 onDelete(habit)
             } label: {
@@ -258,6 +258,8 @@ struct HabitRow: View {
     }
 }
 
+
+// MARK: - StreakBadge
 struct StreakBadge: View {
     let text: String
     let color: Color
@@ -272,6 +274,7 @@ struct StreakBadge: View {
             .clipShape(Capsule())
     }
 }
+
 
 // MARK: - Preview
 struct HabitTrackerView_Previews: PreviewProvider {

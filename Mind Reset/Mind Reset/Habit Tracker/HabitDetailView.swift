@@ -45,8 +45,8 @@ struct HabitDetailView: View {
     @State private var sessionNotes: String = ""
     @State private var pastSessionNotes: [String] = []
 
-    // Long-term goal
-    @State private var longTermGoal: String = ""
+    // Habit Goal
+    @State private var goal: String = ""
 
     // For transitions/animations if desired
     @Namespace private var animation
@@ -57,18 +57,19 @@ struct HabitDetailView: View {
     let accentCyan          = Color(red: 0, green: 1, blue: 1)
     let textFieldBackground = Color(red: 0.15, green: 0.15, blue: 0.15)
 
-    // MARK: - Local Streak Tracking
-    // A local dictionary that is *only* for this detail screen to show immediate changes.
+    // MARK: - Local Streak Tracking (optional example)
     @State private var localStreaks: [String: Int] = [:]
+    @State private var localLongestStreaks: [String: Int] = [:]
 
     // MARK: - Combine Subscriptions
     @State private var cancellables: Set<AnyCancellable> = []
 
     // MARK: - Init
     init(habit: Binding<Habit>) {
-        self._habit = habit
-        _editableTitle       = State(initialValue: habit.wrappedValue.title)
-        _editableDescription = State(initialValue: habit.wrappedValue.description)
+        self._habit              = habit
+        _editableTitle           = State(initialValue: habit.wrappedValue.title)
+        _editableDescription     = State(initialValue: habit.wrappedValue.description)
+        _goal                    = State(initialValue: habit.wrappedValue.goal)
     }
 
     // MARK: - Body
@@ -80,7 +81,7 @@ struct HabitDetailView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 15) {
 
-                    // Top Bar: Back + Editable Title
+                    // MARK: Top Bar: Back + Editable Title
                     HStack {
                         Button {
                             presentationMode.wrappedValue.dismiss()
@@ -104,7 +105,7 @@ struct HabitDetailView: View {
                         Spacer().frame(width: 40)
                     }
 
-                    // Editable Description
+                    // MARK: Editable Description
                     TextField("Habit Description", text: $editableDescription)
                         .multilineTextAlignment(.center)
                         .foregroundColor(.white.opacity(0.8))
@@ -115,20 +116,20 @@ struct HabitDetailView: View {
                         .background(Color.black.opacity(0.2))
                         .cornerRadius(8)
 
-                    // Long-Term Goal
+                    // MARK: Habit Goal
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Goals Related to Habit:")
+                        Text("Goal Related to Habit:")
                             .foregroundColor(accentCyan)
                             .font(.headline)
 
                         ZStack(alignment: .topLeading) {
-                            if longTermGoal.isEmpty {
+                            if goal.isEmpty {
                                 Text("e.g. Read 50 books by the end of the year")
                                     .foregroundColor(.white.opacity(0.4))
                                     .padding(.horizontal, 8)
                                     .padding(.top, 8)
                             }
-                            TextEditor(text: $longTermGoal)
+                            TextEditor(text: $goal)
                                 .foregroundColor(.white)
                                 .accentColor(accentCyan)
                                 .padding(8)
@@ -143,7 +144,7 @@ struct HabitDetailView: View {
                         }
                     }
 
-                    // Segmented Tabs for Focus / Progress / Notes
+                    // MARK: Segmented Tabs for Focus / Progress / Notes
                     Picker("Tabs", selection: $selectedTabIndex) {
                         Text("Focus").tag(0)
                         Text("Progress").tag(1)
@@ -167,7 +168,7 @@ struct HabitDetailView: View {
                         }
                     }
 
-                    // Mark Habit as Done
+                    // MARK: Mark Habit as Done
                     Button {
                         toggleHabitDone()
                     } label: {
@@ -193,14 +194,14 @@ struct HabitDetailView: View {
             }
             // 1) Fetch existing habits
             viewModel.fetchHabits(for: userId)
-            // 2) Setup defaults if needed
+            // 2) Setup default habits if needed
             viewModel.setupDefaultHabitsIfNeeded(for: userId)
 
-            // Then do a daily reset check & init local streaks
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                viewModel.dailyResetIfNeeded()
-                initializeLocalStreaks()
-            }
+            // Initialize localStreaks and longestStreaks
+            initializeLocalStreaks()
+
+            // Initialize goal from the habit
+            goal = habit.goal
 
             // Observe changes in habits to possibly re-init localStreaks
             viewModel.$habits
@@ -452,13 +453,21 @@ extension HabitDetailView {
         viewModel.toggleHabitCompletion(habit, userId: habit.ownerId)
     }
 
-    /// Save any title/description changes to Firestore
+    /// Save any title, description, and goal changes to Firestore
     private func saveEditsToHabit() {
-        guard editableTitle != habit.title || editableDescription != habit.description else {
+        // Check if any editable fields have changed
+        guard editableTitle != habit.title ||
+              editableDescription != habit.description ||
+              goal != habit.goal else {
             return
         }
-        habit.title       = editableTitle
-        habit.description = editableDescription
+
+        // Update the habit object
+        habit.title        = editableTitle
+        habit.description  = editableDescription
+        habit.goal         = goal
+
+        // Save to Firestore via ViewModel
         viewModel.updateHabit(habit)
     }
 }
@@ -484,6 +493,9 @@ extension HabitDetailView {
             // It's a "new day," so ensure localStreak is at least the habit's currentStreak
             localStreaks[habitID] = max(localStreaks[habitID] ?? 0, habit.currentStreak)
         }
+
+        // Similarly for longestStreak
+        localLongestStreaks[habitID] = max(localLongestStreaks[habitID] ?? 0, habit.longestStreak)
     }
 }
 
@@ -505,38 +517,44 @@ fileprivate struct HolographicButtonStyle: ButtonStyle {
     }
 }
 
-// MARK: - Preview
-struct HabitDetailView_Previews: PreviewProvider {
-    static var previews: some View {
-        let sampleHabit = Habit(
-            id: "sampleHabitId",
-            title: "Daily Coding",
-            description: "Review Swift concepts",
-            startDate: Date(),
-            ownerId: "testOwner",
-            isCompletedToday: true,
-            lastReset: nil,
-            points: 100,
-            currentStreak: 5,
-            longestStreak: 10,
-            weeklyStreakBadge: false,
-            monthlyStreakBadge: false,
-            yearlyStreakBadge: false
-        )
-
-        // Create a Binding for the sample habit
-        let habitBinding = Binding<Habit>(
-            get: { sampleHabit },
-            set: { newValue in
-                // For preview purposes, no-op
-                print("Habit updated in preview.")
-            }
-        )
-
-        NavigationView {
-            HabitDetailView(habit: habitBinding)
-                .environmentObject(HabitViewModel())
-        }
-        .preferredColorScheme(.dark)
-    }
-}
+//// MARK: - Preview
+//struct HabitDetailView_Previews: PreviewProvider {
+//    static var previews: some View {
+//        // The init with many parameters was causing extra arguments error.
+//        // Let's define a Habit with only the needed init or pass nil for optional fields properly.
+//        
+//        let sampleHabit = Habit(
+//            title: "Daily Coding",
+//            description: "Review Swift concepts",
+//            startDate: Date(),
+//            ownerId: "testOwner",
+//            goal: "Complete 100 coding challenges by the end of the year."
+//        )
+//        // Set optional fields
+//        sampleHabit.id = "sampleHabitId"
+//        sampleHabit.isCompletedToday = true
+//        sampleHabit.lastReset        = nil
+//        sampleHabit.points           = 100
+//        sampleHabit.currentStreak    = 5
+//        sampleHabit.longestStreak    = 10
+//        sampleHabit.weeklyStreakBadge  = false
+//        sampleHabit.monthlyStreakBadge = false
+//        sampleHabit.yearlyStreakBadge  = false
+//
+//        // Create a Binding for the sample habit
+//        let habitBinding = Binding<Habit>(
+//            get: { sampleHabit },
+//            set: { newValue in
+//                // For preview purposes, no-op
+//                print("Habit updated in preview: \(newValue)")
+//            }
+//        )
+//
+//        NavigationView {
+//            HabitDetailView(habit: habitBinding)
+//                .environmentObject(HabitViewModel()) // Provide a dummy environment
+//                .environmentObject(SessionStore())   // Provide a dummy session if needed
+//        }
+//        .preferredColorScheme(.dark)
+//    }
+//}

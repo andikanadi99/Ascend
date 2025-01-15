@@ -92,7 +92,7 @@ class HabitViewModel: ObservableObject {
     // MARK: - Add New Habit
     func addHabit(_ habit: Habit) {
         do {
-            _ = try db.collection("habits").addDocument(from: habit)
+            let _ = try db.collection("habits").addDocument(from: habit)
             print("Habit '\(habit.title)' added for user \(habit.ownerId).")
         } catch {
             print("Error adding habit: \(error.localizedDescription)")
@@ -196,15 +196,18 @@ class HabitViewModel: ObservableObject {
             Habit(title: "Meditation",
                   description: "Spend 10 minutes meditating",
                   startDate: Date(),
-                  ownerId: userId),
+                  ownerId: userId,
+                  goal: "Improve mindfulness and reduce stress."),
             Habit(title: "Exercise",
                   description: "Do some physical activity",
                   startDate: Date(),
-                  ownerId: userId),
+                  ownerId: userId,
+                  goal: "Maintain physical health and increase stamina."),
             Habit(title: "Journaling",
                   description: "Write down your thoughts",
                   startDate: Date(),
-                  ownerId: userId),
+                  ownerId: userId,
+                  goal: "Enhance self-awareness and track personal growth."),
         ]
         // Add them to Firestore
         for habit in defaultHabits {
@@ -259,7 +262,7 @@ class HabitViewModel: ObservableObject {
             // we reduce it if applicable:
             if updated.currentStreak < updated.longestStreak,
                oldHabit.currentStreak == oldHabit.longestStreak {
-                // Subtract by 1, or set to updated.currentStreak
+                // Set longestStreak to the new currentStreak
                 updated.longestStreak = updated.currentStreak
             }
 
@@ -273,7 +276,7 @@ class HabitViewModel: ObservableObject {
 
             if lastResetStr != todayStr {
                 updated.currentStreak += 1
-                // Possibly update longestStreak if needed
+                // Update longestStreak if needed
                 if updated.currentStreak > updated.longestStreak {
                     updated.longestStreak = updated.currentStreak
                 }
@@ -294,7 +297,7 @@ class HabitViewModel: ObservableObject {
             if oldHabit.currentStreak == oldHabit.longestStreak,
                (localStreaks[habitId] ?? 0) < (localLongestVal)
             {
-                // Subtract or set to new localStreak
+                // Set localLongestStreak to new localStreak
                 localLongestStreaks[habitId] = localStreaks[habitId] ?? 0
             }
 

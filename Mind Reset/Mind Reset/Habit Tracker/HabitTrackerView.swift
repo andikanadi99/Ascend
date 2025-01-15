@@ -279,54 +279,53 @@ struct StreakBadge: View {
     }
 }
 
-
-
-// MARK: - Preview
-struct HabitTrackerView_Previews: PreviewProvider {
-    static var previews: some View {
-        // Mock dependencies
-        let session = SessionStore()
-        let mockViewModel = HabitViewModel()
-
-        // Create sample habits
-        let sampleHabit1 = Habit(
-            id: "1",
-            title: "Daily Coding",
-            description: "Review Swift concepts",
-            startDate: Date(),
-            ownerId: "testOwner",
-            isCompletedToday: true,
-            lastReset: nil,
-            points: 100,
-            currentStreak: 5,
-            longestStreak: 10,
-            weeklyStreakBadge: false,
-            monthlyStreakBadge: false,
-            yearlyStreakBadge: false
-        )
-        let sampleHabit2 = Habit(
-            id: "2",
-            title: "Meditation",
-            description: "Morning meditation for clarity",
-            startDate: Date(),
-            ownerId: "testOwner",
-            isCompletedToday: false,
-            lastReset: nil,
-            points: 200,
-            currentStreak: 30,
-            longestStreak: 30,
-            weeklyStreakBadge: true,
-            monthlyStreakBadge: true,
-            yearlyStreakBadge: false
-        )
-
-        mockViewModel.habits = [sampleHabit1, sampleHabit2]
-
-        return NavigationView {
-            HabitTrackerView()
-                .environmentObject(session)
-                .environmentObject(mockViewModel)
-        }
-        .preferredColorScheme(.dark)
-    }
-}
+//// MARK: - Preview
+//struct HabitTrackerView_Previews: PreviewProvider {
+//    static var previews: some View {
+//        // Mock dependencies
+//        let session = SessionStore()
+//        let mockViewModel = HabitViewModel()
+//
+//        // Create sample habits
+//        // If your Habit init is simpler, you can do:
+//        let sampleHabit1 = Habit(title: "Daily Coding",
+//                                 description: "Review Swift concepts",
+//                                 startDate: Date(),
+//                                 ownerId: "testOwner",
+//                                 goal: "Finish a coding challenge daily.")
+//
+//        // Assign optional fields
+//        sampleHabit1.id                = "1"
+//        sampleHabit1.isCompletedToday  = true
+//        sampleHabit1.lastReset         = nil
+//        sampleHabit1.points            = 100
+//        sampleHabit1.currentStreak     = 5
+//        sampleHabit1.longestStreak     = 10
+//        // ... more badges or logic as needed
+//
+//        let sampleHabit2 = Habit(title: "Meditation",
+//                                 description: "Morning meditation for clarity",
+//                                 startDate: Date(),
+//                                 ownerId: "testOwner",
+//                                 goal: "Meditate daily for better focus.")
+//
+//        // Assign optional fields
+//        sampleHabit2.id                = "2"
+//        sampleHabit2.isCompletedToday  = false
+//        sampleHabit2.lastReset         = nil
+//        sampleHabit2.points            = 200
+//        sampleHabit2.currentStreak     = 30
+//        sampleHabit2.longestStreak     = 30
+//        sampleHabit2.weeklyStreakBadge = true
+//        sampleHabit2.monthlyStreakBadge = true
+//
+//        mockViewModel.habits = [sampleHabit1, sampleHabit2]
+//
+//        return NavigationView {
+//            HabitTrackerView()
+//                .environmentObject(session)
+//                .environmentObject(mockViewModel)
+//        }
+//        .preferredColorScheme(.dark)
+//    }
+//}

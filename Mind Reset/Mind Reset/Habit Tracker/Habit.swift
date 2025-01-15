@@ -11,25 +11,34 @@ struct Habit: Identifiable, Codable {
     var title: String
     var description: String
     var startDate: Date
-    var ownerId: String            // Must match the authenticated user’s UID
+    var ownerId: String
+    var isCompletedToday: Bool
+    var lastReset: Date?
+    var points: Int
+    var currentStreak: Int
+    var longestStreak: Int
+    var weeklyStreakBadge: Bool
+    var monthlyStreakBadge: Bool
+    var yearlyStreakBadge: Bool
     
-    // Tracks if the habit is done for the current day
-    var isCompletedToday: Bool = false
-
-    // The last date we reset this habit (could be used to check if new day has started)
-    var lastReset: Date? = nil
-
-    // Points associated with this habit
-    var points: Int = 0
-
-    // Current consecutive streak
-    var currentStreak: Int = 0
-
-    // The longest consecutive streak
-    var longestStreak: Int = 0
-
-    // Badges: Weekly, Monthly, Yearly
-    var weeklyStreakBadge: Bool = false
-    var monthlyStreakBadge: Bool = false
-    var yearlyStreakBadge: Bool = false
+    // New property for Habit Goal
+    var goal: String // Defaults to an empty string if not set
+    
+    // Initialize with default values for new habits
+    init(title: String, description: String, startDate: Date, ownerId: String, goal: String = "") {
+        self.title = title
+        self.description = description
+        self.startDate = startDate
+        self.ownerId = ownerId
+        self.isCompletedToday = false
+        self.lastReset = nil
+        self.points = 0
+        self.currentStreak = 0
+        self.longestStreak = 0
+        self.weeklyStreakBadge = false
+        self.monthlyStreakBadge = false
+        self.yearlyStreakBadge = false
+        self.goal = goal
+    }
 }
+

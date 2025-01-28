@@ -12,13 +12,16 @@
 //  Created by Andika Yudhatrisna on 11/22/24.
 //
 
+
 import SwiftUI
 import FirebaseAuth
 import FirebaseFirestore
 
 class SessionStore: ObservableObject {
-    // Holds currently authenticated user
+    // Holds currently authenticated Firebase user
     @Published var current_user: User?
+    // Holds the user's Firestore data
+    @Published var userModel: UserModel?
     // Potentially store error messages
     @Published var auth_error: String?
     
@@ -37,6 +40,47 @@ class SessionStore: ObservableObject {
     func listen() {
         handle = Auth.auth().addStateDidChangeListener { [weak self] auth, user in
             self?.current_user = user
+            if let user = user {
+                self?.fetchUserModel(userId: user.uid)
+            } else {
+                self?.userModel = nil
+            }
+        }
+    }
+    
+    // MARK: - Fetch UserModel
+    /// Fetches the user's Firestore document and decodes it into UserModel.
+    private func fetchUserModel(userId: String) {
+        let userRef = db.collection("users").document(userId)
+        
+        userRef.getDocument { [weak self] (document, error) in
+            if let error = error {
+                print("Error fetching user document: \(error)")
+                DispatchQueue.main.async {
+                    self?.auth_error = "Failed to fetch user data."
+                }
+                return
+            }
+            
+            guard let document = document, document.exists else {
+                print("User document does not exist.")
+                DispatchQueue.main.async {
+                    self?.auth_error = "User data not found."
+                }
+                return
+            }
+            
+            do {
+                let userData = try document.data(as: UserModel.self)
+                DispatchQueue.main.async {
+                    self?.userModel = userData
+                }
+            } catch {
+                print("Error decoding user data: \(error)")
+                DispatchQueue.main.async {
+                    self?.auth_error = "Failed to decode user data."
+                }
+            }
         }
     }
     
@@ -53,6 +97,8 @@ class SessionStore: ObservableObject {
                     self?.current_user = user
                     // Create or verify user doc in Firestore
                     self?.createOrVerifyUserDocument(for: user, email: email) {
+                        // After creating/verifying, fetch the user model
+                        self?.fetchUserModel(userId: user.uid)
                         completion(true)
                     }
                 }
@@ -70,8 +116,10 @@ class SessionStore: ObservableObject {
                 } else if let user = result?.user {
                     print("Sign In Success: \(user.email ?? "No Email")")
                     self?.current_user = user
-                    // Ensure user doc exists
-                    self?.createOrVerifyUserDocument(for: user, email: email) { }
+                    // Ensure user doc exists and fetch user model
+                    self?.createOrVerifyUserDocument(for: user, email: email) {
+                        self?.fetchUserModel(userId: user.uid)
+                    }
                 }
             }
         }
@@ -85,6 +133,7 @@ class SessionStore: ObservableObject {
             DispatchQueue.main.async {
                 print("Sign Out Success")
                 self.current_user = nil
+                self.userModel = nil
             }
         } catch let signOutError as NSError {
             DispatchQueue.main.async {
@@ -138,6 +187,9 @@ class SessionStore: ObservableObject {
         userRef.getDocument { [weak self] (document, error) in
             if let error = error {
                 print("Error checking user doc: \(error)")
+                DispatchQueue.main.async {
+                    self?.auth_error = "Failed to verify user data."
+                }
                 completion()
                 return
             }
@@ -158,6 +210,9 @@ class SessionStore: ObservableObject {
                 userRef.setData(userData) { error in
                     if let error = error {
                         print("Error creating user doc: \(error)")
+                        DispatchQueue.main.async {
+                            self?.auth_error = "Failed to create user data."
+                        }
                     } else {
                         print("User doc created successfully.")
                     }
@@ -172,7 +227,7 @@ class SessionStore: ObservableObject {
     func awardMeditationTime(userId: String, additionalMinutes: Int) {
         let userRef = db.collection("users").document(userId)
         
-        db.runTransaction({ (transaction, _) -> Any? in
+        db.runTransaction({ (transaction, errorPointer) -> Any? in
             do {
                 let snapshot = try transaction.getDocument(userRef)
                 let currentTime = snapshot.data()?["meditationTime"] as? Int ?? 0
@@ -224,3 +279,5 @@ class SessionStore: ObservableObject {
         }
     }
 }
+
+

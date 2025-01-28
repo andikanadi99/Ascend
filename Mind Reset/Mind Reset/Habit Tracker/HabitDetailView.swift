@@ -216,7 +216,7 @@ struct HabitDetailView: View {
             if selectedTimeRange == .weekly {
                 ScrollView {
                     VStack(spacing: 0) {
-                        // Show real weeks
+                        // Show real weeks within allowed range
                         ForEach(realWeeks(), id: \.self) { interval in
                             let label = formatWeekInterval(interval)
                             Button {
@@ -238,7 +238,7 @@ struct HabitDetailView: View {
             } else {
                 ScrollView {
                     VStack(spacing: 0) {
-                        // Show real months
+                        // Show real months within allowed range
                         ForEach(realMonths(), id: \.self) { monthDate in
                             let label = formatMonth(monthDate)
                             Button {
@@ -272,6 +272,8 @@ struct HabitDetailView: View {
         .frame(width: 300, height: 400)
         .shadow(color: .gray.opacity(0.3), radius: 10)
     }
+
+
 }
 
 // MARK: - Subviews
@@ -410,10 +412,22 @@ extension HabitDetailView {
     }
 }
 
+// MARK: - Button Label Helpers
+extension HabitDetailView {
+    private func navigationButtonLabel(title: String, isDisabled: Bool) -> some View {
+        Text(title)
+            .multilineTextAlignment(.center)
+            .foregroundColor(isDisabled ? Color.gray : accentCyan)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
 // MARK: - Progress Tab
 extension HabitDetailView {
     private var progressTab: some View {
-        VStack(spacing: 20) {
+        // Define userCreationDate outside the ViewBuilder
+        let userCreationDate = session.userModel?.createdAt ?? habit.startDate
+
+        return VStack(spacing: 20) {
             // 1) Show label "Current Week: ..." or "Current Month: ..."
             if selectedTimeRange == .weekly {
                 Text("Current Week: \(formatWeekInterval(currentWeekInterval(offset: weekOffset)))")
@@ -438,7 +452,7 @@ extension HabitDetailView {
 
             // 3) Show either weekly or monthly view
             if selectedTimeRange == .weekly {
-                let (weekLabels, weekValues) = weeklyData(habit: habit, offset: weekOffset)
+                let (weekLabels, weekValues) = weeklyData(habit: habit, offset: weekOffset, userCreationDate: userCreationDate)
                 SingleLineGraphView(
                     timeRange: .weekly,
                     dates: weekLabels,
@@ -450,15 +464,16 @@ extension HabitDetailView {
                 .cornerRadius(8)
                 .padding(.horizontal, 12)
 
+                // Inside progressTab's HStack for Weeks
                 HStack(spacing: 20) {
                     Button {
-                        weekOffset -= 1
+                        if weekOffset > minWeekOffset {
+                            weekOffset -= 1
+                        }
                     } label: {
-                        Text("Prev\nWeek")
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(accentCyan)
-                            .fixedSize(horizontal: false, vertical: true)
+                        navigationButtonLabel(title: "Prev\nWeek", isDisabled: weekOffset <= minWeekOffset)
                     }
+                    .disabled(weekOffset <= minWeekOffset) // Disable if at minimum
 
                     Button {
                         showDateRangeOverlay = true
@@ -477,34 +492,38 @@ extension HabitDetailView {
                     }
 
                     Button {
-                        weekOffset += 1
+                        if weekOffset < maxWeekOffset {
+                            weekOffset += 1
+                        }
                     } label: {
-                        Text("Next\nWeek")
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(accentCyan)
-                            .fixedSize(horizontal: false, vertical: true)
+                        navigationButtonLabel(title: "Next\nWeek", isDisabled: weekOffset >= maxWeekOffset)
                     }
+                    .disabled(weekOffset >= maxWeekOffset) // Disable if at maximum
                 }
                 .padding(.top, 10)
+
+
 
             } else {
                 MonthlyCurrentMonthGridView(
                     accentColor: accentCyan,
                     offset: monthOffset,
-                    dailyRecords: habit.dailyRecords
+                    dailyRecords: habit.dailyRecords,
+                    userCreationDate: userCreationDate
                 )
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 12)
 
+                // Inside progressTab's HStack for Months
                 HStack(spacing: 20) {
                     Button {
-                        monthOffset -= 1
+                        if monthOffset > minMonthOffset {
+                            monthOffset -= 1
+                        }
                     } label: {
-                        Text("Prev\nMonth")
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(accentCyan)
-                            .fixedSize(horizontal: false, vertical: true)
+                        navigationButtonLabel(title: "Prev\nMonth", isDisabled: monthOffset <= minMonthOffset)
                     }
+                    .disabled(monthOffset <= minMonthOffset) // Disable if at minimum
 
                     Button {
                         showDateRangeOverlay = true
@@ -523,13 +542,13 @@ extension HabitDetailView {
                     }
 
                     Button {
-                        monthOffset += 1
+                        if monthOffset < maxMonthOffset {
+                            monthOffset += 1
+                        }
                     } label: {
-                        Text("Next\nMonth")
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(accentCyan)
-                            .fixedSize(horizontal: false, vertical: true)
+                        navigationButtonLabel(title: "Next\nMonth", isDisabled: monthOffset >= maxMonthOffset)
                     }
+                    .disabled(monthOffset >= maxMonthOffset) // Disable if at maximum
                 }
                 .padding(.top, 10)
             }
@@ -538,59 +557,78 @@ extension HabitDetailView {
     }
 
     /// Build a 7-day array for the chosen offset, pulling intensities from dailyRecords.
-    private func weeklyData(habit: Habit, offset: Int) -> ([String],[CGFloat]) {
-        let dayLabels = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
-        var intensities: [CGFloat] = Array(repeating: 0, count: 7)
-
+    private func weeklyData(habit: Habit, offset: Int, userCreationDate: Date) -> ([String], [CGFloat?]) {
+        let dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        var intensities: [CGFloat?] = Array(repeating: nil, count: 7)
+        
         let calendar = Calendar.current
         let now = Date()
         let weekday = calendar.component(.weekday, from: now)
         let distanceFromSunday = weekday - 1
-
-        guard let startOfThisWeek = calendar.date(byAdding: .day, value: -distanceFromSunday + (offset*7), to: now) else {
+        
+        guard let startOfThisWeek = calendar.date(byAdding: .day, value: -distanceFromSunday + (offset * 7), to: now) else {
             return (dayLabels, intensities)
         }
-
+        
         for i in 0..<7 {
             guard let dayDate = calendar.date(byAdding: .day, value: i, to: startOfThisWeek) else { continue }
-
-            // see if there's a dailyRecord for that day
+            
+            // Skip dates before user creation date
+            if dayDate < userCreationDate {
+                intensities[i] = nil
+                continue
+            }
+            
+            // If the day is in the future, set intensity to nil
+            if dayDate > now {
+                intensities[i] = nil
+                continue
+            }
+            
+            // Assign intensity if record exists
             if let record = habit.dailyRecords.first(where: { rec in
                 calendar.isDate(rec.date, inSameDayAs: dayDate)
             }) {
                 intensities[i] = record.intensityScore
+            } else {
+                intensities[i] = 0 // Assuming 0 means no completion
             }
         }
-
+        
         return (dayLabels, intensities)
     }
 }
 
+
+
 // MARK: - Real Weeks/Months Helpers
 extension HabitDetailView {
-    /// Return all real weeks around "today" from -6..+6
-    private func realWeeks() -> [DateInterval] {
-        let calendar = Calendar.current
-        var results: [DateInterval] = []
-
-        let now = Date()
-        let weekday = calendar.component(.weekday, from: now)
-        let distanceFromSunday = weekday - 1
-
-        // Start of the "current" week
-        guard let startOfThisWeek = calendar.date(byAdding: .day, value: -distanceFromSunday, to: now) else {
+    /// Return all real weeks within min and max offsets around "today"
+        private func realWeeks() -> [DateInterval] {
+            let calendar = Calendar.current
+            var results: [DateInterval] = []
+            
+            let now = Date()
+            let weekday = calendar.component(.weekday, from: now)
+            let distanceFromSunday = weekday - 1
+            
+            // Start of the "current" week
+            guard let startOfThisWeek = calendar.date(byAdding: .day, value: -distanceFromSunday, to: now) else {
+                return results
+            }
+            
+            // Generate weeks within the allowed range
+            for offset in minWeekOffset...maxWeekOffset {
+                if let start = calendar.date(byAdding: .day, value: offset * 7, to: startOfThisWeek),
+                   let end = calendar.date(byAdding: .day, value: 6, to: start) {
+                    results.append(DateInterval(start: start, end: end))
+                }
+            }
+            results.sort { $0.start < $1.start }
             return results
         }
-
-        for offset in -6...6 {
-            if let start = calendar.date(byAdding: .day, value: offset*7, to: startOfThisWeek),
-               let end = calendar.date(byAdding: .day, value: 6, to: start) {
-                results.append(DateInterval(start: start, end: end))
-            }
-        }
-        results.sort { $0.start < $1.start }
-        return results
-    }
+        
+       
 
     /// Return a string like "Jan 1 - Jan 7"
     private func formatWeekInterval(_ interval: DateInterval) -> String {
@@ -617,18 +655,19 @@ extension HabitDetailView {
         return dayDiff / 7
     }
 
-    /// Return months from -12..+12 around "today"
-    private func realMonths() -> [Date] {
-        let calendar = Calendar.current
-        let now = Date()
-        var months: [Date] = []
-        for offset in -12...12 {
-            if let shifted = calendar.date(byAdding: .month, value: offset, to: now) {
-                months.append(shifted)
-            }
-        }
-        return months.sorted()
-    }
+    /// Return all real months within min and max offsets around "today"
+       private func realMonths() -> [Date] {
+           let calendar = Calendar.current
+           let now = Date()
+           var months: [Date] = []
+
+           for offset in minMonthOffset...maxMonthOffset {
+               if let shifted = calendar.date(byAdding: .month, value: offset, to: now) {
+                   months.append(shifted)
+               }
+           }
+           return months.sorted()
+       }
 
     /// Format a date as "January 2025", etc.
     private func formatMonth(_ date: Date) -> String {
@@ -806,69 +845,122 @@ extension HabitDetailView {
     }
 }
 
+// MARK: - Offset Calculations
+extension HabitDetailView {
+    /// Computes the minimum week offset based on the account creation date.
+    private var minWeekOffset: Int {
+        let calendar = Calendar.current
+        let now = Date()
+        guard let accountWeekStart = calendar.dateInterval(of: .weekOfYear, for: session.userModel?.createdAt ?? now)?.start,
+              let currentWeekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start else {
+            return 0
+        }
+        let weeks = calendar.dateComponents([.weekOfYear], from: accountWeekStart, to: currentWeekStart).weekOfYear ?? 0
+        return -weeks
+    }
+    
+    /// The maximum week offset is always 0 (current week).
+    private var maxWeekOffset: Int {
+        return 0
+    }
+    
+    /// Computes the minimum month offset based on the account creation date.
+    private var minMonthOffset: Int {
+        let calendar = Calendar.current
+        let now = Date()
+        guard let accountMonthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: session.userModel?.createdAt ?? now)),
+              let currentMonthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) else {
+            return 0
+        }
+        let months = calendar.dateComponents([.month], from: accountMonthStart, to: currentMonthStart).month ?? 0
+        return -months
+    }
+    
+    /// The maximum month offset is always 0 (current month).
+    private var maxMonthOffset: Int {
+        return 0
+    }
+}
+
+
+
 // MARK: - SingleLineGraphView
 fileprivate struct SingleLineGraphView: View {
     let timeRange: HabitDetailView.TimeRange
     let dates: [String]
-    let intensities: [CGFloat]
+    let intensities: [CGFloat?] // Values can be nil
     let accentColor: Color
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
+                // 1) Move local constants out of a "let" inside the ViewBuilder
                 let axisPadding: CGFloat = 20
 
-                // Y-axis
+                // 2) Draw the Y-axis
                 Path { p in
                     p.move(to: CGPoint(x: axisPadding, y: 0))
                     p.addLine(to: CGPoint(x: axisPadding, y: geo.size.height))
                 }
                 .stroke(Color.white.opacity(0.2), lineWidth: 1)
 
-                // Horizontal lines
+                // 3) Horizontal grid lines & labels
                 ForEach(0...5, id: \.self) { i in
-                    let value = CGFloat(i)*20
-                    let y = yPosition(value, height: geo.size.height)
+                    let value = CGFloat(i) * 20
+                    let y = yPosition(value, height: geo.size.height, maxValue: 100)
+
+                    // A horizontal line
                     Path { path in
                         path.move(to: CGPoint(x: axisPadding, y: y))
                         path.addLine(to: CGPoint(x: geo.size.width, y: y))
                     }
                     .stroke(Color.white.opacity(0.2), lineWidth: 1)
 
+                    // Label on the axis
                     Text("\(Int(value))")
                         .font(.caption2)
                         .foregroundColor(.white.opacity(0.6))
                         .position(x: axisPadding - 10, y: y)
                 }
 
-                // The smooth line
-                SmoothLineShape(values: intensities, maxValue: 100, axisPadding: axisPadding)
-                    .stroke(
-                        accentColor.opacity(0.7),
-                        style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
-                    )
+                // 4) The smooth line (omitting nil intensities)
+                SmoothLineShape(
+                    values: intensities.compactMap { $0 }, // filter out nil
+                    maxValue: 100,
+                    axisPadding: axisPadding
+                )
+                .stroke(
+                    accentColor.opacity(0.7),
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+                )
 
-                // Dots + labels
+                // 5) Dots + labels for each day
                 ForEach(intensities.indices, id: \.self) { i in
-                    let x = xPosition(i, width: geo.size.width, axisPadding: axisPadding)
-                    let y = yPosition(intensities[i], height: geo.size.height)
+                    // If intensity is nil, skip rendering
+                    if let intensity = intensities[i] {
+                        let x = xPosition(i, width: geo.size.width, axisPadding: axisPadding)
+                        let y = yPosition(intensity, height: geo.size.height, maxValue: 100)
 
-                    Circle()
-                        .fill(accentColor)
-                        .frame(width: 6, height: 6)
-                        .position(x: x, y: y)
+                        // Dot
+                        Circle()
+                            .fill(accentColor)
+                            .frame(width: 6, height: 6)
+                            .position(x: x, y: y)
 
-                    Text("\(Int(intensities[i]))")
-                        .font(.caption2)
-                        .foregroundColor(.white)
-                        .position(x: x, y: y - 15)
-
-                    if i < dates.count {
-                        Text(dates[i])
+                        // Intensity label
+                        Text("\(Int(intensity))")
                             .font(.caption2)
-                            .foregroundColor(.white.opacity(0.8))
-                            .frame(width: 30, alignment: .center)
-                            .position(x: x, y: geo.size.height - 10)
+                            .foregroundColor(.white)
+                            .position(x: x, y: y - 15)
+
+                        // Day label
+                        if i < dates.count {
+                            Text(dates[i])
+                                .font(.caption2)
+                                .foregroundColor(.white.opacity(0.8))
+                                .frame(width: 30, alignment: .center)
+                                .position(x: x, y: geo.size.height - 10)
+                        }
                     }
                 }
             }
@@ -876,53 +968,54 @@ fileprivate struct SingleLineGraphView: View {
         .padding()
     }
 
+    // MARK: - xPosition
     private func xPosition(_ idx: Int, width: CGFloat, axisPadding: CGFloat) -> CGFloat {
         guard intensities.count > 1 else {
-            return axisPadding + width/2
+            return axisPadding + width / 2
         }
         let usableWidth = width - axisPadding
         let step = usableWidth / CGFloat(intensities.count - 1)
-        return axisPadding + CGFloat(idx)*step
+        return axisPadding + CGFloat(idx) * step
     }
 
-    private func yPosition(_ val: CGFloat, height: CGFloat) -> CGFloat {
-        let ratio = val / 100
-        return height - ratio*height
+    // MARK: - yPosition
+    private func yPosition(_ val: CGFloat, height: CGFloat, maxValue: CGFloat) -> CGFloat {
+        let ratio = val / maxValue
+        return height - (ratio * height)
     }
 }
 
-// SmoothLineShape
+// MARK: - SmoothLineShape
 fileprivate struct SmoothLineShape: Shape {
     let values: [CGFloat]
     let maxValue: CGFloat
     let axisPadding: CGFloat
 
     func path(in rect: CGRect) -> Path {
+        // If we don't have at least 2 values, there's no line to draw.
         guard values.count > 1 else { return Path() }
 
         let width = rect.width - axisPadding
         let stepX = width / CGFloat(values.count - 1)
 
-        var points: [CGPoint] = []
+        var path = Path()
+        var isDrawing = false
+
+        // Generate line points
         for (i, val) in values.enumerated() {
             let ratio = val / maxValue
-            let px = axisPadding + CGFloat(i)*stepX
+            let px = axisPadding + CGFloat(i) * stepX
             let py = rect.height - (ratio * rect.height)
-            points.append(CGPoint(x: px, y: py))
+            let point = CGPoint(x: px, y: py)
+
+            if !isDrawing {
+                path.move(to: point)
+                isDrawing = true
+            } else {
+                path.addLine(to: point)
+            }
         }
 
-        var path = Path()
-        path.move(to: points[0])
-        for i in 1..<points.count {
-            let prev = points[i - 1]
-            let curr = points[i]
-            let mid = CGPoint(
-                x: (prev.x + curr.x) / 2,
-                y: (prev.y + curr.y) / 2
-            )
-            path.addQuadCurve(to: mid, control: prev)
-            path.addQuadCurve(to: curr, control: curr)
-        }
         return path
     }
 }
@@ -949,7 +1042,8 @@ fileprivate struct HolographicButtonStyle: ButtonStyle {
 fileprivate struct MonthlyCurrentMonthGridView: View {
     let accentColor: Color
     let offset: Int
-    let dailyRecords: [HabitRecord]  // Real data from habit
+    let dailyRecords: [HabitRecord]
+    let userCreationDate: Date
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 7)
 
@@ -962,12 +1056,17 @@ fileprivate struct MonthlyCurrentMonthGridView: View {
                             .font(.caption2)
                             .foregroundColor(.white.opacity(0.8))
 
-                        if item.intensity > 0 {
+                        if let intensity = item.intensity, intensity > 0 {
                             Image(systemName: "star.fill")
                                 .foregroundColor(accentColor)
                                 .font(.caption)
+                        } else if item.intensity == nil {
+                            // Future date or before account creation
+                            Image(systemName: "star")
+                                .foregroundColor(.gray)
+                                .font(.caption)
                         } else {
-                            Image(systemName: "star.fill")
+                            Image(systemName: "star")
                                 .foregroundColor(.gray)
                                 .font(.caption)
                         }
@@ -998,11 +1097,31 @@ fileprivate struct MonthlyCurrentMonthGridView: View {
         for dayNum in 1...daysInMonth {
             guard let dayDate = calendar.date(byAdding: .day, value: dayNum - 1, to: startOfMonth) else { continue }
 
+            // Skip dates before user creation date
+            if dayDate < userCreationDate {
+                results.append(DayData(
+                    date: dayDate,
+                    dayLabel: "\(dayNum)",
+                    intensity: nil
+                ))
+                continue
+            }
+
+            // Check if the day is in the future
+            if dayDate > now {
+                results.append(DayData(
+                    date: dayDate,
+                    dayLabel: "\(dayNum)",
+                    intensity: nil
+                ))
+                continue
+            }
+
             // Look up record
             let record = dailyRecords.first(where: {
                 calendar.isDate($0.date, inSameDayAs: dayDate)
             })
-            let intensity = record?.intensityScore ?? 0
+            let intensity = record?.intensityScore
 
             results.append(DayData(
                 date: dayDate,
@@ -1014,9 +1133,10 @@ fileprivate struct MonthlyCurrentMonthGridView: View {
     }
 }
 
+
 // Data structure for day cells
 fileprivate struct DayData: Hashable {
     let date: Date
     let dayLabel: String
-    let intensity: CGFloat
+    let intensity: CGFloat?
 }

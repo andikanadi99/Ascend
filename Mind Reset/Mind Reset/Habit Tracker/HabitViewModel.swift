@@ -236,18 +236,6 @@ class HabitViewModel: ObservableObject {
     
     private func createDefaultHabits(for userId: String) {
         let defaultHabits: [Habit] = [
-            // Mindfulness & Mental Well-being
-            Habit(
-                title: "Meditation",
-                description: "Practice mindfulness through meditation, focus on your breath, or other techniques.",
-                goal: "Reduce stress, enhance focus, and promote emotional well-being.",
-                startDate: Date(),
-                ownerId: userId,
-                metricCategory: .time,
-                metricType: TimeMetric.minutes.rawValue,
-                targetValue: 10.0,
-                dailyRecords: []
-            ),
             
             // Physical Health & Fitness
             Habit(
@@ -300,17 +288,16 @@ class HabitViewModel: ObservableObject {
                 targetValue: 1.0,
                 dailyRecords: []
             ),
-            
-            // Personal Well-being & Self-Care
+            // Mindfulness & Mental Well-being
             Habit(
-                title: "Hydration",
-                description: "Drink a specific amount of water during the day to stay healthy and aware of consumption.",
-                goal: "Maintain proper hydration for optimal brain and physical function.",
+                title: "Meditation",
+                description: "Practice mindfulness through meditation, focus on your breath, or other techniques.",
+                goal: "Reduce stress, enhance focus, and promote emotional well-being.",
                 startDate: Date(),
                 ownerId: userId,
-                metricCategory: .custom,
-                metricType: "Liters Consumed",
-                targetValue: 2.0, // Assuming liters
+                metricCategory: .time,
+                metricType: TimeMetric.minutes.rawValue,
+                targetValue: 10.0,
                 dailyRecords: []
             )
         ]

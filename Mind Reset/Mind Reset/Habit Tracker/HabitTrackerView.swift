@@ -187,15 +187,16 @@ struct HabitRow: View {
 
     var body: some View {
         HStack {
-            // Title/Description area
+            // Title/Goal area
             VStack(alignment: .leading, spacing: 4) {
                 Text(habit.title)
                     .font(.headline)
                     .foregroundColor(.white)
 
-                Text(habit.description)
+                Text(habit.goal)
                     .font(.subheadline)
                     .foregroundColor(.white.opacity(0.7))
+                    .multilineTextAlignment(.leading) // Ensures leading alignment
 
                 // Streak Info
                 HStack(spacing: 8) {

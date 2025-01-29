@@ -117,15 +117,25 @@ struct HabitDetailView: View {
                     topBarSection
 
                     // Editable Description
-                    TextField("Habit Description", text: $editableDescription)
+                    TextEditor(text: $editableDescription)
                         .foregroundColor(.white.opacity(0.8))
                         .font(.subheadline)
                         .disableAutocorrection(true)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
+                        .scrollContentBackground(.hidden) // 👈 Hide the default background (iOS 16+)
                         .background(Color.black.opacity(0.2))
                         .cornerRadius(8)
+                        .frame(minHeight: 50)
+                        .overlay(
+                            Group {
+                                if editableDescription.isEmpty {
+                                    Text("Habit Description")
+                                        .foregroundColor(.white.opacity(0.5))
+                                        .padding(.horizontal, 15)
+                                        .padding(.vertical, 2)
+                                }
+                            }, alignment: .topLeading
+                        )
+
 
                     // Goal
                     goalSection
@@ -291,7 +301,7 @@ extension HabitDetailView {
             Spacer()
             TextField("Habit Title", text: $editableTitle)
                 .multilineTextAlignment(.center)
-                .font(.largeTitle.weight(.bold))
+                .font(.title2.weight(.bold))
                 .foregroundColor(.white)
                 .frame(maxWidth: 200)
                 .disableAutocorrection(true)
@@ -302,7 +312,7 @@ extension HabitDetailView {
 
     // MARK: Goal Section
     private var goalSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack() {
             Text("Goal Related to Habit:")
                 .foregroundColor(accentCyan)
                 .font(.headline)
@@ -324,7 +334,7 @@ extension HabitDetailView {
                         RoundedRectangle(cornerRadius: 8)
                             .stroke(accentCyan.opacity(0.6), lineWidth: 1)
                     )
-                    .frame(minHeight: 60, maxHeight: 200)
+                    .frame(minHeight: 100, maxHeight: .infinity)
                     .scrollContentBackground(.hidden)
             }
         }

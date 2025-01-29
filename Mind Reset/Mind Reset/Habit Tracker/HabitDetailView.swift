@@ -589,7 +589,7 @@ extension HabitDetailView {
             if let record = habit.dailyRecords.first(where: { rec in
                 calendar.isDate(rec.date, inSameDayAs: dayDate)
             }) {
-                intensities[i] = record.intensityScore
+                intensities[i] = record.value ?? 0
             } else {
                 intensities[i] = 0 // Assuming 0 means no completion
             }
@@ -1121,7 +1121,8 @@ fileprivate struct MonthlyCurrentMonthGridView: View {
             let record = dailyRecords.first(where: {
                 calendar.isDate($0.date, inSameDayAs: dayDate)
             })
-            let intensity = record?.intensityScore
+            // Convert Double? to CGFloat?
+            let intensity: CGFloat? = record?.value.map { CGFloat($0) }
 
             results.append(DayData(
                 date: dayDate,

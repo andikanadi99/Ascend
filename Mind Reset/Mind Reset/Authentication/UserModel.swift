@@ -5,9 +5,11 @@
 //  Created by Andika Yudhatrisna on 1/28/25.
 //
 
+// UserModel.swift
+
 import Foundation
-import FirebaseAuth
 import FirebaseFirestore
+import FirebaseAuth
 
 struct UserModel: Identifiable, Codable {
     @DocumentID var id: String? // Firestore document ID

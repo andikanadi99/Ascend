@@ -110,8 +110,18 @@ class HabitViewModel: ObservableObject {
     
     // MARK: - Add New Habit with Completion Handler
     func addHabit(_ habit: Habit, completion: @escaping (Bool) -> Void) {
-        guard let userId = Auth.auth().currentUser?.uid else {
+        // Note: Since `Habit` includes `ownerId`, we can remove the userId check here
+        // as it's already set when initializing `Habit`. However, for security,
+        // it's better to ensure that `ownerId` matches the authenticated user.
+
+        guard let authenticatedUserId = Auth.auth().currentUser?.uid else {
             print("No authenticated user; cannot add habit.")
+            completion(false)
+            return
+        }
+        
+        guard authenticatedUserId == habit.ownerId else {
+            print("Authenticated user does not match habit's ownerId.")
             completion(false)
             return
         }
@@ -245,7 +255,7 @@ class HabitViewModel: ObservableObject {
                 startDate: Date(),
                 ownerId: userId,
                 metricCategory: .quantity,
-                metricType: QuantityMetric.distanceMiles.rawValue,
+                metricType: .predefined(QuantityMetric.distanceMiles.rawValue),
                 targetValue: 1.0,
                 dailyRecords: []
             ),
@@ -258,7 +268,7 @@ class HabitViewModel: ObservableObject {
                 startDate: Date(),
                 ownerId: userId,
                 metricCategory: .quantity,
-                metricType: QuantityMetric.pagesRead.rawValue,
+                metricType: .predefined(QuantityMetric.pagesRead.rawValue),
                 targetValue: 20.0,
                 dailyRecords: []
             ),
@@ -271,7 +281,7 @@ class HabitViewModel: ObservableObject {
                 startDate: Date(),
                 ownerId: userId,
                 metricCategory: .quantity,
-                metricType: QuantityMetric.entriesWritten.rawValue,
+                metricType: .predefined(QuantityMetric.entriesWritten.rawValue),
                 targetValue: 1.0,
                 dailyRecords: []
             ),
@@ -284,7 +294,7 @@ class HabitViewModel: ObservableObject {
                 startDate: Date(),
                 ownerId: userId,
                 metricCategory: .completion,
-                metricType: CompletionMetric.completed.rawValue,
+                metricType: .predefined(CompletionMetric.completed.rawValue),
                 targetValue: 1.0,
                 dailyRecords: []
             ),
@@ -296,7 +306,7 @@ class HabitViewModel: ObservableObject {
                 startDate: Date(),
                 ownerId: userId,
                 metricCategory: .time,
-                metricType: TimeMetric.minutes.rawValue,
+                metricType: .predefined(TimeMetric.minutes.rawValue),
                 targetValue: 10.0,
                 dailyRecords: []
             )

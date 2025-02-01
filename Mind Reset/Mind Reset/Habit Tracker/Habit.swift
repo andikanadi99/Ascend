@@ -1,10 +1,4 @@
-//
-//  Habit.swift
-//  Mind Reset
-//  Defines the data model for habits with customizable metrics.
-//
-//  Created by Andika Yudhatrisna on 1/3/25.
-//
+// Habit.swift
 
 import Foundation
 import FirebaseFirestore
@@ -15,13 +9,76 @@ import SwiftUI
 
 /// Represents the general categories of metrics a user can select.
 enum MetricCategory: String, CaseIterable, Identifiable, Codable {
-    case time = "Time"
-    case quantity = "Quantity"
-    case completion = "Completion"
-    case performance = "Performance"
-    case custom = "Custom"
+    case time = "Time Metrics"
+    case quantity = "Quantity Metrics"
+    case completion = "Completion Metrics"
+    case performance = "Performance Metrics"
+    case custom = "Custom Metrics"
     
     var id: String { self.rawValue }
+    
+    /// Returns the list of metric types based on the selected category.
+    var metricTypes: [MetricType] {
+        switch self {
+        case .time:
+            return TimeMetric.allCases.map { .predefined($0.rawValue) }
+        case .quantity:
+            return QuantityMetric.allCases.map { .predefined($0.rawValue) }
+        case .completion:
+            return CompletionMetric.allCases.map { .predefined($0.rawValue) }
+        case .performance:
+            return PerformanceMetric.allCases.map { .predefined($0.rawValue) }
+        case .custom:
+            return [] // Custom category will handle its own custom types
+        }
+    }
+}
+
+/// Represents both predefined and custom metric types.
+enum MetricType: Codable, Identifiable, Equatable, Hashable {
+    case predefined(String)
+    case custom(String)
+    
+    var id: String {
+        switch self {
+        case .predefined(let type):
+            return type
+        case .custom(let type):
+            return type
+        }
+    }
+    
+    // Custom CodingKeys to handle encoding and decoding
+    enum CodingKeys: String, CodingKey {
+        case type
+        case value
+    }
+    
+    // Custom initializer to decode the enum
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(String.self, forKey: .type)
+        let value = try container.decode(String.self, forKey: .value)
+        
+        if type == "predefined" {
+            self = .predefined(value)
+        } else {
+            self = .custom(value)
+        }
+    }
+    
+    // Custom encoder to encode the enum
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .predefined(let value):
+            try container.encode("predefined", forKey: .type)
+            try container.encode(value, forKey: .value)
+        case .custom(let value):
+            try container.encode("custom", forKey: .type)
+            try container.encode(value, forKey: .value)
+        }
+    }
 }
 
 /// Specific metric types under the Time category.
@@ -67,6 +124,7 @@ enum PerformanceMetric: String, CaseIterable, Identifiable, Codable {
 }
 
 // MARK: - HabitRecord
+
 /// Represents daily records for a habit, including the date and the metric value.
 struct HabitRecord: Identifiable, Codable {
     var id: String? = UUID().uuidString
@@ -86,6 +144,7 @@ struct HabitRecord: Identifiable, Codable {
 }
 
 // MARK: - Habit
+
 /// Defines a habit with customizable tracking metrics.
 struct Habit: Identifiable, Codable {
     @DocumentID var id: String?
@@ -105,11 +164,11 @@ struct Habit: Identifiable, Codable {
     
     // MARK: - New Properties for Customizable Metrics
     var metricCategory: MetricCategory // The general category of the metric
-    var metricType: String // The specific metric type or custom description
+    var metricType: MetricType // The specific metric type (predefined or custom)
     var targetValue: Double // The goal value based on the metric type
     var dailyRecords: [HabitRecord] // Stores metric values per day
     
-    // MARK: - Corrected Initializer
+    // MARK: - Initializer
     init(
         title: String,
         description: String,
@@ -124,7 +183,7 @@ struct Habit: Identifiable, Codable {
         monthlyStreakBadge: Bool = false,
         yearlyStreakBadge: Bool = false,
         metricCategory: MetricCategory = .completion,
-        metricType: String = "Completed (Yes/No)",
+        metricType: MetricType = .predefined("Completed (Yes/No)"),
         targetValue: Double = 1.0,
         dailyRecords: [HabitRecord] = []
     ) {
@@ -133,18 +192,18 @@ struct Habit: Identifiable, Codable {
         self.goal = goal
         self.startDate = startDate
         self.ownerId = ownerId
-        self.isCompletedToday = isCompletedToday              // Correctly assigned
-        self.lastReset = lastReset                            // Correctly assigned
-        self.points = 0                                       // Initialized as per original logic
-        self.currentStreak = currentStreak                    // Correctly assigned
-        self.longestStreak = longestStreak                    // Correctly assigned
-        self.weeklyStreakBadge = weeklyStreakBadge            // Correctly assigned
-        self.monthlyStreakBadge = monthlyStreakBadge          // Correctly assigned
-        self.yearlyStreakBadge = yearlyStreakBadge            // Correctly assigned
-        self.metricCategory = metricCategory                  // Correctly assigned
-        self.metricType = metricType                          // Correctly assigned
-        self.targetValue = targetValue                        // Correctly assigned
-        self.dailyRecords = dailyRecords                      // Correctly assigned
+        self.isCompletedToday = isCompletedToday
+        self.lastReset = lastReset
+        self.points = 0
+        self.currentStreak = currentStreak
+        self.longestStreak = longestStreak
+        self.weeklyStreakBadge = weeklyStreakBadge
+        self.monthlyStreakBadge = monthlyStreakBadge
+        self.yearlyStreakBadge = yearlyStreakBadge
+        self.metricCategory = metricCategory
+        self.metricType = metricType
+        self.targetValue = targetValue
+        self.dailyRecords = dailyRecords
     }
     
     // MARK: - Codable Conformance

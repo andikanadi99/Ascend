@@ -19,7 +19,6 @@ struct AddHabitView: View {
     @State private var habitDescription: String = ""
     @State private var habitGoal: String = ""
     @State private var startDate: Date = Date()
-    @State private var target: String = ""
     @State private var setReminder: Bool = false
     @State private var reminderTime: Date = Date()
     @State private var selectedMetricCategory: MetricCategory = .completion
@@ -34,6 +33,14 @@ struct AddHabitView: View {
     let backgroundColor = Color.black
     let accentColor = Color(red: 0, green: 1, blue: 1) // Electric blue/cyan
     let textFieldBackground = Color(red: 0.15, green: 0.15, blue: 0.15)
+    
+    // MARK: - Computed Properties
+    private var isFormValid: Bool {
+        !habitTitle.isEmpty &&
+        !habitDescription.isEmpty &&
+        !habitGoal.isEmpty &&
+        (selectedMetricCategory != .custom || !customMetricTypeInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
     
     var body: some View {
         ZStack {
@@ -52,9 +59,13 @@ struct AddHabitView: View {
                     
                     // MARK: Habit Title Field
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("Habit Title")
-                            .foregroundColor(accentColor)
-                            .fontWeight(.semibold)
+                        HStack(spacing: 2) {
+                            Text("Habit Title")
+                                .foregroundColor(accentColor)
+                                .fontWeight(.semibold)
+                            Text("*")
+                                .foregroundColor(.red)
+                        }
                         
                         TextField(
                             "",
@@ -74,22 +85,24 @@ struct AddHabitView: View {
                     
                     // MARK: Habit Description Field
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("Habit Description")
-                               .foregroundColor(accentColor)
-                               .fontWeight(.semibold)
-
+                        HStack(spacing: 2) {
+                            Text("Habit Description")
+                                .foregroundColor(accentColor)
+                                .fontWeight(.semibold)
+                            Text("*")
+                                .foregroundColor(.red)
+                        }
                         
                         TextEditor(text: $habitDescription)
                             .foregroundColor(.white.opacity(0.8))
                             .font(.subheadline)
                             .disableAutocorrection(true)
-                            .scrollContentBackground(.hidden) // 👈 Apply to TextEditor, not the Text view
-                            .padding(8) // Add padding inside the TextEditor
+                            .scrollContentBackground(.hidden)
+                            .padding(8)
                             .background(textFieldBackground)
                             .cornerRadius(8)
-                            .frame(minHeight: 100) // Removed maxHeight to prevent layout conflicts
+                            .frame(minHeight: 100)
                             .overlay(
-                                // Placeholder
                                 Group {
                                     if habitDescription.isEmpty {
                                         Text("Enter Habit Description")
@@ -105,9 +118,13 @@ struct AddHabitView: View {
                     
                     // MARK: Goal Field
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("Goal")
-                            .foregroundColor(accentColor)
-                            .fontWeight(.semibold)
+                        HStack(spacing: 2) {
+                            Text("Goal")
+                                .foregroundColor(accentColor)
+                                .fontWeight(.semibold)
+                            Text("*")
+                                .foregroundColor(.red)
+                        }
                         
                         TextField(
                             "",
@@ -127,45 +144,22 @@ struct AddHabitView: View {
                     
                     // MARK: Start Date Picker
                     VStack(alignment: .leading, spacing: 5) {
-                       Text("Start Date")
-                           .foregroundColor(accentColor)
-                           .fontWeight(.semibold)
-                       
-                       DatePicker(
-                           "",
-                           selection: $startDate,
-                           displayedComponents: .date
-                       )
-                       .datePickerStyle(WheelDatePickerStyle())
-                       .padding()
-                       .background(accentColor.opacity(0.8))
-                       .cornerRadius(8)
-                       .accentColor(accentColor)
-                       .accessibilityLabel("Start Date Picker")
-                       .accessibilityHint("Select the start date for your habit")
-                    }
-                    
-                    // MARK: Target Field
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Target")
+                        Text("Start Date")
                             .foregroundColor(accentColor)
                             .fontWeight(.semibold)
                         
-                        TextField(
+                        DatePicker(
                             "",
-                            text: $target,
-                            prompt: Text("e.g. 3 times per week")
-                                .foregroundColor(.white.opacity(0.8))
+                            selection: $startDate,
+                            displayedComponents: .date
                         )
-                        .foregroundColor(.white.opacity(0.8))
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                        .keyboardType(.decimalPad) // Assuming target is numeric
+                        .datePickerStyle(WheelDatePickerStyle())
                         .padding()
-                        .background(textFieldBackground)
+                        .background(accentColor.opacity(0.8))
                         .cornerRadius(8)
-                        .accessibilityLabel("Target")
-                        .accessibilityHint("Enter the target for your habit")
+                        .accentColor(accentColor)
+                        .accessibilityLabel("Start Date Picker")
+                        .accessibilityHint("Select the start date for your habit")
                     }
                     
                     // MARK: Metric Category Picker
@@ -175,7 +169,6 @@ struct AddHabitView: View {
                             .fontWeight(.semibold)
                         
                         Menu {
-                            // Generate menu items dynamically from MetricCategory
                             ForEach(MetricCategory.allCases) { category in
                                 Button(action: {
                                     selectedMetricCategory = category
@@ -202,16 +195,13 @@ struct AddHabitView: View {
                         .accessibilityLabel("Metric Category Picker")
                         .accessibilityHint("Select a metric category for your habit")
                     }
-                    // *** Add this onChange modifier right after the VStack above:
                     .onChange(of: selectedMetricCategory) { newCategory in
                         if newCategory == .custom {
-                            // For custom, we want to clear the current value (or keep it empty)
                             selectedMetricType = .custom("")
                         } else if let firstMetric = newCategory.metricTypes.first {
                             selectedMetricType = firstMetric
                         }
                     }
-
                     
                     // MARK: Metric Type Picker
                     MetricTypePicker(
@@ -235,12 +225,13 @@ struct AddHabitView: View {
                         
                         if setReminder {
                             DatePicker(
-                                "Reminder Time",
+                                "",
                                 selection: $reminderTime,
                                 displayedComponents: .hourAndMinute
                             )
+                            .labelsHidden()
                             .datePickerStyle(WheelDatePickerStyle())
-                            .foregroundColor(.white)
+                            .environment(\.colorScheme, .dark)
                             .accessibilityLabel("Reminder Time Picker")
                             .accessibilityHint("Select the time for your habit reminder")
                         }
@@ -252,25 +243,19 @@ struct AddHabitView: View {
                     // MARK: Create Habit Button
                     Button(action: createHabit) {
                         Text("Create Habit")
-                            .foregroundColor(.black)
+                            .foregroundColor(isFormValid ? .black : .gray)
                             .fontWeight(.bold)
                             .padding()
                             .frame(maxWidth: .infinity)
-                            .background(accentColor)
+                            .background(isFormValid ? accentColor : Color.gray.opacity(0.3))
                             .cornerRadius(8)
                     }
                     .padding(.top, 10)
-                    .disabled(
-                        habitTitle.isEmpty ||
-                        habitDescription.isEmpty ||
-                        habitGoal.isEmpty ||
-                        target.isEmpty ||
-                        (selectedMetricCategory == .custom && customMetricTypeInput.isEmpty)
-                    )
+                    .disabled(!isFormValid)
                     .accessibilityLabel("Create Habit Button")
                     .accessibilityHint("Creates a new habit with the provided details")
                     
-                    // Cancel Button
+                    // MARK: Cancel Button
                     Button(action: {
                         presentationMode.wrappedValue.dismiss()
                     }) {
@@ -286,7 +271,6 @@ struct AddHabitView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 20)
             }
-            // Attach the alert to the view
             .alert(isPresented: $showingAlert) {
                 Alert(
                     title: Text("Info"),
@@ -298,21 +282,14 @@ struct AddHabitView: View {
                     }
                 )
             }
-        } 
+        }
     }
+    
     // MARK: - Create Habit Action
     private func createHabit() {
         guard let userId = session.current_user?.uid else {
             print("No authenticated user found; cannot add habit.")
             alertMessage = "No authenticated user found; cannot add habit."
-            showingAlert = true
-            return
-        }
-        
-        // Validate and convert target to Double
-        guard let targetValue = Double(target), targetValue > 0 else {
-            print("Invalid target value; must be a positive number.")
-            alertMessage = "Invalid target value; must be a positive number."
             showingAlert = true
             return
         }
@@ -332,7 +309,6 @@ struct AddHabitView: View {
             finalMetricType = selectedMetricType
         }
         
-        // Initialize a new Habit instance with all necessary properties
         let newHabit = Habit(
             title: habitTitle,
             description: habitDescription,
@@ -345,17 +321,13 @@ struct AddHabitView: View {
             lastReset: Date(),
             metricCategory: selectedMetricCategory,
             metricType: finalMetricType,
-            targetValue: targetValue,
             dailyRecords: []
         )
         
-        // Insert into Firestore via ViewModel with Completion Handler
         viewModel.addHabit(newHabit) { success in
             if success {
-                // Show success message and dismiss
                 alertMessage = "Habit created successfully!"
             } else {
-                // Show failure message
                 alertMessage = "Failed to create habit. Please try again."
             }
             showingAlert = true
@@ -363,14 +335,10 @@ struct AddHabitView: View {
     }
 }
 
-
-// MARK: - Preview
 struct AddHabitView_Previews: PreviewProvider {
     static var previews: some View {
-        // Mock dependencies
         let viewModel = HabitViewModel()
         let session = SessionStore()
-        
         return AddHabitView(viewModel: viewModel)
             .environmentObject(session)
     }

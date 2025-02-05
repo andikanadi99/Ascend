@@ -269,27 +269,37 @@ class HabitViewModel: ObservableObject {
         }
     }
     
+    // MARK: - Updated Toggle Habit Completion (for both marking and unmarking)
     func toggleHabitCompletion(_ habit: Habit, userId: String) {
-        guard let idx = habits.firstIndex(where: { $0.id == habit.id }), let habitId = habit.id else { return }
+        guard let idx = habits.firstIndex(where: { $0.id == habit.id }),
+              let habitId = habit.id else { return }
         let oldHabit = habits[idx]
         var updated = habit
+        let calendar = Calendar.current
+        let today = Date()
         
         if updated.isCompletedToday {
+            // UNMARK: Remove today's record from dailyRecords.
+            updated.dailyRecords.removeAll { record in
+                calendar.isDate(record.date, inSameDayAs: today)
+            }
             updated.isCompletedToday = false
             updated.currentStreak = max(updated.currentStreak - 1, 0)
-            if updated.currentStreak < updated.longestStreak, oldHabit.currentStreak == oldHabit.longestStreak {
+            if updated.currentStreak < updated.longestStreak,
+               oldHabit.currentStreak == oldHabit.longestStreak {
                 updated.longestStreak = updated.currentStreak
             }
             updated.lastReset = nil
         } else {
-            let todayStr = dateFormatter.string(from: Date())
+            // MARK: (Your other code adds a new record when marking as done.)
+            let todayStr = dateFormatter.string(from: today)
             let lastResetStr = updated.lastReset == nil ? "" : dateFormatter.string(from: updated.lastReset!)
             if lastResetStr != todayStr {
                 updated.currentStreak += 1
                 if updated.currentStreak > updated.longestStreak {
                     updated.longestStreak = updated.currentStreak
                 }
-                updated.lastReset = Date()
+                updated.lastReset = today
             }
             updated.isCompletedToday = true
         }
@@ -334,7 +344,6 @@ class HabitViewModel: ObservableObject {
     // MARK: - New Note-Saving Method
     
     func saveUserNote(for habitID: String, note: String, completion: @escaping (Bool) -> Void) {
-        // Make sure the note isn’t empty and we have a valid habitID
         guard !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !habitID.isEmpty else {
             completion(false)
             return
@@ -361,7 +370,6 @@ class HabitViewModel: ObservableObject {
     // MARK: - New Delete Note Method
     
     func deleteUserNote(note: UserNote, completion: @escaping (Bool) -> Void) {
-        // Ensure the note has an ID
         guard let noteID = note.id else {
             completion(false)
             return

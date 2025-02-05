@@ -7,15 +7,15 @@
 //  screen visible underneath (tinted white).
 //
 //  Uses real data from habit.dailyRecords for weekly and monthly views.
-//  Now includes "Current Week" or "Current Month" label above the picker.
-//  Also fetches and saves session notes from Firestore.
-//  A new "View Previous Notes" button launches a separate view that displays
-//  all previously saved session notes in an accessible and clean format.
+//  Also fetches and saves session notes from Firestore and includes a
+//  "View Previous Notes" button.
 //  When a note is saved, a temporary banner appears confirming the action.
+//  Additionally, when a user marks a habit as done, a pop-up appears to prompt
+//  the user for the metric value, and when unmarking, a confirmation pop-up is shown.
 //
 //  Created by Andika Yudhatrisna on 1/3/25.
 //
- 
+
 import SwiftUI
 import Combine
 import FirebaseFirestore
@@ -40,16 +40,15 @@ struct HabitDetailView: View {
     @State private var countdownSeconds: Int = 0
     @State private var timer: Timer? = nil
     @State private var isTimerRunning = false
-    @State private var isTimerPaused  = false
+    @State private var isTimerPaused: Bool = false
     @State private var totalFocusTime: Int = 0
 
     // Countdown pickers
-    @State private var selectedHours: Int   = 0
+    @State private var selectedHours: Int = 0
     @State private var selectedMinutes: Int = 0
 
     // MARK: - Notes
-    @State private var sessionNotes: String   = ""
-    // This array holds new notes locally if needed; previous notes are now viewed via the new view.
+    @State private var sessionNotes: String = ""
     @State private var pastSessionNotes: [UserNote] = []
 
     // MARK: - Habit Goal
@@ -58,14 +57,19 @@ struct HabitDetailView: View {
     // MARK: - Additional UI
     @Namespace private var animation
     @State private var showCharts: Bool = false
-    // Controls presenting the previous notes view.
     @State private var showPreviousNotes: Bool = false
-    // Controls the banner notification.
     @State private var showBanner: Bool = false
 
+    // NEW: For showing the metric input overlay when marking the habit as done.
+    @State private var showMetricInput: Bool = false
+    @State private var metricInput: String = ""
+
+    // NEW: For showing the unmark confirmation overlay.
+    @State private var showUnmarkConfirmation: Bool = false
+
     // MARK: - Styling
-    let backgroundBlack     = Color.black
-    let accentCyan          = Color(red: 0, green: 1, blue: 1)
+    let backgroundBlack = Color.black
+    let accentCyan = Color(red: 0, green: 1, blue: 1)
     let textFieldBackground = Color(red: 0.15, green: 0.15, blue: 0.15)
 
     // MARK: - Local Streak Tracking
@@ -76,38 +80,49 @@ struct HabitDetailView: View {
     @State private var cancellables: Set<AnyCancellable> = []
 
     // MARK: - Time Range
-    fileprivate enum TimeRange {
-        case weekly, monthly
-    }
+    fileprivate enum TimeRange { case weekly, monthly }
     @State private var selectedTimeRange: TimeRange = .weekly
-
-    // For switching weeks/months in progress view
     @State private var weekOffset: Int = 0
     @State private var monthOffset: Int = 0
-
-    // Instead of a .sheet, we use a custom overlay pop-up
     @State private var showDateRangeOverlay = false
 
     // MARK: - Initialization
     init(habit: Binding<Habit>) {
-        _habit               = habit
-        _editableTitle       = State(initialValue: habit.wrappedValue.title)
+        _habit = habit
+        _editableTitle = State(initialValue: habit.wrappedValue.title)
         _editableDescription = State(initialValue: habit.wrappedValue.description)
-        _goal                = State(initialValue: habit.wrappedValue.goal)
+        _goal = State(initialValue: habit.wrappedValue.goal)
     }
 
     // MARK: - Body
     var body: some View {
         ZStack {
             mainContent
+
+            // Existing date range overlay.
+            if showDateRangeOverlay {
+                Color.white.opacity(0.9)
+                    .ignoresSafeArea()
+                dateRangeOverlayView
+                    .transition(.scale)
+            }
+
+            // NEW: Overlay for metric input (when marking as done)
+            if showMetricInput {
+                metricInputOverlay
+                    .transition(.opacity)
+            }
+
+            // NEW: Overlay for unmark confirmation.
+            if showUnmarkConfirmation {
+                unmarkConfirmationOverlay
+                    .transition(.opacity)
+            }
         }
-        // Apply the banner modifier.
+        // Banner notification
         .banner(message: "Note Saved!", isPresented: $showBanner)
         .onAppear {
-            guard let userId = session.current_user?.uid else {
-                print("No authenticated user found.")
-                return
-            }
+            guard let userId = session.current_user?.uid else { return }
             viewModel.fetchHabits(for: userId)
             viewModel.setupDefaultHabitsIfNeeded(for: userId)
             initializeLocalStreaks()
@@ -128,7 +143,6 @@ struct HabitDetailView: View {
                 countdownSeconds = selectedHours * 3600 + selectedMinutes * 60
             }
         }
-        // Present the PreviousNotesView sheet.
         .sheet(isPresented: $showPreviousNotes) {
             PreviousNotesView(habitID: habit.id ?? "")
         }
@@ -141,6 +155,7 @@ struct HabitDetailView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 15) {
                     topBarSection
+
                     TextEditor(text: $editableDescription)
                         .foregroundColor(.white.opacity(0.8))
                         .font(.subheadline)
@@ -159,7 +174,9 @@ struct HabitDetailView: View {
                                 }
                             }, alignment: .topLeading
                         )
+
                     goalSection
+
                     Picker("Tabs", selection: $selectedTabIndex) {
                         Text("Focus").tag(0)
                         Text("Progress").tag(1)
@@ -170,6 +187,7 @@ struct HabitDetailView: View {
                     .background(.gray)
                     .cornerRadius(8)
                     .padding(.horizontal, 10)
+
                     Group {
                         switch selectedTabIndex {
                         case 0: focusTab
@@ -177,8 +195,45 @@ struct HabitDetailView: View {
                         default: notesTab
                         }
                     }
+                    
+                    Spacer()
+                    
+                    // NEW: Display metric info in a horizontal two‑column layout.
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Metric Category:")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                            Text(habit.metricCategory.rawValue)
+                                .font(.caption)
+                                .foregroundColor(accentCyan)
+                        }
+                        Spacer()
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Metric Type:")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                            let metricText: String = {
+                                switch habit.metricType {
+                                case .predefined(let value): return value
+                                case .custom(let value): return value
+                                }
+                            }()
+                            Text(metricText)
+                                .font(.caption)
+                                .foregroundColor(accentCyan)
+                        }
+                    }
+                    .padding(.horizontal)
+                    
+                    // NEW: Mark/Unmark button with modified behavior.
                     Button {
-                        toggleHabitDone()
+                        if habit.isCompletedToday {
+                            showUnmarkConfirmation = true
+                        } else {
+                            metricInput = ""
+                            showMetricInput = true
+                        }
                     } label: {
                         Text(habit.isCompletedToday ? "Unmark Habit as Done" : "Mark Habit as Done")
                             .foregroundColor(.black)
@@ -197,7 +252,134 @@ struct HabitDetailView: View {
         .navigationBarBackButtonHidden(true)
     }
 
-    // MARK: - Date Range Overlay
+    // MARK: - Metric Input Overlay (for marking as done)
+    private var metricInputOverlay: some View {
+        let prompt = metricPrompt()
+        return VStack(spacing: 16) {
+            Text(prompt)
+                .font(.headline)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.white)
+            
+            TextField("Enter a number", text: $metricInput)
+                .keyboardType(.numberPad)
+                .padding()
+                .background(Color.white.opacity(0.2))
+                .cornerRadius(8)
+                .foregroundColor(.white)
+            
+            // Warning message when the input is invalid.
+            if !metricInput.isEmpty {
+                if habit.metricType.isCompletedMetric() {
+                    if metricInput != "0" && metricInput != "1" {
+                        Text("Please enter either 0 (No) or 1 (Yes)")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                } else if Int(metricInput) == nil {
+                    Text("Please enter a valid number")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+            }
+            
+            HStack {
+                Button("Cancel") {
+                    withAnimation { showMetricInput = false }
+                }
+                .foregroundColor(.red)
+                
+                Spacer()
+                
+                Button("Save") {
+                    if let metricValue = Int(metricInput) {
+                        completeHabit(with: metricValue)
+                        withAnimation { showMetricInput = false }
+                    }
+                }
+                .disabled({
+                    if habit.metricType.isCompletedMetric() {
+                        return !(metricInput == "0" || metricInput == "1")
+                    } else {
+                        return Int(metricInput) == nil
+                    }
+                }())
+                .foregroundColor(.green)
+            }
+        }
+        .padding()
+        .frame(width: 300)
+        .background(Color.black.opacity(0.9))
+        .cornerRadius(12)
+        .shadow(radius: 8)
+    }
+
+    // MARK: - Unmark Confirmation Overlay
+    private var unmarkConfirmationOverlay: some View {
+        VStack(spacing: 16) {
+            Text("Are you sure you want to unmark this habit as done?")
+                .font(.headline)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.white)
+            HStack {
+                Button("Cancel") {
+                    withAnimation { showUnmarkConfirmation = false }
+                }
+                .foregroundColor(.red)
+                Spacer()
+                Button("Ok") {
+                    toggleHabitDone()
+                    withAnimation { showUnmarkConfirmation = false }
+                }
+                .foregroundColor(.green)
+            }
+        }
+        .padding()
+        .frame(width: 300)
+        .background(Color.black.opacity(0.9))
+        .cornerRadius(12)
+        .shadow(radius: 8)
+    }
+
+    // MARK: - Helper for Dynamic Prompt (for metric input)
+    private func metricPrompt() -> String {
+        switch habit.metricType {
+        case .predefined(let value):
+            if value.lowercased().contains("minute") {
+                return "How many minutes did you meditate today?"
+            } else if value.lowercased().contains("miles") {
+                return "How many miles did you run today?"
+            } else if value.lowercased().contains("pages") {
+                return "How many pages did you read today?"
+            } else if value.lowercased().contains("reps") {
+                return "How many reps did you complete today?"
+            } else if value.lowercased().contains("steps") {
+                return "How many steps did you take today?"
+            } else if value.lowercased().contains("calories") {
+                return "How many calories did you burn/consume today?"
+            } else if value.lowercased().contains("hours") {
+                return "How many hours did you sleep today?"
+            } else if value.lowercased().contains("completed") {
+                return "Were you able to complete the task? (Enter 1 for Yes, 0 for No)"
+            } else {
+                return "Enter today's \(value.lowercased()) value:"
+            }
+        case .custom(let customValue):
+            return "Enter today's \(customValue.lowercased()) value:"
+        }
+    }
+
+    // MARK: - Complete Habit With Metric
+    private func completeHabit(with metricValue: Int) {
+        let newRecord = HabitRecord(date: Date(), value: Double(metricValue))
+        var updatedHabit = habit
+        updatedHabit.dailyRecords.append(newRecord)
+        updatedHabit.isCompletedToday = true
+        viewModel.updateHabit(updatedHabit)
+        habit = updatedHabit
+    }
+
+    // MARK: - Date Range Overlay (Existing Code)
     @ViewBuilder
     private var dateRangeOverlayView: some View {
         VStack(spacing: 0) {
@@ -261,9 +443,8 @@ struct HabitDetailView: View {
     }
 }
 
-// MARK: - Subviews & Helpers
+// MARK: - Subviews & Helpers (unchanged)
 extension HabitDetailView {
-    // Top Bar + Title
     private var topBarSection: some View {
         HStack {
             Button {
@@ -285,7 +466,6 @@ extension HabitDetailView {
         }
     }
     
-    // Goal Section
     private var goalSection: some View {
         VStack() {
             Text("Goal Related to Habit:")
@@ -314,7 +494,6 @@ extension HabitDetailView {
         }
     }
     
-    // Focus Tab
     private var focusTab: some View {
         VStack(spacing: 16) {
             ZStack {
@@ -372,7 +551,6 @@ extension HabitDetailView {
         }
     }
     
-    // Timer Picker Helper
     private func timePickerBlock(label: String, range: Range<Int>, selection: Binding<Int>) -> some View {
         VStack(spacing: 4) {
             Text(label)
@@ -391,7 +569,6 @@ extension HabitDetailView {
         }
     }
     
-    // Button Label Helper
     private func navigationButtonLabel(title: String, isDisabled: Bool) -> some View {
         Text(title)
             .multilineTextAlignment(.center)
@@ -399,7 +576,6 @@ extension HabitDetailView {
             .fixedSize(horizontal: false, vertical: true)
     }
     
-    // Progress Tab
     private var progressTab: some View {
         let userCreationDate = session.userModel?.createdAt ?? habit.startDate
         return VStack(spacing: 20) {
@@ -572,7 +748,7 @@ extension HabitDetailView {
         let fmt = DateFormatter()
         fmt.dateFormat = "MMM d"
         let startStr = fmt.string(from: interval.start)
-        let endStr   = fmt.string(from: interval.end)
+        let endStr = fmt.string(from: interval.end)
         return "\(startStr) - \(endStr)"
     }
     
@@ -667,7 +843,6 @@ extension HabitDetailView {
             .background(accentCyan)
             .cornerRadius(8)
             
-            // New button to view previous notes in a separate view.
             Button("View Previous Notes") {
                 showPreviousNotes = true
             }
@@ -678,14 +853,13 @@ extension HabitDetailView {
         }
     }
     
-    // Updated saveNote() to save to Firestore, trigger the banner, then refresh notes.
     private func saveNote() {
         guard !sessionNotes.isEmpty, let habitID = habit.id else { return }
         viewModel.saveUserNote(for: habitID, note: sessionNotes) { success in
             if success {
                 DispatchQueue.main.async {
                     sessionNotes = ""
-                    showBanner = true  // Trigger banner
+                    showBanner = true
                     fetchUserNotes()
                 }
             } else {
@@ -694,7 +868,6 @@ extension HabitDetailView {
         }
     }
     
-    // Fetch notes from Firestore for this habit.
     private func fetchUserNotes() {
         guard let habitID = habit.id else { return }
         let db = Firestore.firestore()
@@ -716,7 +889,6 @@ extension HabitDetailView {
             }
     }
     
-    // Helper to format a Date.
     private func formatTimestamp(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
@@ -724,7 +896,6 @@ extension HabitDetailView {
         return formatter.string(from: date)
     }
     
-    // Delete a note.
     private func deleteNote(_ note: UserNote) {
         viewModel.deleteUserNote(note: note) { success in
             if success {
@@ -741,7 +912,7 @@ extension HabitDetailView {
     private func startTimer() {
         guard !isTimerRunning || isTimerPaused else { return }
         isTimerRunning = true
-        isTimerPaused  = false
+        isTimerPaused = false
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             if countdownSeconds > 0 {
@@ -789,8 +960,7 @@ extension HabitDetailView {
     private func saveEditsToHabit() {
         guard editableTitle != habit.title ||
               editableDescription != habit.description ||
-              goal != habit.goal
-        else { return }
+              goal != habit.goal else { return }
         habit.title = editableTitle
         habit.description = editableDescription
         habit.goal = goal
@@ -838,130 +1008,158 @@ extension HabitDetailView {
     private var maxMonthOffset: Int { 0 }
 }
 
-
-
 // MARK: - SingleLineGraphView
 fileprivate struct SingleLineGraphView: View {
     let timeRange: HabitDetailView.TimeRange
     let dates: [String]
-    let intensities: [CGFloat?]
+    let intensities: [CGFloat?]  // Days with no data (e.g. future days) are nil.
     let accentColor: Color
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                let axisPadding: CGFloat = 20
+        // Compute the maximum value dynamically from non‑nil values.
+        let computedMax = intensities.compactMap { $0 }.max() ?? 0
+        // Ensure at least 1 is used so that a Completed metric (0 or 1) displays correctly.
+        let maxValue = max(computedMax, 1)
+        
+        // Determine grid lines. For a Completed metric, only show 0 and 1.
+        let gridLines: [CGFloat] = (maxValue == 1)
+            ? [0, 1]
+            : Array(stride(from: 0, through: maxValue, by: maxValue / 5))
+        
+        // Add a top padding so the graph doesn't start at the very top.
+        let topPadding: CGFloat = 20
+        
+        // Adjust the overall view height based on the data range.
+        // If maxValue is 1, use a shorter height; otherwise, scale based on maxValue but cap the height.
+        let desiredHeight: CGFloat = (maxValue == 1)
+            ? 150
+            : min(max(350, maxValue * 30), 500)
 
+        return GeometryReader { geo in
+            ZStack {
+                // Draw the vertical axis on the left, starting at topPadding.
                 Path { p in
-                    p.move(to: CGPoint(x: axisPadding, y: 0))
-                    p.addLine(to: CGPoint(x: axisPadding, y: geo.size.height))
+                    p.move(to: CGPoint(x: 20, y: topPadding))
+                    p.addLine(to: CGPoint(x: 20, y: geo.size.height))
                 }
                 .stroke(Color.white.opacity(0.2), lineWidth: 1)
-
-                ForEach(0...5, id: \.self) { i in
-                    let value = CGFloat(i) * 20
-                    let y = yPosition(value, height: geo.size.height, maxValue: 100)
-
+                
+                // Draw horizontal grid lines and their labels.
+                ForEach(gridLines.indices, id: \.self) { index in
+                    let value = gridLines[index]
+                    let y = yPosition(for: value, in: geo.size.height, maxValue: maxValue, topPadding: topPadding)
+                    
                     Path { path in
-                        path.move(to: CGPoint(x: axisPadding, y: y))
+                        path.move(to: CGPoint(x: 20, y: y))
                         path.addLine(to: CGPoint(x: geo.size.width, y: y))
                     }
                     .stroke(Color.white.opacity(0.2), lineWidth: 1)
-
+                    
                     Text("\(Int(value))")
                         .font(.caption2)
                         .foregroundColor(.white.opacity(0.6))
-                        .position(x: axisPadding - 10, y: y)
+                        .position(x: 10, y: y)
                 }
-
-                SmoothLineShape(
-                    values: intensities.compactMap { $0 },
-                    maxValue: 100,
-                    axisPadding: axisPadding
-                )
-                .stroke(
-                    accentColor.opacity(0.7),
-                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
-                )
-
+                
+                // Draw the connected line between data points.
+                ConnectedLineShape(values: intensities, maxValue: maxValue, axisPadding: 20, topPadding: topPadding)
+                    .stroke(accentColor.opacity(0.7),
+                            style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                
+                // Draw circles for each data point and display the label above the dot.
                 ForEach(intensities.indices, id: \.self) { i in
-                    if let intensity = intensities[i] {
-                        let x = xPosition(i, width: geo.size.width, axisPadding: axisPadding)
-                        let y = yPosition(intensity, height: geo.size.height, maxValue: 100)
-
+                    if let value = intensities[i] {
+                        let x = xPosition(for: i, totalWidth: geo.size.width, axisPadding: 20)
+                        let y = yPosition(for: value, in: geo.size.height, maxValue: maxValue, topPadding: topPadding)
+                        
+                        // Draw the data point circle.
                         Circle()
                             .fill(accentColor)
                             .frame(width: 6, height: 6)
                             .position(x: x, y: y)
-
-                        Text("\(Int(intensity))")
+                        
+                        // Place the data point label above the dot.
+                        // Here we use an offset of 30 points. We clamp it so that it doesn't go above (topPadding + 15).
+                        let labelY = max(y - 30, topPadding + 15)
+                        Text("\(Int(value))")
                             .font(.caption2)
                             .foregroundColor(.white)
-                            .position(x: x, y: y - 15)
-
-                        if i < dates.count {
-                            Text(dates[i])
-                                .font(.caption2)
-                                .foregroundColor(.white.opacity(0.8))
-                                .frame(width: 30, alignment: .center)
-                                .position(x: x, y: geo.size.height - 10)
-                        }
+                            .position(x: x, y: labelY)
+                    }
+                    
+                    // Draw the date label for every index.
+                    if i < dates.count {
+                        let x = xPosition(for: i, totalWidth: geo.size.width, axisPadding: 20)
+                        Text(dates[i])
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.8))
+                            .frame(width: 30, alignment: .center)
+                            .position(x: x, y: geo.size.height - 10)
                     }
                 }
             }
         }
+        .frame(minHeight: desiredHeight)  // Set the view height dynamically.
         .padding()
     }
-
-    private func xPosition(_ idx: Int, width: CGFloat, axisPadding: CGFloat) -> CGFloat {
+    
+    // Helper: Calculate the x‑position for the i‑th data point.
+    private func xPosition(for index: Int, totalWidth: CGFloat, axisPadding: CGFloat) -> CGFloat {
         guard intensities.count > 1 else {
-            return axisPadding + width / 2
+            return axisPadding + totalWidth / 2
         }
-        let usableWidth = width - axisPadding
+        let usableWidth = totalWidth - axisPadding
         let step = usableWidth / CGFloat(intensities.count - 1)
-        return axisPadding + CGFloat(idx) * step
+        return axisPadding + CGFloat(index) * step
     }
-
-    private func yPosition(_ val: CGFloat, height: CGFloat, maxValue: CGFloat) -> CGFloat {
-        let ratio = val / maxValue
-        return height - (ratio * height)
+    
+    // Helper: Calculate the y‑position for a given value, taking into account the top padding.
+    private func yPosition(for value: CGFloat, in height: CGFloat, maxValue: CGFloat, topPadding: CGFloat) -> CGFloat {
+        let availableHeight = height - topPadding
+        let ratio = value / maxValue
+        return height - (ratio * availableHeight)
     }
 }
 
-// MARK: - SmoothLineShape
-fileprivate struct SmoothLineShape: Shape {
-    let values: [CGFloat]
+// MARK: - ConnectedLineShape
+fileprivate struct ConnectedLineShape: Shape {
+    /// The array of optional values (nil for days with no data).
+    let values: [CGFloat?]
     let maxValue: CGFloat
     let axisPadding: CGFloat
+    let topPadding: CGFloat
 
     func path(in rect: CGRect) -> Path {
-        guard values.count > 1 else { return Path() }
-
-        let width = rect.width - axisPadding
-        let stepX = width / CGFloat(values.count - 1)
-
         var path = Path()
-        var isDrawing = false
-
-        for (i, val) in values.enumerated() {
-            let ratio = val / maxValue
-            let px = axisPadding + CGFloat(i) * stepX
-            let py = rect.height - (ratio * rect.height)
-            let point = CGPoint(x: px, y: py)
-
-            if !isDrawing {
-                path.move(to: point)
-                isDrawing = true
-            } else {
-                path.addLine(to: point)
+        let count = values.count
+        let width = rect.width - axisPadding
+        let step = width / CGFloat(max(count - 1, 1))
+        var previousPoint: CGPoint? = nil
+        
+        for i in 0..<count {
+            let x = axisPadding + CGFloat(i) * step
+            // Reset connection if no value (e.g. future day).
+            guard let value = values[i] else {
+                previousPoint = nil
+                continue
             }
+            let availableHeight = rect.height - topPadding
+            let y = rect.height - (value / maxValue * availableHeight)
+            let currentPoint = CGPoint(x: x, y: y)
+            
+            if let previous = previousPoint {
+                path.addLine(to: currentPoint)
+            } else {
+                path.move(to: currentPoint)
+            }
+            previousPoint = currentPoint
         }
-
         return path
     }
 }
 
 // MARK: - PreviousNotesView
+//
 fileprivate struct PreviousNotesView: View {
     let habitID: String
     @EnvironmentObject var viewModel: HabitViewModel
@@ -1035,7 +1233,9 @@ fileprivate struct PreviousNotesView: View {
     }
 }
 
+//
 // MARK: - HolographicButtonStyle
+//
 fileprivate struct HolographicButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -1053,7 +1253,9 @@ fileprivate struct HolographicButtonStyle: ButtonStyle {
     }
 }
 
+//
 // MARK: - MonthlyCurrentMonthGridView
+//
 fileprivate struct MonthlyCurrentMonthGridView: View {
     let accentColor: Color
     let offset: Int
@@ -1070,7 +1272,6 @@ fileprivate struct MonthlyCurrentMonthGridView: View {
                         Text(item.dayLabel)
                             .font(.caption2)
                             .foregroundColor(.white.opacity(0.8))
-
                         if let intensity = item.intensity, intensity > 0 {
                             Image(systemName: "star.fill")
                                 .foregroundColor(accentColor)
@@ -1104,40 +1305,21 @@ fileprivate struct MonthlyCurrentMonthGridView: View {
         else {
             return []
         }
-
         let daysInMonth = range.count
         var results: [DayData] = []
         for dayNum in 1...daysInMonth {
             guard let dayDate = calendar.date(byAdding: .day, value: dayNum - 1, to: startOfMonth) else { continue }
-
             if dayDate < userCreationDate {
-                results.append(DayData(
-                    date: dayDate,
-                    dayLabel: "\(dayNum)",
-                    intensity: nil
-                ))
+                results.append(DayData(date: dayDate, dayLabel: "\(dayNum)", intensity: nil))
                 continue
             }
-
             if dayDate > now {
-                results.append(DayData(
-                    date: dayDate,
-                    dayLabel: "\(dayNum)",
-                    intensity: nil
-                ))
+                results.append(DayData(date: dayDate, dayLabel: "\(dayNum)", intensity: nil))
                 continue
             }
-
-            let record = dailyRecords.first(where: {
-                calendar.isDate($0.date, inSameDayAs: dayDate)
-            })
+            let record = dailyRecords.first(where: { calendar.isDate($0.date, inSameDayAs: dayDate) })
             let intensity: CGFloat? = record?.value.map { CGFloat($0) }
-
-            results.append(DayData(
-                date: dayDate,
-                dayLabel: "\(dayNum)",
-                intensity: intensity
-            ))
+            results.append(DayData(date: dayDate, dayLabel: "\(dayNum)", intensity: intensity))
         }
         return results
     }

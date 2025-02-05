@@ -165,7 +165,6 @@ struct Habit: Identifiable, Codable {
     // MARK: - New Properties for Customizable Metrics
     var metricCategory: MetricCategory
     var metricType: MetricType
-    // Removed targetValue entirely
     var dailyRecords: [HabitRecord]
     
     // MARK: - Initializer
@@ -207,5 +206,19 @@ struct Habit: Identifiable, Codable {
     // MARK: - Codable Conformance
     enum CodingKeys: String, CodingKey {
         case id, title, description, goal, startDate, ownerId, isCompletedToday, lastReset, points, currentStreak, longestStreak, weeklyStreakBadge, monthlyStreakBadge, yearlyStreakBadge, metricCategory, metricType, dailyRecords
+    }
+}
+
+// MARK: - MetricType Extension
+
+extension MetricType {
+    /// Returns true if the metric type is "Completed (Yes/No)".
+    func isCompletedMetric() -> Bool {
+        switch self {
+        case .predefined(let value):
+            return value.lowercased().contains("completed")
+        case .custom:
+            return false
+        }
     }
 }

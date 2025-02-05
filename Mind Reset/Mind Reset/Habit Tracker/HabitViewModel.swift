@@ -1,6 +1,7 @@
 //
 //  HabitViewModel.swift
 //  Mind Reset
+//
 //  Manages the fetching and updating of Habit data in Firestore with customizable metrics.
 //  Created by Andika Yudhatrisna on 1/3/25.
 //
@@ -326,6 +327,52 @@ class HabitViewModel: ObservableObject {
                 self.localStreaks[habitId] = oldHabit.currentStreak
                 self.localLongestStreaks[habitId] = oldHabit.longestStreak
                 self.errorMessage = "Failed to update habit."
+            }
+        }
+    }
+    
+    // MARK: - New Note-Saving Method
+    
+    func saveUserNote(for habitID: String, note: String, completion: @escaping (Bool) -> Void) {
+        // Make sure the note isn’t empty and we have a valid habitID
+        guard !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !habitID.isEmpty else {
+            completion(false)
+            return
+        }
+        
+        let newNote = UserNote(habitID: habitID, noteText: note)
+        
+        do {
+            try db.collection("UserNotes").addDocument(from: newNote) { error in
+                if let error = error {
+                    print("Error saving user note: \(error.localizedDescription)")
+                    completion(false)
+                } else {
+                    print("User note saved successfully for habitID: \(habitID)")
+                    completion(true)
+                }
+            }
+        } catch {
+            print("Error encoding user note: \(error.localizedDescription)")
+            completion(false)
+        }
+    }
+    
+    // MARK: - New Delete Note Method
+    
+    func deleteUserNote(note: UserNote, completion: @escaping (Bool) -> Void) {
+        // Ensure the note has an ID
+        guard let noteID = note.id else {
+            completion(false)
+            return
+        }
+        db.collection("UserNotes").document(noteID).delete { error in
+            if let error = error {
+                print("Error deleting note: \(error.localizedDescription)")
+                completion(false)
+            } else {
+                print("Note deleted successfully.")
+                completion(true)
             }
         }
     }

@@ -9,11 +9,12 @@
 //  Uses real data from habit.dailyRecords for weekly and monthly views.
 //  Now includes "Current Week" or "Current Month" label above the picker.
 //  Also fetches and saves session notes from Firestore.
-//  Each note now displays its timestamp and a delete button.
+//  A new "View Previous Notes" button launches a separate view that displays
+//  all previously saved session notes in an accessible and clean format.
 //
 //  Created by Andika Yudhatrisna on 1/3/25.
 //
-
+ 
 import SwiftUI
 import Combine
 import FirebaseFirestore
@@ -49,7 +50,7 @@ struct HabitDetailView: View {
 
     // MARK: - Notes
     @State private var sessionNotes: String   = ""
-    // Updated to store an array of UserNote objects
+    // This array holds new notes locally if needed; previous notes are now viewed via the new view.
     @State private var pastSessionNotes: [UserNote] = []
 
     // MARK: - Habit Goal
@@ -58,6 +59,8 @@ struct HabitDetailView: View {
     // MARK: - Additional UI
     @Namespace private var animation
     @State private var showCharts: Bool = false
+    // New state to control presenting the previous notes view.
+    @State private var showPreviousNotes: Bool = false
 
     // MARK: - Styling
     let backgroundBlack     = Color.black
@@ -98,12 +101,11 @@ struct HabitDetailView: View {
             // Main content behind
             mainContent
 
-            // Custom overlay pop-up
+            // Custom overlay pop-up for date range
             if showDateRangeOverlay {
                 Color.white
                     .opacity(0.9)
                     .ignoresSafeArea()
-
                 dateRangeOverlayView
                     .transition(.scale)
             }
@@ -127,7 +129,8 @@ struct HabitDetailView: View {
                 }
                 .store(in: &cancellables)
             
-            // Fetch saved user notes from Firestore for this habit
+            // Fetch saved user notes from Firestore for this habit.
+            // (These notes can be reloaded in the new view.)
             fetchUserNotes()
         }
         .onDisappear { saveEditsToHabit() }
@@ -141,13 +144,16 @@ struct HabitDetailView: View {
                 countdownSeconds = selectedHours * 3600 + selectedMinutes * 60
             }
         }
+        // Present the PreviousNotesView as a sheet when requested.
+        .sheet(isPresented: $showPreviousNotes) {
+            PreviousNotesView(habitID: habit.id ?? "")
+        }
     }
 
     // MARK: - Main Content
     private var mainContent: some View {
         ZStack {
             backgroundBlack.ignoresSafeArea()
-
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 15) {
                     // Top Bar
@@ -158,7 +164,7 @@ struct HabitDetailView: View {
                         .foregroundColor(.white.opacity(0.8))
                         .font(.subheadline)
                         .disableAutocorrection(true)
-                        .scrollContentBackground(.hidden) // Hide the default background (iOS 16+)
+                        .scrollContentBackground(.hidden)
                         .background(Color.black.opacity(0.2))
                         .cornerRadius(8)
                         .frame(minHeight: 50)
@@ -173,7 +179,7 @@ struct HabitDetailView: View {
                             }, alignment: .topLeading
                         )
 
-                    // Goal
+                    // Goal Section
                     goalSection
 
                     // Tabs (Focus, Progress, Notes)
@@ -197,7 +203,7 @@ struct HabitDetailView: View {
                         }
                     }
 
-                    // Mark Habit as Done
+                    // Mark Habit as Done Button
                     Button {
                         toggleHabitDone()
                     } label: {
@@ -226,9 +232,7 @@ struct HabitDetailView: View {
                 .font(.title3.weight(.semibold))
                 .padding()
                 .foregroundColor(.black)
-
             Divider()
-
             if selectedTimeRange == .weekly {
                 ScrollView {
                     VStack(spacing: 0) {
@@ -270,10 +274,7 @@ struct HabitDetailView: View {
                     .padding(.horizontal)
                 }
             }
-
             Divider()
-
-            // Cancel
             Button("Cancel") {
                 showDateRangeOverlay = false
             }
@@ -317,7 +318,6 @@ extension HabitDetailView {
             Text("Goal Related to Habit:")
                 .foregroundColor(accentCyan)
                 .font(.headline)
-
             ZStack(alignment: .topLeading) {
                 if goal.isEmpty {
                     Text("e.g. Read 50 books by the end of the year")
@@ -349,13 +349,11 @@ extension HabitDetailView {
                     .stroke(accentCyan.opacity(0.2), lineWidth: 10)
                     .frame(width: 180, height: 180)
                     .shadow(color: accentCyan.opacity(0.4), radius: 5)
-
                 Text(formatTime(countdownSeconds))
                     .font(.largeTitle)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
             }
-
             if !isTimerRunning && !isTimerPaused {
                 HStack(spacing: 20) {
                     timePickerBlock(label: "HRS", range: 0..<24, selection: $selectedHours)
@@ -373,7 +371,6 @@ extension HabitDetailView {
                         .shadow(color: accentCyan.opacity(0.3), radius: 5)
                 )
             }
-
             HStack(spacing: 20) {
                 if !isTimerRunning && !isTimerPaused {
                     Button("Start") {
@@ -395,7 +392,6 @@ extension HabitDetailView {
                         .buttonStyle(HolographicButtonStyle())
                 }
             }
-
             HStack {
                 Text("Focused: \(formatTime(totalFocusTime))")
                     .foregroundColor(.white)
@@ -437,7 +433,6 @@ extension HabitDetailView {
 extension HabitDetailView {
     private var progressTab: some View {
         let userCreationDate = session.userModel?.createdAt ?? habit.startDate
-
         return VStack(spacing: 20) {
             if selectedTimeRange == .weekly {
                 Text("Current Week: \(formatWeekInterval(currentWeekInterval(offset: weekOffset)))")
@@ -448,7 +443,6 @@ extension HabitDetailView {
                     .foregroundColor(.white)
                     .font(.headline)
             }
-
             Picker("Time Range", selection: $selectedTimeRange) {
                 Text("Weekly").tag(TimeRange.weekly)
                 Text("Monthly").tag(TimeRange.monthly)
@@ -458,7 +452,6 @@ extension HabitDetailView {
             .background(.gray)
             .cornerRadius(8)
             .padding(.horizontal, 10)
-
             if selectedTimeRange == .weekly {
                 let (weekLabels, weekValues) = weeklyData(habit: habit, offset: weekOffset, userCreationDate: userCreationDate)
                 SingleLineGraphView(
@@ -471,7 +464,6 @@ extension HabitDetailView {
                 .background(accentCyan.opacity(0.15))
                 .cornerRadius(8)
                 .padding(.horizontal, 12)
-
                 HStack(spacing: 20) {
                     Button {
                         if weekOffset > minWeekOffset {
@@ -481,7 +473,6 @@ extension HabitDetailView {
                         navigationButtonLabel(title: "Prev\nWeek", isDisabled: weekOffset <= minWeekOffset)
                     }
                     .disabled(weekOffset <= minWeekOffset)
-
                     Button {
                         showDateRangeOverlay = true
                     } label: {
@@ -497,7 +488,6 @@ extension HabitDetailView {
                         .background(accentCyan)
                         .cornerRadius(6)
                     }
-
                     Button {
                         if weekOffset < maxWeekOffset {
                             weekOffset += 1
@@ -517,7 +507,6 @@ extension HabitDetailView {
                 )
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 12)
-
                 HStack(spacing: 20) {
                     Button {
                         if monthOffset > minMonthOffset {
@@ -527,7 +516,6 @@ extension HabitDetailView {
                         navigationButtonLabel(title: "Prev\nMonth", isDisabled: monthOffset <= minMonthOffset)
                     }
                     .disabled(monthOffset <= minMonthOffset)
-
                     Button {
                         showDateRangeOverlay = true
                     } label: {
@@ -543,7 +531,6 @@ extension HabitDetailView {
                         .background(accentCyan)
                         .cornerRadius(6)
                     }
-
                     Button {
                         if monthOffset < maxMonthOffset {
                             monthOffset += 1
@@ -558,33 +545,27 @@ extension HabitDetailView {
         }
         .padding(.top, 10)
     }
-
+    
     private func weeklyData(habit: Habit, offset: Int, userCreationDate: Date) -> ([String], [CGFloat?]) {
         let dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
         var intensities: [CGFloat?] = Array(repeating: nil, count: 7)
-        
         let calendar = Calendar.current
         let now = Date()
         let weekday = calendar.component(.weekday, from: now)
         let distanceFromSunday = weekday - 1
-        
         guard let startOfThisWeek = calendar.date(byAdding: .day, value: -distanceFromSunday + (offset * 7), to: now) else {
             return (dayLabels, intensities)
         }
-        
         for i in 0..<7 {
             guard let dayDate = calendar.date(byAdding: .day, value: i, to: startOfThisWeek) else { continue }
-            
             if dayDate < userCreationDate {
                 intensities[i] = nil
                 continue
             }
-            
             if dayDate > now {
                 intensities[i] = nil
                 continue
             }
-            
             if let record = habit.dailyRecords.first(where: { rec in
                 calendar.isDate(rec.date, inSameDayAs: dayDate)
             }) {
@@ -593,7 +574,6 @@ extension HabitDetailView {
                 intensities[i] = 0
             }
         }
-        
         return (dayLabels, intensities)
     }
 }
@@ -603,15 +583,12 @@ extension HabitDetailView {
     private func realWeeks() -> [DateInterval] {
         let calendar = Calendar.current
         var results: [DateInterval] = []
-        
         let now = Date()
         let weekday = calendar.component(.weekday, from: now)
         let distanceFromSunday = weekday - 1
-        
         guard let startOfThisWeek = calendar.date(byAdding: .day, value: -distanceFromSunday, to: now) else {
             return results
         }
-        
         for offset in minWeekOffset...maxWeekOffset {
             if let start = calendar.date(byAdding: .day, value: offset * 7, to: startOfThisWeek),
                let end = calendar.date(byAdding: .day, value: 6, to: start) {
@@ -629,27 +606,24 @@ extension HabitDetailView {
         let endStr   = fmt.string(from: interval.end)
         return "\(startStr) - \(endStr)"
     }
-
+    
     private func computeWeekOffset(for interval: DateInterval) -> Int {
         let calendar = Calendar.current
         let now = Date()
         let weekday = calendar.component(.weekday, from: now)
         let distanceFromSunday = weekday - 1
-
         guard let startOfThisWeek = calendar.date(byAdding: .day, value: -distanceFromSunday, to: now) else {
             return 0
         }
-
         let comps = calendar.dateComponents([.day], from: startOfThisWeek, to: interval.start)
         let dayDiff = comps.day ?? 0
         return dayDiff / 7
     }
-
+    
     private func realMonths() -> [Date] {
         let calendar = Calendar.current
         let now = Date()
         var months: [Date] = []
-
         for offset in minMonthOffset...maxMonthOffset {
             if let shifted = calendar.date(byAdding: .month, value: offset, to: now) {
                 months.append(shifted)
@@ -657,31 +631,30 @@ extension HabitDetailView {
         }
         return months.sorted()
     }
-
+    
     private func formatMonth(_ date: Date) -> String {
         let fmt = DateFormatter()
         fmt.dateFormat = "LLLL yyyy"
         return fmt.string(from: date)
     }
-
+    
     private func computeMonthOffset(for date: Date) -> Int {
         let calendar = Calendar.current
         let now = Date()
         let comps = calendar.dateComponents([.month], from: startOfMonth(now), to: startOfMonth(date))
         return comps.month ?? 0
     }
-
+    
     private func startOfMonth(_ date: Date) -> Date {
         let cal = Calendar.current
         return cal.date(from: cal.dateComponents([.year, .month], from: date)) ?? date
     }
-
+    
     private func currentWeekInterval(offset: Int) -> DateInterval {
         let calendar = Calendar.current
         let now = Date()
         let weekday = calendar.component(.weekday, from: now)
         let distanceFromSunday = weekday - 1
-
         guard let startOfThisWeek = calendar.date(byAdding: .day, value: -distanceFromSunday + (offset * 7), to: now),
               let end = calendar.date(byAdding: .day, value: 6, to: startOfThisWeek)
         else {
@@ -689,7 +662,7 @@ extension HabitDetailView {
         }
         return DateInterval(start: startOfThisWeek, end: end)
     }
-
+    
     private func currentMonthDate(offset: Int) -> Date {
         let calendar = Calendar.current
         let now = Date()
@@ -704,7 +677,7 @@ extension HabitDetailView {
             Text("Session Notes")
                 .font(.headline)
                 .foregroundColor(accentCyan)
-
+            
             TextEditor(text: $sessionNotes)
                 .foregroundColor(.white)
                 .background(textFieldBackground)
@@ -713,10 +686,10 @@ extension HabitDetailView {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(accentCyan.opacity(0.6), lineWidth: 1)
                 )
-                .frame(minHeight: 80)
+                .frame(minHeight: 150)
                 .padding(.horizontal, 4)
                 .scrollContentBackground(.hidden)
-
+            
             Button("Save Note") {
                 saveNote()
             }
@@ -724,42 +697,21 @@ extension HabitDetailView {
             .padding()
             .background(accentCyan)
             .cornerRadius(8)
-
-            Text("Past Session Notes")
-                .font(.headline)
-                .foregroundColor(accentCyan)
-
-            ScrollView {
-                ForEach(pastSessionNotes) { note in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(note.noteText)
-                                .foregroundColor(.white)
-                            Text(formatTimestamp(note.timestamp))
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                        }
-                        Spacer()
-                        Button {
-                            deleteNote(note)
-                        } label: {
-                            Image(systemName: "trash")
-                                .foregroundColor(.red)
-                        }
-                    }
-                    .padding()
-                    .background(textFieldBackground)
-                    .cornerRadius(8)
-                    .padding(.vertical, 2)
-                }
+            
+            // New button to view previous notes in a separate view.
+            Button("View Previous Notes") {
+                showPreviousNotes = true
             }
+            .foregroundColor(.black)
+            .padding()
+            .background(Color.white)
+            .cornerRadius(8)
         }
     }
-
+    
     // Updated saveNote() to save to Firestore and then refresh the notes.
     private func saveNote() {
         guard !sessionNotes.isEmpty, let habitID = habit.id else { return }
-        
         viewModel.saveUserNote(for: habitID, note: sessionNotes) { success in
             if success {
                 DispatchQueue.main.async {
@@ -806,7 +758,6 @@ extension HabitDetailView {
     private func deleteNote(_ note: UserNote) {
         viewModel.deleteUserNote(note: note) { success in
             if success {
-                // Refresh the notes list after deletion.
                 fetchUserNotes()
             } else {
                 print("Failed to delete note with id: \(note.id ?? "unknown")")
@@ -822,43 +773,41 @@ extension HabitDetailView {
         isTimerRunning = true
         isTimerPaused  = false
         timer?.invalidate()
-
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             if countdownSeconds > 0 {
                 countdownSeconds -= 1
-                totalFocusTime   += 1
+                totalFocusTime += 1
             } else {
                 timer?.invalidate()
                 isTimerRunning = false
             }
         }
     }
-
+    
     private func pauseTimer() {
         guard isTimerRunning && !isTimerPaused else { return }
         isTimerPaused = true
         timer?.invalidate()
     }
-
+    
     private func resetTimer() {
         timer?.invalidate()
         countdownSeconds = 0
-        isTimerRunning   = false
-        isTimerPaused    = false
-        selectedHours    = 0
-        selectedMinutes  = 0
+        isTimerRunning = false
+        isTimerPaused = false
+        selectedHours = 0
+        selectedMinutes = 0
     }
-
+    
     private func formatTime(_ seconds: Int) -> String {
         let m = seconds / 60
         let s = seconds % 60
         return String(format: "%02d:%02d", m, s)
     }
-
+    
     private func toggleHabitDone() {
         guard let habitID = habit.id else { return }
         let localVal = localStreaks[habitID] ?? habit.currentStreak
-
         if habit.isCompletedToday {
             localStreaks[habitID] = max(localVal - 1, 0)
         } else {
@@ -866,16 +815,15 @@ extension HabitDetailView {
         }
         viewModel.toggleHabitCompletion(habit, userId: habit.ownerId)
     }
-
+    
     private func saveEditsToHabit() {
         guard editableTitle != habit.title ||
               editableDescription != habit.description ||
               goal != habit.goal
         else { return }
-
-        habit.title       = editableTitle
+        habit.title = editableTitle
         habit.description = editableDescription
-        habit.goal        = goal
+        habit.goal = goal
         viewModel.updateHabit(habit)
     }
 }
@@ -925,6 +873,7 @@ extension HabitDetailView {
         return 0
     }
 }
+
 
 
 // MARK: - SingleLineGraphView
@@ -1045,6 +994,80 @@ fileprivate struct SmoothLineShape: Shape {
         }
 
         return path
+    }
+}
+
+// MARK: - PreviousNotesView
+fileprivate struct PreviousNotesView: View {
+    let habitID: String
+    @EnvironmentObject var viewModel: HabitViewModel
+    @State private var notes: [UserNote] = []
+    @Environment(\.presentationMode) var presentationMode
+
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(notes) { note in
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(note.noteText)
+                                .font(.body)
+                                .foregroundColor(.primary)
+                            Text(formatTimestamp(note.timestamp))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Button(action: {
+                            viewModel.deleteUserNote(note: note) { success in
+                                if success {
+                                    fetchNotes()
+                                } else {
+                                    print("Failed to delete note with id: \(note.id ?? "unknown")")
+                                }
+                            }
+                        }) {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+            }
+            .listStyle(InsetGroupedListStyle())
+            .navigationTitle("Previous Notes")
+            .navigationBarItems(trailing: Button("Done") {
+                presentationMode.wrappedValue.dismiss()
+            })
+            .onAppear(perform: fetchNotes)
+        }
+    }
+    
+    private func fetchNotes() {
+        let db = Firestore.firestore()
+        db.collection("UserNotes")
+            .whereField("habitID", isEqualTo: habitID)
+            .order(by: "timestamp", descending: true)
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    print("Error fetching notes: \(error.localizedDescription)")
+                    return
+                }
+                guard let documents = snapshot?.documents else { return }
+                let fetchedNotes: [UserNote] = documents.compactMap { doc in
+                    return try? doc.data(as: UserNote.self)
+                }
+                DispatchQueue.main.async {
+                    self.notes = fetchedNotes
+                }
+            }
+    }
+    
+    private func formatTimestamp(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium  // e.g., "Mar 14, 2025"
+        formatter.timeStyle = .short   // e.g., "2:45 PM"
+        return formatter.string(from: date)
     }
 }
 

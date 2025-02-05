@@ -11,6 +11,7 @@
 //  Also fetches and saves session notes from Firestore.
 //  A new "View Previous Notes" button launches a separate view that displays
 //  all previously saved session notes in an accessible and clean format.
+//  When a note is saved, a temporary banner appears confirming the action.
 //
 //  Created by Andika Yudhatrisna on 1/3/25.
 //
@@ -40,8 +41,6 @@ struct HabitDetailView: View {
     @State private var timer: Timer? = nil
     @State private var isTimerRunning = false
     @State private var isTimerPaused  = false
-
-    // Track totalFocusTime if you want to log focus minutes
     @State private var totalFocusTime: Int = 0
 
     // Countdown pickers
@@ -59,8 +58,10 @@ struct HabitDetailView: View {
     // MARK: - Additional UI
     @Namespace private var animation
     @State private var showCharts: Bool = false
-    // New state to control presenting the previous notes view.
+    // Controls presenting the previous notes view.
     @State private var showPreviousNotes: Bool = false
+    // Controls the banner notification.
+    @State private var showBanner: Bool = false
 
     // MARK: - Styling
     let backgroundBlack     = Color.black
@@ -68,7 +69,7 @@ struct HabitDetailView: View {
     let textFieldBackground = Color(red: 0.15, green: 0.15, blue: 0.15)
 
     // MARK: - Local Streak Tracking
-    @State private var localStreaks: [String: Int]       = [:]
+    @State private var localStreaks: [String: Int] = [:]
     @State private var localLongestStreaks: [String: Int] = [:]
 
     // MARK: - Combine
@@ -80,11 +81,11 @@ struct HabitDetailView: View {
     }
     @State private var selectedTimeRange: TimeRange = .weekly
 
-    // For switching "weeks" or "months" in the progress view
+    // For switching weeks/months in progress view
     @State private var weekOffset: Int = 0
     @State private var monthOffset: Int = 0
 
-    // Instead of a .sheet, we do a custom overlay pop-up
+    // Instead of a .sheet, we use a custom overlay pop-up
     @State private var showDateRangeOverlay = false
 
     // MARK: - Initialization
@@ -98,18 +99,10 @@ struct HabitDetailView: View {
     // MARK: - Body
     var body: some View {
         ZStack {
-            // Main content behind
             mainContent
-
-            // Custom overlay pop-up for date range
-            if showDateRangeOverlay {
-                Color.white
-                    .opacity(0.9)
-                    .ignoresSafeArea()
-                dateRangeOverlayView
-                    .transition(.scale)
-            }
         }
+        // Apply the banner modifier.
+        .banner(message: "Note Saved!", isPresented: $showBanner)
         .onAppear {
             guard let userId = session.current_user?.uid else {
                 print("No authenticated user found.")
@@ -118,19 +111,10 @@ struct HabitDetailView: View {
             viewModel.fetchHabits(for: userId)
             viewModel.setupDefaultHabitsIfNeeded(for: userId)
             initializeLocalStreaks()
-            
-            // Sync local 'goal' from the actual habit
             goal = habit.goal
-
-            // Observe changes
             viewModel.$habits
-                .sink { _ in
-                    initializeLocalStreaks()
-                }
+                .sink { _ in initializeLocalStreaks() }
                 .store(in: &cancellables)
-            
-            // Fetch saved user notes from Firestore for this habit.
-            // (These notes can be reloaded in the new view.)
             fetchUserNotes()
         }
         .onDisappear { saveEditsToHabit() }
@@ -144,7 +128,7 @@ struct HabitDetailView: View {
                 countdownSeconds = selectedHours * 3600 + selectedMinutes * 60
             }
         }
-        // Present the PreviousNotesView as a sheet when requested.
+        // Present the PreviousNotesView sheet.
         .sheet(isPresented: $showPreviousNotes) {
             PreviousNotesView(habitID: habit.id ?? "")
         }
@@ -156,10 +140,7 @@ struct HabitDetailView: View {
             backgroundBlack.ignoresSafeArea()
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 15) {
-                    // Top Bar
                     topBarSection
-
-                    // Editable Description
                     TextEditor(text: $editableDescription)
                         .foregroundColor(.white.opacity(0.8))
                         .font(.subheadline)
@@ -178,11 +159,7 @@ struct HabitDetailView: View {
                                 }
                             }, alignment: .topLeading
                         )
-
-                    // Goal Section
                     goalSection
-
-                    // Tabs (Focus, Progress, Notes)
                     Picker("Tabs", selection: $selectedTabIndex) {
                         Text("Focus").tag(0)
                         Text("Progress").tag(1)
@@ -193,8 +170,6 @@ struct HabitDetailView: View {
                     .background(.gray)
                     .cornerRadius(8)
                     .padding(.horizontal, 10)
-
-                    // Tab Views
                     Group {
                         switch selectedTabIndex {
                         case 0: focusTab
@@ -202,8 +177,6 @@ struct HabitDetailView: View {
                         default: notesTab
                         }
                     }
-
-                    // Mark Habit as Done Button
                     Button {
                         toggleHabitDone()
                     } label: {
@@ -224,7 +197,7 @@ struct HabitDetailView: View {
         .navigationBarBackButtonHidden(true)
     }
 
-    // MARK: - The custom dateRangeOverlayView
+    // MARK: - Date Range Overlay
     @ViewBuilder
     private var dateRangeOverlayView: some View {
         VStack(spacing: 0) {
@@ -288,9 +261,9 @@ struct HabitDetailView: View {
     }
 }
 
-// MARK: - Subviews
+// MARK: - Subviews & Helpers
 extension HabitDetailView {
-    // MARK: Top Bar + Title
+    // Top Bar + Title
     private var topBarSection: some View {
         HStack {
             Button {
@@ -311,8 +284,8 @@ extension HabitDetailView {
             Spacer().frame(width: 40)
         }
     }
-
-    // MARK: Goal Section
+    
+    // Goal Section
     private var goalSection: some View {
         VStack() {
             Text("Goal Related to Habit:")
@@ -340,8 +313,8 @@ extension HabitDetailView {
             }
         }
     }
-
-    // MARK: Focus Tab
+    
+    // Focus Tab
     private var focusTab: some View {
         VStack(spacing: 16) {
             ZStack {
@@ -398,8 +371,8 @@ extension HabitDetailView {
             }
         }
     }
-
-    // Timer pickers helper
+    
+    // Timer Picker Helper
     private func timePickerBlock(label: String, range: Range<Int>, selection: Binding<Int>) -> some View {
         VStack(spacing: 4) {
             Text(label)
@@ -417,20 +390,16 @@ extension HabitDetailView {
             .pickerStyle(WheelPickerStyle())
         }
     }
-}
-
-// MARK: - Button Label Helpers
-extension HabitDetailView {
+    
+    // Button Label Helper
     private func navigationButtonLabel(title: String, isDisabled: Bool) -> some View {
         Text(title)
             .multilineTextAlignment(.center)
             .foregroundColor(isDisabled ? Color.gray : accentCyan)
             .fixedSize(horizontal: false, vertical: true)
     }
-}
-
-// MARK: - Progress Tab
-extension HabitDetailView {
+    
+    // Progress Tab
     private var progressTab: some View {
         let userCreationDate = session.userModel?.createdAt ?? habit.startDate
         return VStack(spacing: 20) {
@@ -709,13 +678,14 @@ extension HabitDetailView {
         }
     }
     
-    // Updated saveNote() to save to Firestore and then refresh the notes.
+    // Updated saveNote() to save to Firestore, trigger the banner, then refresh notes.
     private func saveNote() {
         guard !sessionNotes.isEmpty, let habitID = habit.id else { return }
         viewModel.saveUserNote(for: habitID, note: sessionNotes) { success in
             if success {
                 DispatchQueue.main.async {
                     sessionNotes = ""
+                    showBanner = true  // Trigger banner
                     fetchUserNotes()
                 }
             } else {
@@ -746,15 +716,15 @@ extension HabitDetailView {
             }
     }
     
-    // Helper to format a Date into a string.
+    // Helper to format a Date.
     private func formatTimestamp(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateStyle = .short  // e.g. "3/14/25"
-        formatter.timeStyle = .short  // e.g. "2:45 PM"
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
         return formatter.string(from: date)
     }
     
-    // Delete a note using the view model.
+    // Delete a note.
     private func deleteNote(_ note: UserNote) {
         viewModel.deleteUserNote(note: note) { success in
             if success {
@@ -854,10 +824,7 @@ extension HabitDetailView {
         return -weeks
     }
     
-    private var maxWeekOffset: Int {
-        return 0
-    }
-    
+    private var maxWeekOffset: Int { 0 }
     private var minMonthOffset: Int {
         let calendar = Calendar.current
         let now = Date()
@@ -868,10 +835,7 @@ extension HabitDetailView {
         let months = calendar.dateComponents([.month], from: accountMonthStart, to: currentMonthStart).month ?? 0
         return -months
     }
-    
-    private var maxMonthOffset: Int {
-        return 0
-    }
+    private var maxMonthOffset: Int { 0 }
 }
 
 

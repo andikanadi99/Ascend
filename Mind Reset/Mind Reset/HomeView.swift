@@ -18,9 +18,9 @@ struct MainTabView: View {
                 }
 
             // 2) Progress Tab
-            ProgressViewPlaceholder()
+            SchedulerView()
                 .tabItem {
-                    Label("Progress", systemImage: "chart.bar.fill")
+                    Label("Schedule", systemImage: "chart.bar.fill")
                 }
 
             // 3) Settings Tab (Sign Out button moved here)
@@ -33,20 +33,6 @@ struct MainTabView: View {
     }
 }
 
-// MARK: - ProgressViewPlaceholder
-// A placeholder view for the Progress tab until you implement real progress logic
-struct ProgressViewPlaceholder: View {
-    var body: some View {
-        NavigationView {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                Text("Progress Page (Placeholder)")
-                    .foregroundColor(.white)
-            }
-            .navigationBarHidden(true)
-        }
-    }
-}
 
 // MARK: - SettingsViewPlaceholder
 // The Settings tab now includes the sign-out button.

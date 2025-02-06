@@ -189,21 +189,32 @@ struct HabitDetailView: View {
 
                     goalSection
 
-                    Picker("Tabs", selection: $selectedTabIndex) {
-                        Text("Focus").tag(0)
-                        Text("Progress").tag(1)
-                        Text("Notes").tag(2)
+                    // Updated Tab Picker with a small black divider.
+                    VStack(spacing: 4) {
+                        Picker("Tabs", selection: $selectedTabIndex) {
+                            Text("Progress").tag(0)
+                            Text("Focus Timer").tag(1)
+                            Text("Notes").tag(2)
+                        }
+                        .pickerStyle(SegmentedPickerStyle())
+                        .tint(.gray)
+                        .background(Color.gray)
+                        .cornerRadius(8)
+                        .padding(.horizontal, 10)
+                        
+                        // More visible black divider.
+                        Rectangle()
+                            .fill(Color.black)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 4)
+                            .padding(.horizontal, 10)
                     }
-                    .pickerStyle(SegmentedPickerStyle())
-                    .tint(.gray)
-                    .background(.gray)
-                    .cornerRadius(8)
-                    .padding(.horizontal, 10)
+
 
                     Group {
                         switch selectedTabIndex {
-                        case 0: focusTab
-                        case 1: progressTab
+                        case 0: progressTab
+                        case 1: focusTab
                         default: notesTab
                         }
                     }
@@ -1289,7 +1300,7 @@ fileprivate struct SingleLineGraphView: View {
         let topPadding: CGFloat = 20
         let desiredHeight: CGFloat = (maxValue == 1)
             ? 150
-            : min(max(350, maxValue * 30), 500)
+            : min(max(250, maxValue * 30), 400)
 
         return GeometryReader { geo in
             ZStack {

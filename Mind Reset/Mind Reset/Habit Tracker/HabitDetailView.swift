@@ -373,11 +373,26 @@ struct HabitDetailView: View {
     private func completeHabit(with metricValue: Int) {
         let newRecord = HabitRecord(date: Date(), value: Double(metricValue))
         var updatedHabit = habit
+        // Append the new record.
         updatedHabit.dailyRecords.append(newRecord)
+        
+        // If the habit wasn't already completed today, update the streak.
+        if !updatedHabit.isCompletedToday {
+            updatedHabit.currentStreak += 1
+            if updatedHabit.currentStreak > updatedHabit.longestStreak {
+                updatedHabit.longestStreak = updatedHabit.currentStreak
+            }
+        }
+        
+        // Mark as completed.
         updatedHabit.isCompletedToday = true
+        
+        // Update in Firestore.
         viewModel.updateHabit(updatedHabit)
+        // Update the binding.
         habit = updatedHabit
     }
+
 
     // MARK: - Date Range Overlay (Existing Code)
     @ViewBuilder

@@ -68,8 +68,8 @@ struct HabitTrackerView: View {
                                 let habitId = habit.id ?? ""
 
                                 // localStreak + localLongestStreak
-                                let localStreak  = viewModel.localStreaks[habitId] ?? habit.currentStreak
-                                let localLongest = viewModel.localLongestStreaks[habitId] ?? habit.longestStreak
+                                let localStreak  = habit.currentStreak
+                                let localLongest = habit.longestStreak
 
                                 NavigationLink(
                                     destination: HabitDetailView(habit: $viewModel.habits[index])
@@ -83,7 +83,7 @@ struct HabitTrackerView: View {
                                             deleteHabit(deletedHabit)
                                         },
                                         onToggleCompletion: {
-                                            toggleHabitCompletion(habit)
+                                            
                                         }
                                     )
                                 }
@@ -186,13 +186,13 @@ struct HabitRow: View {
                     .multilineTextAlignment(.leading)
 
                 HStack(spacing: 8) {
-                    Text("Current Streak: \(max(currentStreak, habit.currentStreak))")
+                    Text("Current Streak: \(habit.currentStreak)")
                         .font(.caption)
-                        .foregroundColor((max(currentStreak, habit.currentStreak) > 0) ? .green : .white)
+                        .foregroundColor(((habit.currentStreak) > 0) ? .green : .white)
 
-                    Text("Longest Streak: \(max(localLongestStreak, habit.longestStreak))")
+                    Text("Longest Streak: \(habit.longestStreak)")
                         .font(.caption)
-                        .foregroundColor((max(localLongestStreak, habit.longestStreak) > 0) ? .green : .white)
+                        .foregroundColor(((habit.longestStreak) > 0) ? .green : .white)
 
                     if habit.weeklyStreakBadge {
                         StreakBadge(text: "7-Day", color: .green)

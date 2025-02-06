@@ -2,16 +2,12 @@
 //  HabitDetailView.swift
 //  Mind Reset
 //
-//  Displays details/stats for a single habit. Includes a custom overlay pop-up for
-//  picking real weeks (Sunday–Saturday) or real months, while keeping the habit
-//  screen visible underneath (tinted white).
-//
-//  Uses real data from habit.dailyRecords for weekly and monthly views.
-//  Also fetches and saves session notes from Firestore and includes a
-//  "View Previous Notes" button.
-//  When a note is saved, a temporary banner appears confirming the action.
-//  Additionally, when a user marks a habit as done, a pop-up appears to prompt
-//  the user for the metric value, and when unmarking, a confirmation pop-up is shown.
+//  Displays details/stats for a single habit. Includes custom overlay pop-ups for:
+//    - picking real weeks (Sunday–Saturday) or real months,
+//    - entering metric values when marking the habit as done,
+//    - confirming unmarking,
+//    - and now for picking a custom date range for the graph.
+//  The habit screen remains visible underneath (tinted white).
 //
 //  Created by Andika Yudhatrisna on 1/3/25.
 //
@@ -67,6 +63,15 @@ struct HabitDetailView: View {
     // NEW: For showing the unmark confirmation overlay.
     @State private var showUnmarkConfirmation: Bool = false
 
+    // NEW: For showing the custom date range overlay and the custom graph overlay.
+    @State private var showCustomDateRangeOverlay: Bool = false
+    @State private var customGraphOverlay: Bool = false
+    @State private var customStartDate: Date = Date()
+    @State private var customEndDate: Date = Date()
+    // NEW: For showing an alert if an invalid range is selected.
+    @State private var showAlert: Bool = false
+    @State private var alertMessage: String = ""
+
     // MARK: - Styling
     let backgroundBlack = Color.black
     let accentCyan = Color(red: 0, green: 1, blue: 1)
@@ -84,7 +89,7 @@ struct HabitDetailView: View {
     @State private var selectedTimeRange: TimeRange = .weekly
     @State private var weekOffset: Int = 0
     @State private var monthOffset: Int = 0
-    @State private var showDateRangeOverlay = false
+    @State private var showDateRangeOverlay: Bool = false
 
     // MARK: - Initialization
     init(habit: Binding<Habit>) {
@@ -99,27 +104,34 @@ struct HabitDetailView: View {
         ZStack {
             mainContent
 
-            // Existing date range overlay.
+            // Existing overlays.
             if showDateRangeOverlay {
                 Color.white.opacity(0.9)
                     .ignoresSafeArea()
                 dateRangeOverlayView
                     .transition(.scale)
             }
-
-            // NEW: Overlay for metric input (when marking as done)
             if showMetricInput {
                 metricInputOverlay
                     .transition(.opacity)
             }
-
-            // NEW: Overlay for unmark confirmation.
             if showUnmarkConfirmation {
                 unmarkConfirmationOverlay
                     .transition(.opacity)
             }
+            // NEW: Custom Date Range Overlay.
+            if showCustomDateRangeOverlay {
+                customDateRangeOverlayView
+                    .transition(.opacity)
+            }
+            if customGraphOverlay {
+                customGraphView
+                    .transition(.opacity)
+            }
         }
-        // Banner notification
+        .alert(isPresented: $showAlert) {
+            Alert(title: Text("Invalid Date Range"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
+        }
         .banner(message: "Note Saved!", isPresented: $showBanner)
         .onAppear {
             guard let userId = session.current_user?.uid else { return }
@@ -198,7 +210,7 @@ struct HabitDetailView: View {
                     
                     Spacer()
                     
-                    // NEW: Display metric info in a horizontal two‑column layout.
+                    // Display metric info.
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Metric Category:")
@@ -226,7 +238,7 @@ struct HabitDetailView: View {
                     }
                     .padding(.horizontal)
                     
-                    // NEW: Mark/Unmark button with modified behavior.
+                    // Mark/Unmark button.
                     Button {
                         if habit.isCompletedToday {
                             showUnmarkConfirmation = true
@@ -252,7 +264,9 @@ struct HabitDetailView: View {
         .navigationBarBackButtonHidden(true)
     }
 
-    // MARK: - Metric Input Overlay (for marking as done)
+    // MARK: - Overlays
+
+    // Metric Input Overlay (for marking as done)
     private var metricInputOverlay: some View {
         let prompt = metricPrompt()
         return VStack(spacing: 16) {
@@ -260,15 +274,12 @@ struct HabitDetailView: View {
                 .font(.headline)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.white)
-            
             TextField("Enter a number", text: $metricInput)
                 .keyboardType(.numberPad)
                 .padding()
                 .background(Color.white.opacity(0.2))
                 .cornerRadius(8)
                 .foregroundColor(.white)
-            
-            // Warning message when the input is invalid.
             if !metricInput.isEmpty {
                 if habit.metricType.isCompletedMetric() {
                     if metricInput != "0" && metricInput != "1" {
@@ -282,15 +293,12 @@ struct HabitDetailView: View {
                         .foregroundColor(.red)
                 }
             }
-            
             HStack {
                 Button("Cancel") {
                     withAnimation { showMetricInput = false }
                 }
                 .foregroundColor(.red)
-                
                 Spacer()
-                
                 Button("Save") {
                     if let metricValue = Int(metricInput) {
                         completeHabit(with: metricValue)
@@ -314,7 +322,7 @@ struct HabitDetailView: View {
         .shadow(radius: 8)
     }
 
-    // MARK: - Unmark Confirmation Overlay
+    // Unmark Confirmation Overlay.
     private var unmarkConfirmationOverlay: some View {
         VStack(spacing: 16) {
             Text("Are you sure you want to unmark this habit as done?")
@@ -339,6 +347,105 @@ struct HabitDetailView: View {
         .background(Color.black.opacity(0.9))
         .cornerRadius(12)
         .shadow(radius: 8)
+    }
+
+    // NEW: Custom Date Range Overlay.
+    private var customDateRangeOverlayView: some View {
+        VStack(spacing: 16) {
+            Text("Custom Date Range")
+                .font(.title3.weight(.semibold))
+                .foregroundColor(.white)
+            // Use the custom calendar view instead of standard DatePickers.
+            CustomCalendarView(month: Date(), minDate: habit.startDate, maxDate: Date(), startDate: $customStartDate, endDate: $customEndDate, accentColor: accentCyan)
+                .frame(height: 300)
+                .padding(.horizontal)
+            HStack(spacing: 20) {
+                Button("Show Graph") {
+                    // Validate that the selected range is within allowed dates.
+                    if customStartDate < habit.startDate || customEndDate > Date() {
+                        alertMessage = "Please select dates between \(formattedDate(habit.startDate)) and today."
+                        showAlert = true
+                    } else {
+                        withAnimation {
+                            showCustomDateRangeOverlay = false
+                            customGraphOverlay = true
+                        }
+                    }
+                }
+                .foregroundColor(.black)
+                .padding()
+                .background(Color.white)
+                .cornerRadius(8)
+                Button("Cancel") {
+                    withAnimation { showCustomDateRangeOverlay = false }
+                }
+                .foregroundColor(.red)
+            }
+        }
+        .padding()
+        .frame(width: 350, height: 500)
+        .background(Color.black) // Fully black background.
+        .cornerRadius(12)
+        .shadow(radius: 10)
+    }
+
+    // NEW: Custom Graph Overlay view.
+    private var customGraphView: some View {
+        let customData = getCustomGraphData()
+        return VStack(spacing: 16) {
+            Text("Graph from \(formattedDate(customStartDate)) to \(formattedDate(customEndDate))")
+                .font(.headline)
+                .foregroundColor(.white)
+            SingleLineGraphView(
+                timeRange: .weekly,
+                dates: customData.labels,
+                intensities: customData.intensities,
+                accentColor: .white // Graph line in white.
+            )
+            .frame(minHeight: 300)
+            .background(Color.black)
+            .cornerRadius(8)
+            Button("Done") {
+                withAnimation { customGraphOverlay = false }
+            }
+            .foregroundColor(.black)
+            .padding()
+            .background(Color.white)
+            .cornerRadius(8)
+        }
+        .padding()
+        .background(Color.black)
+        .cornerRadius(12)
+        .shadow(radius: 10)
+    }
+
+    // NEW: Helper to generate custom graph data by iterating through every day in the range.
+    private func getCustomGraphData() -> (labels: [String], intensities: [CGFloat?]) {
+        let calendar = Calendar.current
+        var labels: [String] = []
+        var intensities: [CGFloat?] = []
+        var date = calendar.startOfDay(for: customStartDate)
+        let endDate = calendar.startOfDay(for: customEndDate)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        while date <= endDate {
+            labels.append(formatter.string(from: date))
+            if let record = habit.dailyRecords.first(where: { calendar.isDate($0.date, inSameDayAs: date) }) {
+                intensities.append(CGFloat(record.value ?? 0))
+            } else {
+                intensities.append(0)
+            }
+            guard let nextDate = calendar.date(byAdding: .day, value: 1, to: date) else { break }
+            date = nextDate
+        }
+        return (labels, intensities)
+    }
+
+    // NEW: Helper to format a Date.
+    private func formattedDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
     }
 
     // MARK: - Helper for Dynamic Prompt (for metric input)
@@ -373,26 +480,17 @@ struct HabitDetailView: View {
     private func completeHabit(with metricValue: Int) {
         let newRecord = HabitRecord(date: Date(), value: Double(metricValue))
         var updatedHabit = habit
-        // Append the new record.
         updatedHabit.dailyRecords.append(newRecord)
-        
-        // If the habit wasn't already completed today, update the streak.
         if !updatedHabit.isCompletedToday {
             updatedHabit.currentStreak += 1
             if updatedHabit.currentStreak > updatedHabit.longestStreak {
                 updatedHabit.longestStreak = updatedHabit.currentStreak
             }
         }
-        
-        // Mark as completed.
         updatedHabit.isCompletedToday = true
-        
-        // Update in Firestore.
         viewModel.updateHabit(updatedHabit)
-        // Update the binding.
         habit = updatedHabit
     }
-
 
     // MARK: - Date Range Overlay (Existing Code)
     @ViewBuilder
@@ -445,6 +543,23 @@ struct HabitDetailView: View {
                 }
             }
             Divider()
+            // NEW: Custom Range button.
+            Button {
+                withAnimation { showCustomDateRangeOverlay = true }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar.badge.plus")
+                        .font(.callout)
+                    Text("Custom Range")
+                        .font(.callout)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .foregroundColor(.black)
+                .background(accentCyan)
+                .cornerRadius(6)
+            }
+            Divider()
             Button("Cancel") {
                 showDateRangeOverlay = false
             }
@@ -455,6 +570,132 @@ struct HabitDetailView: View {
         .background(Color.white.cornerRadius(12))
         .frame(width: 300, height: 400)
         .shadow(color: .gray.opacity(0.3), radius: 10)
+    }
+}
+
+// MARK: - CustomCalendarView
+/// A custom calendar view that displays all days of the current month with navigation controls,
+/// highlights dates between the selected start and end dates, and greys out dates that are not selectable.
+struct CustomCalendarView: View {
+    @State private var currentMonth: Date
+    let minDate: Date
+    let maxDate: Date
+    @Binding var startDate: Date
+    @Binding var endDate: Date
+    let accentColor: Color
+
+    private let columns = Array(repeating: GridItem(.flexible()), count: 7)
+    
+    init(month: Date, minDate: Date, maxDate: Date, startDate: Binding<Date>, endDate: Binding<Date>, accentColor: Color) {
+        self._currentMonth = State(initialValue: month)
+        self.minDate = minDate
+        self.maxDate = maxDate
+        self._startDate = startDate
+        self._endDate = endDate
+        self.accentColor = accentColor
+    }
+    
+    var body: some View {
+        VStack {
+            // Header with month navigation.
+            HStack {
+                Button(action: {
+                    if let prevMonth = Calendar.current.date(byAdding: .month, value: -1, to: currentMonth) {
+                        currentMonth = prevMonth
+                    }
+                }) {
+                    Image(systemName: "chevron.left")
+                        .foregroundColor(.white)
+                }
+                Spacer()
+                Text(monthYearString(from: currentMonth))
+                    .foregroundColor(.white)
+                    .font(.headline)
+                Spacer()
+                Button(action: {
+                    if let nextMonth = Calendar.current.date(byAdding: .month, value: 1, to: currentMonth) {
+                        currentMonth = nextMonth
+                    }
+                }) {
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(.white)
+                }
+            }
+            .padding(.horizontal)
+            
+            // Calendar grid
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(generateDays(for: currentMonth), id: \.self) { day in
+                    let isSelectable = day >= minDate && day <= maxDate
+                    Text(dayString(from: day))
+                        .font(.caption)
+                        .frame(maxWidth: .infinity, minHeight: 30)
+                        .foregroundColor(isSelectable ? .white : .gray)
+                        .background(background(for: day))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .onTapGesture {
+                            if isSelectable {
+                                select(day: day)
+                            }
+                        }
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+    
+    private func monthYearString(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.string(from: date)
+    }
+    
+    private func dayString(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d"
+        return formatter.string(from: date)
+    }
+    
+    private func background(for date: Date) -> Color {
+        // Highlight if the date falls between the selected start and end dates.
+        if date >= startDate && date <= endDate {
+            return accentColor.opacity(0.5)
+        } else if Calendar.current.isDate(date, inSameDayAs: startDate) || Calendar.current.isDate(date, inSameDayAs: endDate) {
+            return accentColor
+        } else {
+            return Color.clear
+        }
+    }
+    
+    private func select(day: Date) {
+        // Update the selected dates based on the tap.
+        if day < startDate {
+            startDate = day
+        } else if day > endDate {
+            endDate = day
+        } else {
+            // If tapped within the range, choose the closer boundary to update.
+            let diffToStart = abs(Calendar.current.dateComponents([.day], from: startDate, to: day).day ?? 0)
+            let diffToEnd = abs(Calendar.current.dateComponents([.day], from: day, to: endDate).day ?? 0)
+            if diffToStart < diffToEnd {
+                startDate = day
+            } else {
+                endDate = day
+            }
+        }
+    }
+    
+    private func generateDays(for month: Date) -> [Date] {
+        var dates: [Date] = []
+        let calendar = Calendar.current
+        guard let monthInterval = calendar.dateInterval(of: .month, for: month) else { return dates }
+        var date = calendar.startOfDay(for: monthInterval.start)
+        while date < monthInterval.end {
+            dates.append(date)
+            guard let nextDate = calendar.date(byAdding: .day, value: 1, to: date) else { break }
+            date = nextDate
+        }
+        return dates
     }
 }
 
@@ -648,6 +889,22 @@ extension HabitDetailView {
                         .background(accentCyan)
                         .cornerRadius(6)
                     }
+                    // NEW: Custom Range button.
+                    Button {
+                        withAnimation { showCustomDateRangeOverlay = true }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "calendar.badge.plus")
+                                .font(.callout)
+                            Text("Custom Range")
+                                .font(.callout)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .foregroundColor(.black)
+                        .background(accentCyan)
+                        .cornerRadius(6)
+                    }
                     Button {
                         if weekOffset < maxWeekOffset {
                             weekOffset += 1
@@ -718,11 +975,7 @@ extension HabitDetailView {
         }
         for i in 0..<7 {
             guard let dayDate = calendar.date(byAdding: .day, value: i, to: startOfThisWeek) else { continue }
-            if dayDate < userCreationDate {
-                intensities[i] = nil
-                continue
-            }
-            if dayDate > now {
+            if dayDate < userCreationDate || dayDate > now {
                 intensities[i] = nil
                 continue
             }
@@ -837,7 +1090,6 @@ extension HabitDetailView {
             Text("Session Notes")
                 .font(.headline)
                 .foregroundColor(accentCyan)
-            
             TextEditor(text: $sessionNotes)
                 .foregroundColor(.white)
                 .background(textFieldBackground)
@@ -849,7 +1101,6 @@ extension HabitDetailView {
                 .frame(minHeight: 150)
                 .padding(.horizontal, 4)
                 .scrollContentBackground(.hidden)
-            
             Button("Save Note") {
                 saveNote()
             }
@@ -857,7 +1108,6 @@ extension HabitDetailView {
             .padding()
             .background(accentCyan)
             .cornerRadius(8)
-            
             Button("View Previous Notes") {
                 showPreviousNotes = true
             }
@@ -1031,94 +1281,70 @@ fileprivate struct SingleLineGraphView: View {
     let accentColor: Color
 
     var body: some View {
-        // Compute the maximum value dynamically from non‑nil values.
         let computedMax = intensities.compactMap { $0 }.max() ?? 0
-        // Ensure at least 1 is used so that a Completed metric (0 or 1) displays correctly.
         let maxValue = max(computedMax, 1)
-        
-        // Determine grid lines. For a Completed metric, only show 0 and 1.
         let gridLines: [CGFloat] = (maxValue == 1)
             ? [0, 1]
             : Array(stride(from: 0, through: maxValue, by: maxValue / 5))
-        
-        // Add a top padding so the graph doesn't start at the very top.
         let topPadding: CGFloat = 20
-        
-        // Adjust the overall view height based on the data range.
-        // If maxValue is 1, use a shorter height; otherwise, scale based on maxValue but cap the height.
         let desiredHeight: CGFloat = (maxValue == 1)
             ? 150
             : min(max(350, maxValue * 30), 500)
 
         return GeometryReader { geo in
             ZStack {
-                // Draw the vertical axis on the left, starting at topPadding.
                 Path { p in
                     p.move(to: CGPoint(x: 20, y: topPadding))
                     p.addLine(to: CGPoint(x: 20, y: geo.size.height))
                 }
                 .stroke(Color.white.opacity(0.2), lineWidth: 1)
                 
-                // Draw horizontal grid lines and their labels.
                 ForEach(gridLines.indices, id: \.self) { index in
                     let value = gridLines[index]
                     let y = yPosition(for: value, in: geo.size.height, maxValue: maxValue, topPadding: topPadding)
-                    
                     Path { path in
                         path.move(to: CGPoint(x: 20, y: y))
                         path.addLine(to: CGPoint(x: geo.size.width, y: y))
                     }
                     .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                    
                     Text("\(Int(value))")
                         .font(.caption2)
-                        .foregroundColor(.white.opacity(0.6))
+                        .foregroundColor(.white)
                         .position(x: 10, y: y)
                 }
                 
-                // Draw the connected line between data points.
                 ConnectedLineShape(values: intensities, maxValue: maxValue, axisPadding: 20, topPadding: topPadding)
-                    .stroke(accentColor.opacity(0.7),
-                            style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .stroke(Color.white, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                 
-                // Draw circles for each data point and display the label above the dot.
                 ForEach(intensities.indices, id: \.self) { i in
                     if let value = intensities[i] {
                         let x = xPosition(for: i, totalWidth: geo.size.width, axisPadding: 20)
                         let y = yPosition(for: value, in: geo.size.height, maxValue: maxValue, topPadding: topPadding)
-                        
-                        // Draw the data point circle.
                         Circle()
-                            .fill(accentColor)
+                            .fill(Color.white)
                             .frame(width: 6, height: 6)
                             .position(x: x, y: y)
-                        
-                        // Place the data point label above the dot.
-                        // Here we use an offset of 30 points. We clamp it so that it doesn't go above (topPadding + 15).
                         let labelY = max(y - 30, topPadding + 15)
                         Text("\(Int(value))")
                             .font(.caption2)
                             .foregroundColor(.white)
                             .position(x: x, y: labelY)
                     }
-                    
-                    // Draw the date label for every index.
                     if i < dates.count {
                         let x = xPosition(for: i, totalWidth: geo.size.width, axisPadding: 20)
                         Text(dates[i])
                             .font(.caption2)
-                            .foregroundColor(.white.opacity(0.8))
+                            .foregroundColor(.white)
                             .frame(width: 30, alignment: .center)
                             .position(x: x, y: geo.size.height - 10)
                     }
                 }
             }
         }
-        .frame(minHeight: desiredHeight)  // Set the view height dynamically.
+        .frame(minHeight: desiredHeight)
         .padding()
     }
     
-    // Helper: Calculate the x‑position for the i‑th data point.
     private func xPosition(for index: Int, totalWidth: CGFloat, axisPadding: CGFloat) -> CGFloat {
         guard intensities.count > 1 else {
             return axisPadding + totalWidth / 2
@@ -1128,7 +1354,6 @@ fileprivate struct SingleLineGraphView: View {
         return axisPadding + CGFloat(index) * step
     }
     
-    // Helper: Calculate the y‑position for a given value, taking into account the top padding.
     private func yPosition(for value: CGFloat, in height: CGFloat, maxValue: CGFloat, topPadding: CGFloat) -> CGFloat {
         let availableHeight = height - topPadding
         let ratio = value / maxValue
@@ -1138,7 +1363,6 @@ fileprivate struct SingleLineGraphView: View {
 
 // MARK: - ConnectedLineShape
 fileprivate struct ConnectedLineShape: Shape {
-    /// The array of optional values (nil for days with no data).
     let values: [CGFloat?]
     let maxValue: CGFloat
     let axisPadding: CGFloat
@@ -1153,7 +1377,6 @@ fileprivate struct ConnectedLineShape: Shape {
         
         for i in 0..<count {
             let x = axisPadding + CGFloat(i) * step
-            // Reset connection if no value (e.g. future day).
             guard let value = values[i] else {
                 previousPoint = nil
                 continue
@@ -1161,7 +1384,6 @@ fileprivate struct ConnectedLineShape: Shape {
             let availableHeight = rect.height - topPadding
             let y = rect.height - (value / maxValue * availableHeight)
             let currentPoint = CGPoint(x: x, y: y)
-            
             if let previous = previousPoint {
                 path.addLine(to: currentPoint)
             } else {
@@ -1174,7 +1396,6 @@ fileprivate struct ConnectedLineShape: Shape {
 }
 
 // MARK: - PreviousNotesView
-//
 fileprivate struct PreviousNotesView: View {
     let habitID: String
     @EnvironmentObject var viewModel: HabitViewModel
@@ -1248,9 +1469,7 @@ fileprivate struct PreviousNotesView: View {
     }
 }
 
-//
 // MARK: - HolographicButtonStyle
-//
 fileprivate struct HolographicButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -1268,9 +1487,7 @@ fileprivate struct HolographicButtonStyle: ButtonStyle {
     }
 }
 
-//
 // MARK: - MonthlyCurrentMonthGridView
-//
 fileprivate struct MonthlyCurrentMonthGridView: View {
     let accentColor: Color
     let offset: Int
@@ -1310,7 +1527,7 @@ fileprivate struct MonthlyCurrentMonthGridView: View {
         .background(accentColor.opacity(0.15))
         .cornerRadius(8)
     }
-
+    
     private func monthDayData(offset: Int) -> [DayData] {
         let calendar = Calendar.current
         let now = Date()
@@ -1340,7 +1557,7 @@ fileprivate struct MonthlyCurrentMonthGridView: View {
     }
 }
 
-fileprivate struct DayData: Hashable {
+struct DayData: Hashable {
     let date: Date
     let dayLabel: String
     let intensity: CGFloat?

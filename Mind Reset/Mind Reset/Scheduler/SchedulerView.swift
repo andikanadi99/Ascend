@@ -10,14 +10,13 @@ import Combine
 
 // MARK: - Main Scheduler View
 struct SchedulerView: View {
-    // For switching between Day, Week, and Month views
+    @EnvironmentObject var session: SessionStore
     @State private var selectedTab: SchedulerTab = .day
     
     var body: some View {
         NavigationView {
             ZStack {
-                Color.black
-                    .ignoresSafeArea()
+                Color.black.ignoresSafeArea()
                 
                 VStack {
                     // Title
@@ -27,7 +26,7 @@ struct SchedulerView: View {
                         .foregroundColor(.white)
                         .padding(.top)
                     
-                    // Updated tab header
+                    // Updated tab header with a small divider
                     VStack(spacing: 4) {
                         Picker("Tabs", selection: $selectedTab) {
                             Text("Day").tag(SchedulerTab.day)
@@ -40,7 +39,6 @@ struct SchedulerView: View {
                         .cornerRadius(8)
                         .padding(.horizontal, 10)
                         
-                        // Black divider
                         Rectangle()
                             .fill(Color.black)
                             .frame(maxWidth: .infinity)
@@ -54,9 +52,15 @@ struct SchedulerView: View {
                         case .day:
                             DayView()
                         case .week:
-                            WeekView()
+                            WeekView(accentColor: .accentColor)
                         case .month:
-                            MonthView()
+                            // Use the account creation date from the user model.
+                            if let accountCreationDate = session.userModel?.createdAt {
+                                MonthView(accentColor: .accentColor, accountCreationDate: accountCreationDate)
+                            } else {
+                                // Fallback in case the user model is not available.
+                                MonthView(accentColor: .accentColor, accountCreationDate: Date())
+                            }
                         }
                     }
                     .padding()
@@ -76,9 +80,9 @@ enum SchedulerTab: String, CaseIterable {
     case month = "Month"
 }
 
-// MARK: - Day View
+// MARK: - Day View ("Your Daily Intentions")
 struct DayView: View {
-    // Sample time blocks for the day (could be replaced with your task model)
+    // For demonstration, we use some sample time blocks.
     @State private var tasks: [TimeBlock] = [
         TimeBlock(time: "7:00 AM", task: "Morning Meditation"),
         TimeBlock(time: "8:00 AM", task: "Breakfast & Planning"),
@@ -88,13 +92,26 @@ struct DayView: View {
         TimeBlock(time: "6:00 PM", task: "Evening Walk")
     ]
     
+    // Today's date string
+    private var todayString: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .full
+        return formatter.string(from: Date())
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Daily Routine")
-                .font(.title2)
-                .foregroundColor(.white)
+            // Header with the day name and date
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Your Daily Intentions")
+                    .font(.title2)
+                    .foregroundColor(.white)
+                Text(todayString)
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.7))
+            }
             
-            // A vertical list of time blocks
+            // List of time blocks (each could be tapped to add/edit tasks)
             ForEach(tasks) { block in
                 HStack {
                     Text(block.time)
@@ -104,9 +121,8 @@ struct DayView: View {
                     Text(block.task)
                         .foregroundColor(.white)
                     Spacer()
-                    // An example button to edit the task.
                     Button(action: {
-                        // Action to edit or add a reminder for the task.
+                        // Action to edit the task or add a reminder.
                     }) {
                         Image(systemName: "pencil")
                             .foregroundColor(.accentColor)
@@ -116,6 +132,7 @@ struct DayView: View {
                 .background(Color.gray.opacity(0.2))
                 .cornerRadius(8)
             }
+            
             Spacer()
         }
         .padding()
@@ -128,10 +145,12 @@ struct TimeBlock: Identifiable {
     var task: String
 }
 
-// MARK: - Week View
+// MARK: - Week View ("Your Weekly Blueprint")
 struct WeekView: View {
-    // Sample data: a week of scheduled routines
-    @State private var dailyRoutines: [String: String] = [
+    let accentColor: Color
+    
+    // Sample daily routines and a simple trend array.
+    @State private var dailyIntentions: [String: String] = [
         "Sun": "Rest & Reflect",
         "Mon": "Morning Meditation",
         "Tue": "Focused Work",
@@ -140,17 +159,60 @@ struct WeekView: View {
         "Fri": "Networking",
         "Sat": "Family Time"
     ]
-    
-    // Dummy trend data for a mini graph
     @State private var trendData: [CGFloat] = [1, 2, 3, 2, 4, 3, 5]
+    
+    // For the routine setup panel
+    @State private var wakeUpTime: Date = Date()
+    @State private var sleepTime: Date = Date()
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Week View")
-                .font(.title2)
-                .foregroundColor(.white)
+            // Header: Mental Inventory & Routine Setup
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Your Weekly Blueprint")
+                    .font(.title2)
+                    .foregroundColor(.white)
+                Text("List your key intentions for the week:")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.7))
+                TextField("e.g. Be mindful in meetings, practice gratitude", text: .constant(""))
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .padding(.trailing)
+                
+                HStack {
+                    Text("Wake-Up:")
+                        .foregroundColor(.white)
+                    DatePicker("", selection: $wakeUpTime, displayedComponents: .hourAndMinute)
+                        .labelsHidden()
+                        .accentColor(accentColor)
+                    Spacer()
+                    Text("Sleep:")
+                        .foregroundColor(.white)
+                    DatePicker("", selection: $sleepTime, displayedComponents: .hourAndMinute)
+                        .labelsHidden()
+                        .accentColor(accentColor)
+                }
+                .padding(.vertical, 4)
+                
+                HStack {
+                    Button("Yes") {
+                        // Accept the default routine.
+                    }
+                    .buttonStyle(RoutineButtonStyle(accentColor: accentColor))
+                    
+                    Button("Random") {
+                        // Generate a suggested routine.
+                    }
+                    .buttonStyle(RoutineButtonStyle(accentColor: accentColor))
+                    
+                    Button("Change Time") {
+                        // Allow manual entry.
+                    }
+                    .buttonStyle(RoutineButtonStyle(accentColor: accentColor))
+                }
+            }
             
-            // Display the routines for each day in a horizontal scroll.
+            // Daily summary cards for each day.
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
                     ForEach(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], id: \.self) { day in
@@ -158,7 +220,7 @@ struct WeekView: View {
                             Text(day)
                                 .font(.headline)
                                 .foregroundColor(.white)
-                            Text(dailyRoutines[day] ?? "")
+                            Text(dailyIntentions[day] ?? "")
                                 .font(.caption)
                                 .foregroundColor(.white)
                                 .multilineTextAlignment(.center)
@@ -172,7 +234,7 @@ struct WeekView: View {
                 .padding(.horizontal)
             }
             
-            // A simple mini graph for trend visualization.
+            // Consistency trend mini graph
             Text("Consistency Trend")
                 .font(.caption)
                 .foregroundColor(.white)
@@ -183,7 +245,6 @@ struct WeekView: View {
                     let step = width / CGFloat(max(trendData.count - 1, 1))
                     for (index, value) in trendData.enumerated() {
                         let x = CGFloat(index) * step
-                        // Scale value to the view’s height (assumes trendData maximum is 5)
                         let y = height - (value / 5 * height)
                         if index == 0 {
                             path.move(to: CGPoint(x: x, y: y))
@@ -202,33 +263,44 @@ struct WeekView: View {
     }
 }
 
-// MARK: - Month View
+struct RoutineButtonStyle: ButtonStyle {
+    let accentColor: Color
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.vertical, 6)
+            .padding(.horizontal, 12)
+            .background(accentColor.opacity(configuration.isPressed ? 0.7 : 1))
+            .foregroundColor(.black)
+            .cornerRadius(6)
+    }
+}
+
+// MARK: - Month View ("Your Mindful Month")
 struct MonthView: View {
-    // For simplicity, we use the built-in Calendar view style.
-    @State private var currentMonth: Date = Date()
+    let accentColor: Color
+    let accountCreationDate: Date  // Account creation date from UserModel
     
-    // Example yearly goal and progress (e.g., 12 books to read in a year)
+    @State private var currentMonth: Date = Date()
     @State private var yearlyGoal: Int = 12
     @State private var currentProgress: Int = 5
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Month View")
+            Text("Your Mindful Month")
                 .font(.title2)
                 .foregroundColor(.white)
             
-            // A placeholder for a calendar view.
-            // In a complete app you might integrate a custom calendar component.
-            CalendarView(currentMonth: $currentMonth)
+            // Full calendar view: pass the accountCreationDate to restrict navigation.
+            CalendarView(currentMonth: $currentMonth, accountCreationDate: accountCreationDate)
                 .frame(height: 300)
             
             // Yearly goal section.
-            VStack(alignment: .leading) {
-                Text("Yearly Goal: Read \(yearlyGoal) Books")
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Yearly Goal: Complete \(yearlyGoal) mindful activities")
                     .foregroundColor(.white)
                     .font(.headline)
                 ProgressView(value: Float(currentProgress), total: Float(yearlyGoal))
-                    .progressViewStyle(LinearProgressViewStyle(tint: .accentColor))
+                    .progressViewStyle(LinearProgressViewStyle(tint: accentColor))
             }
             .padding()
             .background(Color.gray.opacity(0.2))
@@ -240,29 +312,35 @@ struct MonthView: View {
     }
 }
 
-// MARK: - Simple Calendar View (Placeholder)
-// In a production app you might replace this with a full-featured calendar component.
+// MARK: - Calendar View
 struct CalendarView: View {
     @Binding var currentMonth: Date
+    let accountCreationDate: Date
     private let columns = Array(repeating: GridItem(.flexible()), count: 7)
     
     var body: some View {
         VStack {
             // Month header with navigation.
             HStack {
-                Button(action: {
-                    if let prevMonth = Calendar.current.date(byAdding: .month, value: -1, to: currentMonth) {
-                        currentMonth = prevMonth
+                if canGoBack() {
+                    Button(action: {
+                        if let prevMonth = Calendar.current.date(byAdding: .month, value: -1, to: currentMonth) {
+                            currentMonth = prevMonth
+                        }
+                    }) {
+                        Image(systemName: "chevron.left")
+                            .foregroundColor(.white)
                     }
-                }) {
-                    Image(systemName: "chevron.left")
-                        .foregroundColor(.white)
                 }
+                
                 Spacer()
+                
                 Text(monthYearString(from: currentMonth))
                     .foregroundColor(.white)
                     .font(.headline)
+                
                 Spacer()
+                
                 Button(action: {
                     if let nextMonth = Calendar.current.date(byAdding: .month, value: 1, to: currentMonth) {
                         currentMonth = nextMonth
@@ -291,10 +369,24 @@ struct CalendarView: View {
                         .font(.caption2)
                         .frame(maxWidth: .infinity, minHeight: 30)
                         .foregroundColor(.white)
+                        .background(Color.gray.opacity(0.2))
+                        .cornerRadius(4)
                 }
             }
             .padding(.horizontal)
         }
+    }
+    
+    // Helper function to check if the user can go back.
+    private func canGoBack() -> Bool {
+        guard let prevMonth = Calendar.current.date(byAdding: .month, value: -1, to: currentMonth) else { return false }
+        return prevMonth >= startOfMonth(for: accountCreationDate)
+    }
+    
+    // Returns the start of the month for a given date.
+    private func startOfMonth(for date: Date) -> Date {
+        let calendar = Calendar.current
+        return calendar.date(from: calendar.dateComponents([.year, .month], from: date)) ?? date
     }
     
     private func monthYearString(from date: Date) -> String {
@@ -312,9 +404,7 @@ struct CalendarView: View {
     private func generateDays() -> [Date] {
         var dates: [Date] = []
         let calendar = Calendar.current
-        guard let monthInterval = calendar.dateInterval(of: .month, for: currentMonth) else {
-            return dates
-        }
+        guard let monthInterval = calendar.dateInterval(of: .month, for: currentMonth) else { return dates }
         var date = calendar.startOfDay(for: monthInterval.start)
         while date < monthInterval.end {
             dates.append(date)
@@ -329,5 +419,6 @@ struct CalendarView: View {
 struct SchedulerView_Previews: PreviewProvider {
     static var previews: some View {
         SchedulerView()
+            .environmentObject(SessionStore()) // Make sure to provide your session object.
     }
 }

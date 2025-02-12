@@ -24,9 +24,8 @@ struct SchedulerView: View {
                         .font(.largeTitle)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
-                        .padding(.top)
                     
-                    // Updated tab header with a small divider
+                    // Tab header with a small divider
                     VStack(spacing: 4) {
                         Picker("Tabs", selection: $selectedTab) {
                             Text("Day").tag(SchedulerTab.day)
@@ -54,11 +53,9 @@ struct SchedulerView: View {
                         case .week:
                             WeekView(accentColor: .accentColor)
                         case .month:
-                            // Use the account creation date from the user model.
                             if let accountCreationDate = session.userModel?.createdAt {
                                 MonthView(accentColor: .accentColor, accountCreationDate: accountCreationDate)
                             } else {
-                                // Fallback in case the user model is not available.
                                 MonthView(accentColor: .accentColor, accountCreationDate: Date())
                             }
                         }
@@ -82,17 +79,22 @@ enum SchedulerTab: String, CaseIterable {
 
 // MARK: - Day View ("Your Daily Intentions")
 struct DayView: View {
-    // For demonstration, we use some sample time blocks.
+    // Sample time blocks – later these can come from your task model.
     @State private var tasks: [TimeBlock] = [
         TimeBlock(time: "7:00 AM", task: "Morning Meditation"),
         TimeBlock(time: "8:00 AM", task: "Breakfast & Planning"),
         TimeBlock(time: "9:00 AM", task: "Focused Work"),
+        TimeBlock(time: "11:00 AM", task: "Mini-Break (Stretch)"),
         TimeBlock(time: "12:00 PM", task: "Lunch Break"),
         TimeBlock(time: "1:00 PM", task: "Reading"),
+        TimeBlock(time: "3:00 PM", task: "Power Nap"),
         TimeBlock(time: "6:00 PM", task: "Evening Walk")
     ]
     
-    // Today's date string
+    // “Today’s Top Priority” text.
+    @State private var topPriority: String = "Define Your One Thing"
+    
+    // Today's date string.
     private var todayString: String {
         let formatter = DateFormatter()
         formatter.dateStyle = .full
@@ -100,42 +102,58 @@ struct DayView: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Header with the day name and date
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Your Daily Intentions")
-                    .font(.title2)
-                    .foregroundColor(.white)
-                Text(todayString)
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.7))
-            }
-            
-            // List of time blocks (each could be tapped to add/edit tasks)
-            ForEach(tasks) { block in
-                HStack {
-                    Text(block.time)
-                        .font(.caption)
-                        .foregroundColor(.white)
-                        .frame(width: 80, alignment: .leading)
-                    Text(block.task)
-                        .foregroundColor(.white)
-                    Spacer()
-                    Button(action: {
-                        // Action to edit the task or add a reminder.
-                    }) {
-                        Image(systemName: "pencil")
-                            .foregroundColor(.accentColor)
-                    }
+        // Wrap the entire day view in a ScrollView so that the user can scroll.
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // "Today's Top Priority" card.
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Today's Top Priority")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                        .foregroundColor(.accentColor)
+                    TextField("What matters most today?", text: $topPriority)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
                 }
                 .padding()
-                .background(Color.gray.opacity(0.2))
+                .background(Color.gray.opacity(0.3))
                 .cornerRadius(8)
+                
+                // Header with day name and full date.
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Your Daily Intentions")
+                        .font(.title2)
+                        .foregroundColor(.white)
+                    Text(todayString)
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.7))
+                }
+                
+                // List of time blocks.
+                ForEach(tasks) { block in
+                    HStack {
+                        Text(block.time)
+                            .font(.caption)
+                            .foregroundColor(.white)
+                            .frame(width: 80, alignment: .leading)
+                        Text(block.task)
+                            .foregroundColor(.white)
+                        Spacer()
+                        Button(action: {
+                            // Action to edit or add a reminder for the task.
+                        }) {
+                            Image(systemName: "pencil")
+                                .foregroundColor(.accentColor)
+                        }
+                    }
+                    .padding()
+                    .background(Color.gray.opacity(0.2))
+                    .cornerRadius(8)
+                }
+                
+                Spacer()
             }
-            
-            Spacer()
+            .padding()
         }
-        .padding()
     }
 }
 
@@ -149,7 +167,10 @@ struct TimeBlock: Identifiable {
 struct WeekView: View {
     let accentColor: Color
     
-    // Sample daily routines and a simple trend array.
+    // Sample weekly key intentions.
+    @State private var weeklyPriority: String = "Define 1–2 key intentions for this week"
+    
+    // Sample daily routines.
     @State private var dailyIntentions: [String: String] = [
         "Sun": "Rest & Reflect",
         "Mon": "Morning Meditation",
@@ -159,26 +180,31 @@ struct WeekView: View {
         "Fri": "Networking",
         "Sat": "Family Time"
     ]
+    
+    // Dummy trend data for a mini graph.
     @State private var trendData: [CGFloat] = [1, 2, 3, 2, 4, 3, 5]
     
-    // For the routine setup panel
+    // Routine setup (wake/sleep times).
     @State private var wakeUpTime: Date = Date()
     @State private var sleepTime: Date = Date()
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Header: Mental Inventory & Routine Setup
+            // Top section for weekly priority.
             VStack(alignment: .leading, spacing: 8) {
                 Text("Your Weekly Blueprint")
                     .font(.title2)
                     .foregroundColor(.white)
-                Text("List your key intentions for the week:")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.7))
-                TextField("e.g. Be mindful in meetings, practice gratitude", text: .constant(""))
+                TextField("Enter your key intention(s) for this week", text: $weeklyPriority)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .padding(.trailing)
-                
+            }
+            .padding()
+            .background(Color.gray.opacity(0.3))
+            .cornerRadius(8)
+            
+            // Routine setup panel.
+            VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Wake-Up:")
                         .foregroundColor(.white)
@@ -201,18 +227,21 @@ struct WeekView: View {
                     .buttonStyle(RoutineButtonStyle(accentColor: accentColor))
                     
                     Button("Random") {
-                        // Generate a suggested routine.
+                        // Generate a suggestion based on past routines.
                     }
                     .buttonStyle(RoutineButtonStyle(accentColor: accentColor))
                     
                     Button("Change Time") {
-                        // Allow manual entry.
+                        // Allow manual time entry.
                     }
                     .buttonStyle(RoutineButtonStyle(accentColor: accentColor))
                 }
             }
+            .padding()
+            .background(Color.gray.opacity(0.3))
+            .cornerRadius(8)
             
-            // Daily summary cards for each day.
+            // Daily summary cards.
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
                     ForEach(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], id: \.self) { day in
@@ -234,7 +263,7 @@ struct WeekView: View {
                 .padding(.horizontal)
             }
             
-            // Consistency trend mini graph
+            // Mini graph for consistency trend.
             Text("Consistency Trend")
                 .font(.caption)
                 .foregroundColor(.white)
@@ -281,46 +310,134 @@ struct MonthView: View {
     let accountCreationDate: Date  // Account creation date from UserModel
     
     @State private var currentMonth: Date = Date()
-    @State private var yearlyGoal: Int = 12
-    @State private var currentProgress: Int = 5
+    // Dynamic list for monthly priorities – defaults to one priority; user can add more.
+    @State private var monthlyPriorities: [MonthlyPriority] = [
+        MonthlyPriority(id: UUID(), title: "Write 5 blog posts", progress: 0.5)
+    ]
+    
+    // State for the selected day to show a summary.
+    @State private var selectedDay: Date? = nil
+    @State private var showDaySummary: Bool = false
+    
+    // For demonstration, sample data for day completion percentages.
+    @State private var dayCompletion: [Date: Double] = [:]
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Your Mindful Month")
-                .font(.title2)
-                .foregroundColor(.white)
-            
-            // Full calendar view: pass the accountCreationDate to restrict navigation.
-            CalendarView(currentMonth: $currentMonth, accountCreationDate: accountCreationDate)
-                .frame(height: 300)
-            
-            // Yearly goal section.
+            // Dynamic Monthly Priorities Box.
             VStack(alignment: .leading, spacing: 8) {
-                Text("Yearly Goal: Complete \(yearlyGoal) mindful activities")
-                    .foregroundColor(.white)
-                    .font(.headline)
-                ProgressView(value: Float(currentProgress), total: Float(yearlyGoal))
-                    .progressViewStyle(LinearProgressViewStyle(tint: accentColor))
+                HStack {
+                    Text("Monthly Priorities")
+                        .font(.headline)
+                        .foregroundColor(.accentColor)
+                    Spacer()
+                    // '+' button to add a new priority.
+                    Button(action: {
+                        monthlyPriorities.append(MonthlyPriority(id: UUID(), title: "New Priority", progress: 0))
+                    }) {
+                        Image(systemName: "plus.circle")
+                            .foregroundColor(.accentColor)
+                    }
+                }
+                ForEach($monthlyPriorities) { $priority in
+                    HStack {
+                        TextField("Priority", text: $priority.title)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                        if monthlyPriorities.count > 1 {
+                            Button(action: {
+                                if let index = monthlyPriorities.firstIndex(where: { $0.id == priority.id }) {
+                                    monthlyPriorities.remove(at: index)
+                                }
+                            }) {
+                                Image(systemName: "minus.circle")
+                                    .foregroundColor(.red)
+                            }
+                        }
+                    }
+                }
             }
             .padding()
-            .background(Color.gray.opacity(0.2))
+            .background(Color.gray.opacity(0.3))
             .cornerRadius(8)
+            
+            // Calendar view – navigation is restricted by the accountCreationDate.
+            CalendarView(currentMonth: $currentMonth, accountCreationDate: accountCreationDate, dayCompletion: dayCompletion) { day in
+                // Only allow summary for past or current days.
+                if day <= Date() {
+                    selectedDay = day
+                    showDaySummary = true
+                }
+            }
+            .frame(height: 300)
+            .onAppear {
+                // For demonstration, assign random completion percentages for each day.
+                let calendar = Calendar.current
+                for day in generateDemoDays(for: currentMonth) {
+                    dayCompletion[day] = Double.random(in: 0...1)
+                }
+            }
             
             Spacer()
         }
         .padding()
+        // Instead of a full-screen cover, use an overlay that shows the small summary box
+        .overlay(
+            Group {
+                if showDaySummary, let day = selectedDay {
+                    // The overlay is centered on the screen.
+                    VStack {
+                        DaySummaryView(day: day, completionPercentage: dayCompletion[day] ?? 0)
+                            .cornerRadius(12)
+                        Button("Close Summary") {
+                            withAnimation {
+                                showDaySummary = false
+                            }
+                        }
+                        .padding()
+                        .foregroundColor(.white)
+                        .background(Color.gray)
+                        .cornerRadius(8)
+                    }
+                    .background(Color.black)
+                    .transition(.opacity)
+                }
+            }
+        )
     }
+    
+    // Helper for demo: generate all days for the current month (ignoring placeholders)
+    private func generateDemoDays(for month: Date) -> [Date] {
+        var dates: [Date] = []
+        let calendar = Calendar.current
+        guard let monthInterval = calendar.dateInterval(of: .month, for: month) else { return dates }
+        var date = calendar.startOfDay(for: monthInterval.start)
+        while date < monthInterval.end {
+            dates.append(date)
+            guard let next = calendar.date(byAdding: .day, value: 1, to: date) else { break }
+            date = next
+        }
+        return dates
+    }
+}
+
+struct MonthlyPriority: Identifiable {
+    let id: UUID
+    var title: String
+    var progress: Double  // Value between 0 and 1
 }
 
 // MARK: - Calendar View
 struct CalendarView: View {
     @Binding var currentMonth: Date
     let accountCreationDate: Date
+    var dayCompletion: [Date: Double] = [:]
+    var onDaySelected: (Date) -> Void = { _ in }
+    
     private let columns = Array(repeating: GridItem(.flexible()), count: 7)
     
     var body: some View {
         VStack {
-            // Month header with navigation.
+            // Month header with navigation and overall completion percentage.
             HStack {
                 if canGoBack() {
                     Button(action: {
@@ -335,7 +452,8 @@ struct CalendarView: View {
                 
                 Spacer()
                 
-                Text(monthYearString(from: currentMonth))
+                let averageCompletion = computeAverageCompletion()
+                Text("\(monthYearString(from: currentMonth)) - (\(Int(averageCompletion * 100))%)")
                     .foregroundColor(.white)
                     .font(.headline)
                 
@@ -362,22 +480,51 @@ struct CalendarView: View {
                 }
             }
             
-            // Calendar grid.
+            // Calendar grid with placeholders.
             LazyVGrid(columns: columns, spacing: 8) {
                 ForEach(generateDays(), id: \.self) { date in
-                    Text(dayString(from: date))
-                        .font(.caption2)
-                        .frame(maxWidth: .infinity, minHeight: 30)
-                        .foregroundColor(.white)
-                        .background(Color.gray.opacity(0.2))
-                        .cornerRadius(4)
+                    if let date = date {
+                        if date > Date() {
+                            // Future dates are greyed out.
+                            Text(dayString(from: date))
+                                .font(.caption2)
+                                .frame(maxWidth: .infinity, minHeight: 30)
+                                .foregroundColor(.white)
+                                .background(Color.gray)
+                                .cornerRadius(4)
+                        } else {
+                            let completion = dayCompletion[date] ?? 0
+                            let bgColor: Color = {
+                                if completion >= 0.8 {
+                                    return Color.green.opacity(0.6)
+                                } else if completion >= 0.5 {
+                                    return Color.yellow.opacity(0.6)
+                                } else {
+                                    return Color.red.opacity(0.6)
+                                }
+                            }()
+                            Text(dayString(from: date))
+                                .font(.caption2)
+                                .frame(maxWidth: .infinity, minHeight: 30)
+                                .foregroundColor(.white)
+                                .background(bgColor)
+                                .cornerRadius(4)
+                                .onTapGesture {
+                                    onDaySelected(date)
+                                }
+                        }
+                    } else {
+                        // Placeholder for empty cells.
+                        Text("")
+                            .frame(maxWidth: .infinity, minHeight: 30)
+                    }
                 }
             }
             .padding(.horizontal)
         }
     }
     
-    // Helper function to check if the user can go back.
+    // Only allow going back if the previous month is not before the account's creation month.
     private func canGoBack() -> Bool {
         guard let prevMonth = Calendar.current.date(byAdding: .month, value: -1, to: currentMonth) else { return false }
         return prevMonth >= startOfMonth(for: accountCreationDate)
@@ -401,17 +548,66 @@ struct CalendarView: View {
         return formatter.string(from: date)
     }
     
-    private func generateDays() -> [Date] {
-        var dates: [Date] = []
+    // Generate days for the current month including leading empty placeholders.
+    private func generateDays() -> [Date?] {
+        var days: [Date?] = []
         let calendar = Calendar.current
-        guard let monthInterval = calendar.dateInterval(of: .month, for: currentMonth) else { return dates }
-        var date = calendar.startOfDay(for: monthInterval.start)
-        while date < monthInterval.end {
-            dates.append(date)
-            guard let next = calendar.date(byAdding: .day, value: 1, to: date) else { break }
-            date = next
+        guard let monthInterval = calendar.dateInterval(of: .month, for: currentMonth) else { return days }
+        let firstDay = calendar.startOfDay(for: monthInterval.start)
+        let weekday = calendar.component(.weekday, from: firstDay)
+        for _ in 1..<weekday {
+            days.append(nil)
         }
-        return dates
+        var date = firstDay
+        while date < monthInterval.end {
+            days.append(date)
+            if let next = calendar.date(byAdding: .day, value: 1, to: date) {
+                date = next
+            } else { break }
+        }
+        return days
+    }
+    
+    private func computeAverageCompletion() -> Double {
+        let days = generateDays().compactMap { $0 }
+        guard !days.isEmpty else { return 0 }
+        let total = days.reduce(0) { (sum, day) -> Double in
+            return sum + (dayCompletion[day] ?? 0)
+        }
+        return total / Double(days.count)
+    }
+}
+
+// MARK: - Day Summary View
+struct DaySummaryView: View {
+    let day: Date
+    let completionPercentage: Double
+    
+    @Environment(\.presentationMode) var presentationMode
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Summary for \(formattedDate(day))")
+                .font(.headline)
+                .foregroundColor(.white)
+            Text("Completion: \(Int(completionPercentage * 100))%")
+                .font(.title)
+                .foregroundColor(completionPercentage >= 0.8 ? .green : (completionPercentage >= 0.5 ? .yellow : .red))
+            Text("Habits: Finished 3 / 5") // Placeholder – replace with real data.
+                .foregroundColor(.white)
+            .padding()
+            .foregroundColor(.white)
+            .cornerRadius(8)
+        }
+        .padding()
+        .cornerRadius(12)
+        .shadow(radius: 10)
+    }
+    
+    private func formattedDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
     }
 }
 
@@ -419,6 +615,6 @@ struct CalendarView: View {
 struct SchedulerView_Previews: PreviewProvider {
     static var previews: some View {
         SchedulerView()
-            .environmentObject(SessionStore()) // Make sure to provide your session object.
+            .environmentObject(SessionStore()) // Provide your session object.
     }
 }

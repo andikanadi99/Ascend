@@ -79,7 +79,7 @@ enum SchedulerTab: String, CaseIterable {
 
 // MARK: - Day View ("Your Daily Intentions")
 struct DayView: View {
-    // Sample time blocks – later these can come from your task model.
+    // Sample time blocks – these can later come from your task model.
     @State private var tasks: [TimeBlock] = [
         TimeBlock(time: "7:00 AM", task: "Morning Meditation"),
         TimeBlock(time: "8:00 AM", task: "Breakfast & Planning"),
@@ -102,7 +102,6 @@ struct DayView: View {
     }
     
     var body: some View {
-        // Wrap the entire day view in a ScrollView so that the user can scroll.
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 // "Today's Top Priority" card.
@@ -166,11 +165,18 @@ struct TimeBlock: Identifiable {
 // MARK: - Week View ("Your Weekly Blueprint")
 struct WeekView: View {
     let accentColor: Color
+    @EnvironmentObject var session: SessionStore
     
-    // Sample weekly key intentions.
-    @State private var weeklyPriority: String = "Define 1–2 key intentions for this week"
+    // Week navigation state.
+    @State private var currentWeekStart: Date = {
+        var calendar = Calendar.current
+        calendar.firstWeekday = 1 // Week starts on Sunday
+        let now = Date()
+        let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
+        return calendar.date(from: components) ?? now
+    }()
     
-    // Sample daily routines.
+    // Sample daily routines keyed by abbreviated weekday.
     @State private var dailyIntentions: [String: String] = [
         "Sun": "Rest & Reflect",
         "Mon": "Morning Meditation",
@@ -181,128 +187,262 @@ struct WeekView: View {
         "Sat": "Family Time"
     ]
     
-    // Dummy trend data for a mini graph.
-    @State private var trendData: [CGFloat] = [1, 2, 3, 2, 4, 3, 5]
+    // A dictionary to hold each day’s to‑do list.
+    @State private var dailyToDoLists: [String: [ToDoItem]] = [
+        "Sun": [ToDoItem(id: UUID(), title: "Journal", isCompleted: false)],
+        "Mon": [ToDoItem(id: UUID(), title: "Plan Day", isCompleted: false)],
+        "Tue": [ToDoItem(id: UUID(), title: "Deep Work Session", isCompleted: false)],
+        "Wed": [ToDoItem(id: UUID(), title: "Workout", isCompleted: false)],
+        "Thu": [ToDoItem(id: UUID(), title: "Write Ideas", isCompleted: false)],
+        "Fri": [ToDoItem(id: UUID(), title: "Catch Up", isCompleted: false)],
+        "Sat": [ToDoItem(id: UUID(), title: "Family Time", isCompleted: false)]
+    ]
     
-    // Routine setup (wake/sleep times).
-    @State private var wakeUpTime: Date = Date()
-    @State private var sleepTime: Date = Date()
+    @State private var weeklyPriorities: [WeeklyPriority] = [
+        WeeklyPriority(id: UUID(), title: "Write 1 blog post", progress: 0.5)
+    ]
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Top section for weekly priority.
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Your Weekly Blueprint")
-                    .font(.title2)
-                    .foregroundColor(.white)
-                TextField("Enter your key intention(s) for this week", text: $weeklyPriority)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .padding(.trailing)
-            }
-            .padding()
-            .background(Color.gray.opacity(0.3))
-            .cornerRadius(8)
-            
-            // Routine setup panel.
+            // Dynamic Monthly Priorities Box.
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Wake-Up:")
-                        .foregroundColor(.white)
-                    DatePicker("", selection: $wakeUpTime, displayedComponents: .hourAndMinute)
-                        .labelsHidden()
-                        .accentColor(accentColor)
+                    Text("Weekly Priorities")
+                        .font(.headline)
+                        .foregroundColor(.accentColor)
                     Spacer()
-                    Text("Sleep:")
-                        .foregroundColor(.white)
-                    DatePicker("", selection: $sleepTime, displayedComponents: .hourAndMinute)
-                        .labelsHidden()
-                        .accentColor(accentColor)
+                    Button(action: {
+                        weeklyPriorities.append(WeeklyPriority(id: UUID(), title: "New Priority", progress: 0))
+                    }) {
+                        Image(systemName: "plus.circle")
+                            .foregroundColor(.accentColor)
+                    }
                 }
-                .padding(.vertical, 4)
-                
-                HStack {
-                    Button("Yes") {
-                        // Accept the default routine.
+                ForEach($weeklyPriorities) { $priority in
+                    HStack {
+                        TextField("Priority", text: $priority.title)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                        if weeklyPriorities.count > 1 {
+                            Button(action: {
+                                if let index = weeklyPriorities.firstIndex(where: { $0.id == priority.id }) {
+                                    weeklyPriorities.remove(at: index)
+                                }
+                            }) {
+                                Image(systemName: "minus.circle")
+                                    .foregroundColor(.red)
+                            }
+                        }
                     }
-                    .buttonStyle(RoutineButtonStyle(accentColor: accentColor))
-                    
-                    Button("Random") {
-                        // Generate a suggestion based on past routines.
-                    }
-                    .buttonStyle(RoutineButtonStyle(accentColor: accentColor))
-                    
-                    Button("Change Time") {
-                        // Allow manual time entry.
-                    }
-                    .buttonStyle(RoutineButtonStyle(accentColor: accentColor))
                 }
             }
             .padding()
             .background(Color.gray.opacity(0.3))
             .cornerRadius(8)
             
-            // Daily summary cards.
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
-                    ForEach(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], id: \.self) { day in
-                        VStack(spacing: 8) {
-                            Text(day)
-                                .font(.headline)
-                                .foregroundColor(.white)
-                            Text(dailyIntentions[day] ?? "")
-                                .font(.caption)
-                                .foregroundColor(.white)
-                                .multilineTextAlignment(.center)
-                                .frame(width: 80)
-                        }
-                        .padding()
-                        .background(Color.gray.opacity(0.2))
-                        .cornerRadius(8)
+            Spacer()
+            // Week Navigation Header.
+            WeekNavigationView(currentWeekStart: $currentWeekStart, accountCreationDate: session.userModel?.createdAt ?? Date())
+                .padding(.bottom)
+            
+            // Vertical scroll view for the full week.
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(spacing: 16) {
+                    ForEach(weekDays(for: currentWeekStart), id: \.self) { day in
+                        DayCardView(
+                            day: day,
+                            toDoItems: Binding(
+                                get: { dailyToDoLists[shortDayKey(from: day)] ?? [] },
+                                set: { dailyToDoLists[shortDayKey(from: day)] = $0 }
+                            ),
+                            intention: Binding(
+                                get: { dailyIntentions[shortDayKey(from: day)] ?? "" },
+                                set: { dailyIntentions[shortDayKey(from: day)] = $0 }
+                            )
+                        )
+                        .frame(maxWidth: .infinity)
                     }
                 }
                 .padding(.horizontal)
             }
-            
-            // Mini graph for consistency trend.
-            Text("Consistency Trend")
-                .font(.caption)
-                .foregroundColor(.white)
-            GeometryReader { geo in
-                Path { path in
-                    let width = geo.size.width
-                    let height = geo.size.height
-                    let step = width / CGFloat(max(trendData.count - 1, 1))
-                    for (index, value) in trendData.enumerated() {
-                        let x = CGFloat(index) * step
-                        let y = height - (value / 5 * height)
-                        if index == 0 {
-                            path.move(to: CGPoint(x: x, y: y))
-                        } else {
-                            path.addLine(to: CGPoint(x: x, y: y))
-                        }
-                    }
-                }
-                .stroke(Color.white, lineWidth: 2)
-            }
-            .frame(height: 100)
-            
             Spacer()
         }
         .padding()
     }
-}
-
-struct RoutineButtonStyle: ButtonStyle {
-    let accentColor: Color
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .padding(.vertical, 6)
-            .padding(.horizontal, 12)
-            .background(accentColor.opacity(configuration.isPressed ? 0.7 : 1))
-            .foregroundColor(.black)
-            .cornerRadius(6)
+    
+    // Helper: Compute the seven days of the week starting from currentWeekStart.
+    private func weekDays(for start: Date) -> [Date] {
+        var days: [Date] = []
+        let calendar = Calendar.current
+        for offset in 0..<7 {
+            if let day = calendar.date(byAdding: .day, value: offset, to: start) {
+                days.append(day)
+            }
+        }
+        return days
+    }
+    
+    // Helper: Returns abbreviated weekday key (e.g. "Sun") from a date.
+    private func shortDayKey(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "E"
+        return formatter.string(from: date)
     }
 }
+
+struct DayCardView: View {
+    let day: Date
+    @Binding var toDoItems: [ToDoItem]
+    @Binding var intention: String
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Header with day name and date.
+            VStack(alignment: .leading) {
+                Text(dayOfWeekString(from: day))
+                    .font(.headline)
+                    .foregroundColor(.white)
+                Text(formattedDate(from: day))
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.7))
+            }
+            .padding(.bottom, 4)
+            
+            // Editable intention.
+            TextField("Enter intention", text: $intention)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+            
+            // To-Do List.
+            ToDoListView(toDoItems: $toDoItems)
+        }
+        .padding()
+        .background(Color.gray.opacity(0.2))
+        .cornerRadius(8)
+    }
+    
+    private func dayOfWeekString(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE"
+        return formatter.string(from: date)
+    }
+    
+    private func formattedDate(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d"
+        return formatter.string(from: date)
+    }
+}
+
+struct ToDoListView: View {
+    @Binding var toDoItems: [ToDoItem]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach($toDoItems) { $item in
+                HStack {
+                    Button(action: {
+                        item.isCompleted.toggle()
+                    }) {
+                        Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(item.isCompleted ? .green : .white)
+                    }
+                    TextField("Task", text: $item.title)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .foregroundColor(.gray)
+                    Button(action: {
+                        toDoItems.removeAll { $0.id == item.id }
+                    }) {
+                        Image(systemName: "trash")
+                            .foregroundColor(.red)
+                    }
+                }
+            }
+            Button(action: {
+                toDoItems.append(ToDoItem(id: UUID(), title: "", isCompleted: false))
+            }) {
+                HStack {
+                    Image(systemName: "plus.circle")
+                    Text("Add Task")
+                }
+                .foregroundColor(.accentColor)
+            }
+            .padding(.top, 4)
+        }
+        .padding()
+        .background(Color.black.opacity(0.2))
+        .cornerRadius(8)
+    }
+}
+
+struct ToDoItem: Identifiable {
+    let id: UUID
+    var title: String
+    var isCompleted: Bool
+}
+
+struct WeeklyPriority: Identifiable {
+    let id: UUID
+    var title: String
+    var progress: Double
+}
+
+// MARK: - Week Navigation View
+struct WeekNavigationView: View {
+    @Binding var currentWeekStart: Date
+    let accountCreationDate: Date
+    
+    var body: some View {
+        HStack {
+            if canGoBack() {
+                Button(action: {
+                    if let prevWeek = Calendar.current.date(byAdding: .weekOfYear, value: -1, to: currentWeekStart) {
+                        currentWeekStart = prevWeek
+                    }
+                }) {
+                    Image(systemName: "chevron.left")
+                        .foregroundColor(.white)
+                }
+            }
+            Spacer()
+            Text(weekRangeString())
+                .foregroundColor(.white)
+                .font(.headline)
+            Spacer()
+            Button(action: {
+                if let nextWeek = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: currentWeekStart) {
+                    currentWeekStart = nextWeek
+                }
+            }) {
+                Image(systemName: "chevron.right")
+                    .foregroundColor(.white)
+            }
+        }
+        .padding(.horizontal)
+    }
+    
+    private func weekRangeString() -> String {
+        var calendar = Calendar.current
+        calendar.firstWeekday = 1
+        let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: currentWeekStart)
+        guard let weekStart = calendar.date(from: components) else { return "" }
+        let weekEnd = calendar.date(byAdding: .day, value: 6, to: weekStart) ?? weekStart
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d"
+        return "Week of \(formatter.string(from: weekStart))-\(formatter.string(from: weekEnd))"
+    }
+    
+    private func canGoBack() -> Bool {
+        guard let prevWeek = Calendar.current.date(byAdding: .weekOfYear, value: -1, to: currentWeekStart) else { return false }
+        return prevWeek >= startOfWeek(for: accountCreationDate)
+    }
+    
+    private func startOfWeek(for date: Date) -> Date {
+        var calendar = Calendar.current
+        calendar.firstWeekday = 1
+        let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        return calendar.date(from: components) ?? date
+    }
+}
+
 
 // MARK: - Month View ("Your Mindful Month")
 struct MonthView: View {
@@ -310,7 +450,7 @@ struct MonthView: View {
     let accountCreationDate: Date  // Account creation date from UserModel
     
     @State private var currentMonth: Date = Date()
-    // Dynamic list for monthly priorities – defaults to one priority; user can add more.
+    // Dynamic list for monthly priorities – default to one priority; user can add more.
     @State private var monthlyPriorities: [MonthlyPriority] = [
         MonthlyPriority(id: UUID(), title: "Write 5 blog posts", progress: 0.5)
     ]
@@ -331,7 +471,6 @@ struct MonthView: View {
                         .font(.headline)
                         .foregroundColor(.accentColor)
                     Spacer()
-                    // '+' button to add a new priority.
                     Button(action: {
                         monthlyPriorities.append(MonthlyPriority(id: UUID(), title: "New Priority", progress: 0))
                     }) {
@@ -362,7 +501,6 @@ struct MonthView: View {
             
             // Calendar view – navigation is restricted by the accountCreationDate.
             CalendarView(currentMonth: $currentMonth, accountCreationDate: accountCreationDate, dayCompletion: dayCompletion) { day in
-                // Only allow summary for past or current days.
                 if day <= Date() {
                     selectedDay = day
                     showDaySummary = true
@@ -370,7 +508,6 @@ struct MonthView: View {
             }
             .frame(height: 300)
             .onAppear {
-                // For demonstration, assign random completion percentages for each day.
                 let calendar = Calendar.current
                 for day in generateDemoDays(for: currentMonth) {
                     dayCompletion[day] = Double.random(in: 0...1)
@@ -380,11 +517,10 @@ struct MonthView: View {
             Spacer()
         }
         .padding()
-        // Instead of a full-screen cover, use an overlay that shows the small summary box
+        // Overlay a small pop-up summary in the center.
         .overlay(
             Group {
                 if showDaySummary, let day = selectedDay {
-                    // The overlay is centered on the screen.
                     VStack {
                         DaySummaryView(day: day, completionPercentage: dayCompletion[day] ?? 0)
                             .cornerRadius(12)
@@ -398,7 +534,10 @@ struct MonthView: View {
                         .background(Color.gray)
                         .cornerRadius(8)
                     }
-                    .background(Color.black)
+                    .frame(maxWidth: 300)
+                    .padding()
+                    .background(Color.black.opacity(0.7))
+                    .cornerRadius(12)
                     .transition(.opacity)
                 }
             }
@@ -413,8 +552,9 @@ struct MonthView: View {
         var date = calendar.startOfDay(for: monthInterval.start)
         while date < monthInterval.end {
             dates.append(date)
-            guard let next = calendar.date(byAdding: .day, value: 1, to: date) else { break }
-            date = next
+            if let next = calendar.date(byAdding: .day, value: 1, to: date) {
+                date = next
+            } else { break }
         }
         return dates
     }
@@ -485,7 +625,6 @@ struct CalendarView: View {
                 ForEach(generateDays(), id: \.self) { date in
                     if let date = date {
                         if date > Date() {
-                            // Future dates are greyed out.
                             Text(dayString(from: date))
                                 .font(.caption2)
                                 .frame(maxWidth: .infinity, minHeight: 30)
@@ -514,7 +653,6 @@ struct CalendarView: View {
                                 }
                         }
                     } else {
-                        // Placeholder for empty cells.
                         Text("")
                             .frame(maxWidth: .infinity, minHeight: 30)
                     }
@@ -524,13 +662,11 @@ struct CalendarView: View {
         }
     }
     
-    // Only allow going back if the previous month is not before the account's creation month.
     private func canGoBack() -> Bool {
         guard let prevMonth = Calendar.current.date(byAdding: .month, value: -1, to: currentMonth) else { return false }
         return prevMonth >= startOfMonth(for: accountCreationDate)
     }
     
-    // Returns the start of the month for a given date.
     private func startOfMonth(for date: Date) -> Date {
         let calendar = Calendar.current
         return calendar.date(from: calendar.dateComponents([.year, .month], from: date)) ?? date
@@ -548,7 +684,6 @@ struct CalendarView: View {
         return formatter.string(from: date)
     }
     
-    // Generate days for the current month including leading empty placeholders.
     private func generateDays() -> [Date?] {
         var days: [Date?] = []
         let calendar = Calendar.current
@@ -593,13 +728,18 @@ struct DaySummaryView: View {
             Text("Completion: \(Int(completionPercentage * 100))%")
                 .font(.title)
                 .foregroundColor(completionPercentage >= 0.8 ? .green : (completionPercentage >= 0.5 ? .yellow : .red))
-            Text("Habits: Finished 3 / 5") // Placeholder – replace with real data.
+            Text("Habits: Finished 3 / 5")
                 .foregroundColor(.white)
+            Button("Close Summary") {
+                presentationMode.wrappedValue.dismiss()
+            }
             .padding()
+            .background(Color.gray.opacity(0.2))
             .foregroundColor(.white)
             .cornerRadius(8)
         }
         .padding()
+        .background(Color.black)
         .cornerRadius(12)
         .shadow(radius: 10)
     }
@@ -615,6 +755,6 @@ struct DaySummaryView: View {
 struct SchedulerView_Previews: PreviewProvider {
     static var previews: some View {
         SchedulerView()
-            .environmentObject(SessionStore()) // Provide your session object.
+            .environmentObject(SessionStore()) // Ensure your SessionStore is provided.
     }
 }

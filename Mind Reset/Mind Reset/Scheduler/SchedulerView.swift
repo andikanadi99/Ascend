@@ -79,39 +79,131 @@ enum SchedulerTab: String, CaseIterable {
 
 // MARK: - Day View ("Your Daily Intentions")
 struct DayView: View {
-    // Sample time blocks – these can later come from your task model.
-    @State private var tasks: [TimeBlock] = [
-        TimeBlock(time: "7:00 AM", task: "Morning Meditation"),
-        TimeBlock(time: "8:00 AM", task: "Breakfast & Planning"),
-        TimeBlock(time: "9:00 AM", task: "Focused Work"),
-        TimeBlock(time: "11:00 AM", task: "Mini-Break (Stretch)"),
-        TimeBlock(time: "12:00 PM", task: "Lunch Break"),
-        TimeBlock(time: "1:00 PM", task: "Reading"),
-        TimeBlock(time: "3:00 PM", task: "Power Nap"),
-        TimeBlock(time: "6:00 PM", task: "Evening Walk")
+    // MARK: - State Variables
+    
+    // Dynamic "Top Priorities" for the day.
+    @State private var todayPriorities: [TodayPriority] = [
+        TodayPriority(id: UUID(), title: "What matters most today", progress: 0.5)
     ]
     
-    // “Today’s Top Priority” text.
-    @State private var topPriority: String = "Define Your One Thing"
+    // Wake-up and Sleep times (defaults to 7:00 AM and 10:00 PM).
+    @State private var wakeUpTime: Date = {
+        var components = DateComponents()
+        components.hour = 7
+        components.minute = 0
+        return Calendar.current.date(from: components) ?? Date()
+    }()
+    @State private var sleepTime: Date = {
+        var components = DateComponents()
+        components.hour = 22
+        components.minute = 0
+        return Calendar.current.date(from: components) ?? Date()
+    }()
     
-    // Today's date string.
+    // Today's full date string.
     private var todayString: String {
         let formatter = DateFormatter()
         formatter.dateStyle = .full
         return formatter.string(from: Date())
     }
     
+    // We'll store our time blocks in an array and regenerate them whenever wakeUpTime or sleepTime changes.
+    @State private var tasks: [TimeBlock] = []
+    
+    // Generate tasks dynamically based on wakeUpTime and sleepTime.
+    private func generateTasks() -> [TimeBlock] {
+        var blocks: [TimeBlock] = []
+        let calendar = Calendar.current
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        
+        var currentTime = wakeUpTime
+        while currentTime <= sleepTime {
+            blocks.append(TimeBlock(id: UUID(), time: formatter.string(from: currentTime), task: ""))
+            guard let nextTime = calendar.date(byAdding: .hour, value: 1, to: currentTime) else { break }
+            currentTime = nextTime
+        }
+        return blocks
+    }
+    
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                // "Today's Top Priority" card.
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Today's Top Priority")
-                        .font(.title3)
-                        .fontWeight(.bold)
-                        .foregroundColor(.accentColor)
-                    TextField("What matters most today?", text: $topPriority)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                // "Today's Top Priority" section.
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Today's Top Priority")
+                            .font(.headline)
+                            .foregroundColor(.accentColor)
+                        Spacer()
+                        Button(action: {
+                            todayPriorities.append(
+                                TodayPriority(id: UUID(), title: "What matters most today", progress: 0)
+                            )
+                        }) {
+                            Image(systemName: "plus.circle")
+                                .foregroundColor(.accentColor)
+                        }
+                    }
+                    ForEach($todayPriorities) { $priority in
+                        HStack {
+                            TextEditor(text: $priority.title)
+                                .padding(8)
+                                .frame(minHeight: 50)  // Adjust minHeight as needed.
+                                .background(Color.black)
+                                .cornerRadius(8)
+                                .foregroundColor(.white)
+                                .scrollContentBackground(.hidden)  // This hides the default white background (iOS 16+)
+                            if todayPriorities.count > 1 {
+                                Button(action: {
+                                    if let index = todayPriorities.firstIndex(where: { $0.id == priority.id }) {
+                                        todayPriorities.remove(at: index)
+                                    }
+                                }) {
+                                    Image(systemName: "minus.circle")
+                                        .foregroundColor(.red)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding()
+                .background(Color.gray.opacity(0.3))
+                .cornerRadius(8)
+
+
+                
+                // Wake-up & Sleep Time pickers.
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text("Wake Up Time")
+                                .foregroundColor(.white)
+                            DatePicker("", selection: $wakeUpTime, displayedComponents: .hourAndMinute)
+                                .labelsHidden()
+                                .environment(\.colorScheme, .dark)
+                                .padding(4)
+                                .background(Color.black)
+                                .cornerRadius(4)
+                                .onChange(of: wakeUpTime) { _ in
+                                    tasks = generateTasks()
+                                }
+                        }
+                        Spacer()
+                        VStack(alignment: .leading) {
+                            Text("Sleep Time")
+                                .foregroundColor(.white)
+                            DatePicker("", selection: $sleepTime, displayedComponents: .hourAndMinute)
+                                .labelsHidden()
+                                .environment(\.colorScheme, .dark)
+                                .padding(4)
+                                .background(Color.black)
+                                .cornerRadius(4)
+                                .onChange(of: sleepTime) { _ in
+                                    tasks = generateTasks()
+                                }
+                        }
+                    }
                 }
                 .padding()
                 .background(Color.gray.opacity(0.3))
@@ -127,40 +219,57 @@ struct DayView: View {
                         .foregroundColor(.white.opacity(0.7))
                 }
                 
-                // List of time blocks.
-                ForEach(tasks) { block in
-                    HStack {
-                        Text(block.time)
+                // Editable Time Blocks.
+                ForEach($tasks) { $block in
+                    HStack(alignment: .top) {
+                        // Editable hour text field.
+                        TextField("Time", text: $block.time)
                             .font(.caption)
                             .foregroundColor(.white)
                             .frame(width: 80, alignment: .leading)
-                        Text(block.task)
+                            .padding(8)
+                            .background(Color.black.opacity(0.5))
+                            .cornerRadius(8)
+                        // Editable task text field using TextEditor for multi-line support.
+                        TextEditor(text: $block.task)
+                            .font(.caption)
                             .foregroundColor(.white)
+                            .padding(8)
+                            .background(Color.black) // Set the background to black
+                            .cornerRadius(8)
+                            .frame(minHeight: 40) // Ensure a minimum height so it expands vertically.
+                            .scrollContentBackground(.hidden)  // This hides the default white background (iOS 16+)
                         Spacer()
-                        Button(action: {
-                            // Action to edit or add a reminder for the task.
-                        }) {
-                            Image(systemName: "pencil")
-                                .foregroundColor(.accentColor)
-                        }
                     }
                     .padding()
                     .background(Color.gray.opacity(0.2))
                     .cornerRadius(8)
                 }
+
+
                 
                 Spacer()
             }
             .padding()
         }
+        .onAppear {
+            tasks = generateTasks()
+        }
     }
 }
 
 struct TimeBlock: Identifiable {
-    let id = UUID()
+    let id: UUID
     var time: String
     var task: String
 }
+
+struct TodayPriority: Identifiable {
+    let id: UUID
+    var title: String
+    var progress: Double
+}
+
 
 // MARK: - Week View ("Your Weekly Blueprint")
 struct WeekView: View {
@@ -199,12 +308,11 @@ struct WeekView: View {
     ]
     
     @State private var weeklyPriorities: [WeeklyPriority] = [
-        WeeklyPriority(id: UUID(), title: "Write 1 blog post", progress: 0.5)
+        WeeklyPriority(id: UUID(), title: "Weekly Goals", progress: 0.5)
     ]
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Dynamic Monthly Priorities Box.
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Weekly Priorities")
@@ -220,8 +328,14 @@ struct WeekView: View {
                 }
                 ForEach($weeklyPriorities) { $priority in
                     HStack {
-                        TextField("Priority", text: $priority.title)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                        TextEditor(text: $priority.title)
+                            .padding(8)
+                            .frame(minHeight: 50)
+                            .background(Color.black)
+                            .foregroundColor(.white)
+                            .scrollContentBackground(.hidden)  // For iOS 16+
+                            .cornerRadius(8)
+                            .fixedSize(horizontal: false, vertical: true)
                         if weeklyPriorities.count > 1 {
                             Button(action: {
                                 if let index = weeklyPriorities.firstIndex(where: { $0.id == priority.id }) {
@@ -238,6 +352,8 @@ struct WeekView: View {
             .padding()
             .background(Color.gray.opacity(0.3))
             .cornerRadius(8)
+
+
             
             Spacer()
             // Week Navigation Header.
@@ -307,9 +423,15 @@ struct DayCardView: View {
             }
             .padding(.bottom, 4)
             
-            // Editable intention.
-            TextField("Enter intention", text: $intention)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
+            // Editable intention using TextEditor.
+            TextEditor(text: $intention)
+                .padding(8)
+                .frame(minHeight: 50) // Default minimal height; expands as needed.
+                .background(.black)
+                .foregroundColor(.white)
+                .scrollContentBackground(.hidden)  // For iOS 16+
+                .cornerRadius(8)
+                
             
             // To-Do List.
             ToDoListView(toDoItems: $toDoItems)
@@ -345,9 +467,14 @@ struct ToDoListView: View {
                         Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
                             .foregroundColor(item.isCompleted ? .green : .white)
                     }
-                    TextField("Task", text: $item.title)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .foregroundColor(.gray)
+                    // Editable intention using TextEditor.
+                    TextEditor(text: $item.title)
+                        .padding(8)
+                        .frame(minHeight: 50) // Default minimal height; expands as needed.
+                        .background(.black)
+                        .foregroundColor(.white)
+                        .scrollContentBackground(.hidden)  // For iOS 16+
+                        .cornerRadius(8)
                     Button(action: {
                         toDoItems.removeAll { $0.id == item.id }
                     }) {
@@ -480,8 +607,14 @@ struct MonthView: View {
                 }
                 ForEach($monthlyPriorities) { $priority in
                     HStack {
-                        TextField("Priority", text: $priority.title)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                        TextEditor(text: $priority.title)
+                            .padding(8)
+                            .frame(minHeight: 50)
+                            .background(Color.black)
+                            .foregroundColor(.white)
+                            .scrollContentBackground(.hidden)  // For iOS 16+
+                            .cornerRadius(8)
+                            .fixedSize(horizontal: false, vertical: true)
                         if monthlyPriorities.count > 1 {
                             Button(action: {
                                 if let index = monthlyPriorities.firstIndex(where: { $0.id == priority.id }) {
@@ -608,7 +741,7 @@ struct CalendarView: View {
                         .foregroundColor(.white)
                 }
             }
-            .padding(.horizontal)
+            .padding()
             
             // Weekday headers.
             HStack {

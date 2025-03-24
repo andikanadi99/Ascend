@@ -79,7 +79,9 @@ enum SchedulerTab: String, CaseIterable {
 
 // MARK: - Day View ("Your Daily Intentions")
 struct DayView: View {
-    // MARK: - State Variables
+    @EnvironmentObject var session: SessionStore
+    // New state for navigating dates.
+    @State private var selectedDate: Date = Date()
     
     // Dynamic "Top Priorities" for the day.
     @State private var todayPriorities: [TodayPriority] = [
@@ -100,13 +102,6 @@ struct DayView: View {
         return Calendar.current.date(from: components) ?? Date()
     }()
     
-    // Today's full date string.
-    private var todayString: String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .full
-        return formatter.string(from: Date())
-    }
-    
     // We'll store our time blocks in an array and regenerate them whenever wakeUpTime or sleepTime changes.
     @State private var tasks: [TimeBlock] = []
     
@@ -124,6 +119,13 @@ struct DayView: View {
             currentTime = nextTime
         }
         return blocks
+    }
+    
+    // Computed property for the displayed date string (based on selectedDate).
+    private var dateString: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .full
+        return formatter.string(from: selectedDate)
     }
     
     var body: some View {
@@ -149,29 +151,51 @@ struct DayView: View {
                         HStack {
                             TextEditor(text: $priority.title)
                                 .padding(8)
-                                .frame(minHeight: 50)  // Adjust minHeight as needed.
+                                .frame(minHeight: 50)
                                 .background(Color.black)
                                 .cornerRadius(8)
                                 .foregroundColor(.white)
-                                .scrollContentBackground(.hidden)  // This hides the default white background (iOS 16+)
-                            if todayPriorities.count > 1 {
-                                Button(action: {
-                                    if let index = todayPriorities.firstIndex(where: { $0.id == priority.id }) {
-                                        todayPriorities.remove(at: index)
-                                    }
-                                }) {
-                                    Image(systemName: "minus.circle")
-                                        .foregroundColor(.red)
-                                }
-                            }
+                                .scrollContentBackground(.hidden)
                         }
                     }
                 }
                 .padding()
                 .background(Color.gray.opacity(0.3))
                 .cornerRadius(8)
-
-
+                
+                // Date Navigation Header (moved below Top Priority).
+                HStack {
+                    Button(action: {
+                        if let accountCreationDate = session.userModel?.createdAt,
+                           let prevDay = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate),
+                           prevDay >= accountCreationDate {
+                            selectedDate = prevDay
+                        }
+                    }) {
+                        Image(systemName: "chevron.left")
+                            .foregroundColor(selectedDate > (session.userModel?.createdAt ?? Date()) ? .white : .gray)
+                    }
+                    
+                    Spacer()
+                    
+                    Text(dateString)
+                        .font(.headline)
+                        .foregroundColor(.white)
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        if let nextDay = Calendar.current.date(byAdding: .day, value: 1, to: selectedDate) {
+                            selectedDate = nextDay
+                        }
+                    }) {
+                        Image(systemName: "chevron.right")
+                            .foregroundColor(.white)
+                    }
+                }
+                .padding()
+                .background(Color.gray.opacity(0.3))
+                .cornerRadius(8)
                 
                 // Wake-up & Sleep Time pickers.
                 VStack(alignment: .leading, spacing: 8) {
@@ -209,12 +233,12 @@ struct DayView: View {
                 .background(Color.gray.opacity(0.3))
                 .cornerRadius(8)
                 
-                // Header with day name and full date.
+                // Header with day name and full date (again for clarity).
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Your Daily Intentions")
                         .font(.title2)
                         .foregroundColor(.white)
-                    Text(todayString)
+                    Text(dateString)
                         .font(.caption)
                         .foregroundColor(.white.opacity(0.7))
                 }
@@ -230,23 +254,21 @@ struct DayView: View {
                             .padding(8)
                             .background(Color.black.opacity(0.5))
                             .cornerRadius(8)
-                        // Editable task text field using TextEditor for multi-line support.
+                        // Editable task text field using TextEditor.
                         TextEditor(text: $block.task)
                             .font(.caption)
                             .foregroundColor(.white)
                             .padding(8)
-                            .background(Color.black) // Set the background to black
+                            .background(Color.black.opacity(0.5))
                             .cornerRadius(8)
-                            .frame(minHeight: 40) // Ensure a minimum height so it expands vertically.
-                            .scrollContentBackground(.hidden)  // This hides the default white background (iOS 16+)
+                            .scrollContentBackground(.hidden)
+                            .fixedSize(horizontal: false, vertical: true)
                         Spacer()
                     }
                     .padding()
                     .background(Color.gray.opacity(0.2))
                     .cornerRadius(8)
                 }
-
-
                 
                 Spacer()
             }
@@ -269,7 +291,6 @@ struct TodayPriority: Identifiable {
     var title: String
     var progress: Double
 }
-
 
 // MARK: - Week View ("Your Weekly Blueprint")
 struct WeekView: View {
@@ -352,13 +373,8 @@ struct WeekView: View {
             .padding()
             .background(Color.gray.opacity(0.3))
             .cornerRadius(8)
-
-
-            
-            Spacer()
             // Week Navigation Header.
             WeekNavigationView(currentWeekStart: $currentWeekStart, accountCreationDate: session.userModel?.createdAt ?? Date())
-                .padding(.bottom)
             
             // Vertical scroll view for the full week.
             ScrollView(.vertical, showsIndicators: true) {
@@ -543,7 +559,9 @@ struct WeekNavigationView: View {
                     .foregroundColor(.white)
             }
         }
-        .padding(.horizontal)
+        .padding()
+        .background(Color.gray.opacity(0.3))
+        .cornerRadius(8)
     }
     
     private func weekRangeString() -> String {
@@ -742,6 +760,10 @@ struct CalendarView: View {
                 }
             }
             .padding()
+            .background(Color.gray.opacity(0.3))
+            .cornerRadius(8)
+            
+            Spacer()
             
             // Weekday headers.
             HStack {

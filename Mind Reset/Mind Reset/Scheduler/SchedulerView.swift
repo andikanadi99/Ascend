@@ -80,48 +80,12 @@ enum SchedulerTab: String, CaseIterable {
 // MARK: - Day View ("Your Daily Intentions")
 struct DayView: View {
     @EnvironmentObject var session: SessionStore
-    // New state for navigating dates.
+    @StateObject private var viewModel = DayViewModel()
+    
+    // For date navigation
     @State private var selectedDate: Date = Date()
     
-    // Dynamic "Top Priorities" for the day.
-    @State private var todayPriorities: [TodayPriority] = [
-        TodayPriority(id: UUID(), title: "What matters most today", progress: 0.5)
-    ]
-    
-    // Wake-up and Sleep times (defaults to 7:00 AM and 10:00 PM).
-    @State private var wakeUpTime: Date = {
-        var components = DateComponents()
-        components.hour = 7
-        components.minute = 0
-        return Calendar.current.date(from: components) ?? Date()
-    }()
-    @State private var sleepTime: Date = {
-        var components = DateComponents()
-        components.hour = 22
-        components.minute = 0
-        return Calendar.current.date(from: components) ?? Date()
-    }()
-    
-    // We'll store our time blocks in an array and regenerate them whenever wakeUpTime or sleepTime changes.
-    @State private var tasks: [TimeBlock] = []
-    
-    // Generate tasks dynamically based on wakeUpTime and sleepTime.
-    private func generateTasks() -> [TimeBlock] {
-        var blocks: [TimeBlock] = []
-        let calendar = Calendar.current
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        
-        var currentTime = wakeUpTime
-        while currentTime <= sleepTime {
-            blocks.append(TimeBlock(id: UUID(), time: formatter.string(from: currentTime), task: ""))
-            guard let nextTime = calendar.date(byAdding: .hour, value: 1, to: currentTime) else { break }
-            currentTime = nextTime
-        }
-        return blocks
-    }
-    
-    // Computed property for the displayed date string (based on selectedDate).
+    // Display: "Monday, March 24, 2025"
     private var dateString: String {
         let formatter = DateFormatter()
         formatter.dateStyle = .full
@@ -131,7 +95,8 @@ struct DayView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                // "Today's Top Priority" section.
+                
+                // "Today's Top Priority" box
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("Today's Top Priority")
@@ -139,16 +104,32 @@ struct DayView: View {
                             .foregroundColor(.accentColor)
                         Spacer()
                         Button(action: {
-                            todayPriorities.append(
-                                TodayPriority(id: UUID(), title: "What matters most today", progress: 0)
-                            )
+                            // Add a new priority
+                            guard var schedule = viewModel.schedule else { return }
+                            let newPriority = TodayPriority(id: UUID(), title: "New Priority", progress: 0.0)
+                            schedule.priorities.append(newPriority)
+                            viewModel.schedule = schedule
+                            
+                            // Immediately sync with Firestore
+                            viewModel.updateDaySchedule()
                         }) {
                             Image(systemName: "plus.circle")
                                 .foregroundColor(.accentColor)
                         }
                     }
-                    ForEach($todayPriorities) { $priority in
-                        HStack {
+                    
+                    // Show existing priorities
+                    if viewModel.schedule != nil {
+                        // Create a binding to the non‑optional priorities array.
+                        let prioritiesBinding = Binding<[TodayPriority]>(
+                            get: { viewModel.schedule!.priorities },
+                            set: { newValue in
+                                var updatedSchedule = viewModel.schedule!
+                                updatedSchedule.priorities = newValue
+                                viewModel.schedule = updatedSchedule
+                            }
+                        )
+                        ForEach(prioritiesBinding) { $priority in
                             TextEditor(text: $priority.title)
                                 .padding(8)
                                 .frame(minHeight: 50)
@@ -156,20 +137,31 @@ struct DayView: View {
                                 .cornerRadius(8)
                                 .foregroundColor(.white)
                                 .scrollContentBackground(.hidden)
+                                .onChange(of: priority.title) { _ in
+                                    viewModel.updateDaySchedule()
+                                }
                         }
+                    } else {
+                        Text("Loading priorities...")
+                            .foregroundColor(.white)
                     }
                 }
                 .padding()
                 .background(Color.gray.opacity(0.3))
                 .cornerRadius(8)
                 
-                // Date Navigation Header (moved below Top Priority).
+                // Date Navigation
                 HStack {
                     Button(action: {
+                        // Go one day back
                         if let accountCreationDate = session.userModel?.createdAt,
                            let prevDay = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate),
                            prevDay >= accountCreationDate {
                             selectedDate = prevDay
+                            if let userId = session.userModel?.id {
+                                // Load from Firestore for that day
+                                viewModel.loadDaySchedule(for: prevDay, userId: userId)
+                            }
                         }
                     }) {
                         Image(systemName: "chevron.left")
@@ -185,8 +177,12 @@ struct DayView: View {
                     Spacer()
                     
                     Button(action: {
+                        // Go one day forward
                         if let nextDay = Calendar.current.date(byAdding: .day, value: 1, to: selectedDate) {
                             selectedDate = nextDay
+                            if let userId = session.userModel?.id {
+                                viewModel.loadDaySchedule(for: nextDay, userId: userId)
+                            }
                         }
                     }) {
                         Image(systemName: "chevron.right")
@@ -197,43 +193,63 @@ struct DayView: View {
                 .background(Color.gray.opacity(0.3))
                 .cornerRadius(8)
                 
-                // Wake-up & Sleep Time pickers.
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text("Wake Up Time")
-                                .foregroundColor(.white)
-                            DatePicker("", selection: $wakeUpTime, displayedComponents: .hourAndMinute)
+                // Wake-up & Sleep Time pickers
+                if let schedule = viewModel.schedule {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            // Wake Up
+                            VStack(alignment: .leading) {
+                                Text("Wake Up Time")
+                                    .foregroundColor(.white)
+                                
+                                DatePicker("", selection: Binding(
+                                    get: { schedule.wakeUpTime },
+                                    set: { newVal in
+                                        var temp = schedule
+                                        temp.wakeUpTime = newVal
+                                        viewModel.schedule = temp
+                                        // Possibly regenerate blocks
+                                        viewModel.regenerateBlocks()
+                                    }
+                                ), displayedComponents: .hourAndMinute)
                                 .labelsHidden()
                                 .environment(\.colorScheme, .dark)
                                 .padding(4)
                                 .background(Color.black)
                                 .cornerRadius(4)
-                                .onChange(of: wakeUpTime) { _ in
-                                    tasks = generateTasks()
-                                }
-                        }
-                        Spacer()
-                        VStack(alignment: .leading) {
-                            Text("Sleep Time")
-                                .foregroundColor(.white)
-                            DatePicker("", selection: $sleepTime, displayedComponents: .hourAndMinute)
+                            }
+                            
+                            Spacer()
+                            
+                            // Sleep
+                            VStack(alignment: .leading) {
+                                Text("Sleep Time")
+                                    .foregroundColor(.white)
+                                
+                                DatePicker("", selection: Binding(
+                                    get: { schedule.sleepTime },
+                                    set: { newVal in
+                                        var temp = schedule
+                                        temp.sleepTime = newVal
+                                        viewModel.schedule = temp
+                                        // Possibly regenerate blocks
+                                        viewModel.regenerateBlocks()
+                                    }
+                                ), displayedComponents: .hourAndMinute)
                                 .labelsHidden()
                                 .environment(\.colorScheme, .dark)
                                 .padding(4)
                                 .background(Color.black)
                                 .cornerRadius(4)
-                                .onChange(of: sleepTime) { _ in
-                                    tasks = generateTasks()
-                                }
+                            }
                         }
                     }
+                    .padding()
+                    .background(Color.gray.opacity(0.3))
+                    .cornerRadius(8)
                 }
-                .padding()
-                .background(Color.gray.opacity(0.3))
-                .cornerRadius(8)
                 
-                // Header with day name and full date (again for clarity).
+                // "Your Daily Intentions" header
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Your Daily Intentions")
                         .font(.title2)
@@ -243,53 +259,67 @@ struct DayView: View {
                         .foregroundColor(.white.opacity(0.7))
                 }
                 
-                // Editable Time Blocks.
-                ForEach($tasks) { $block in
-                    HStack(alignment: .top) {
-                        // Editable hour text field.
-                        TextField("Time", text: $block.time)
-                            .font(.caption)
-                            .foregroundColor(.white)
-                            .frame(width: 80, alignment: .leading)
-                            .padding(8)
-                            .background(Color.black.opacity(0.5))
-                            .cornerRadius(8)
-                        // Editable task text field using TextEditor.
-                        TextEditor(text: $block.task)
-                            .font(.caption)
-                            .foregroundColor(.white)
-                            .padding(8)
-                            .background(Color.black.opacity(0.5))
-                            .cornerRadius(8)
-                            .scrollContentBackground(.hidden)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer()
+                // Time Blocks
+                if viewModel.schedule != nil {
+                    let timeBlocksBinding = Binding<[TimeBlock]>(
+                        get: { viewModel.schedule!.timeBlocks },
+                        set: { newValue in
+                            var updatedSchedule = viewModel.schedule!
+                            updatedSchedule.timeBlocks = newValue
+                            viewModel.schedule = updatedSchedule
+                        }
+                    )
+                    ForEach(timeBlocksBinding) { $block in
+                        HStack(alignment: .top, spacing: 8) {
+                            // Editable hour
+                            TextField("Time", text: $block.time)
+                                .font(.caption)
+                                .foregroundColor(.white)
+                                .frame(width: 80)
+                                .padding(8)
+                                .background(Color.black.opacity(0.5))
+                                .cornerRadius(8)
+                                .onChange(of: block.time) { _ in
+                                    viewModel.updateDaySchedule()
+                                }
+                            
+                            // Editable task with a consistent minimum height.
+                            TextEditor(text: $block.task)
+                                .font(.caption)
+                                .foregroundColor(.white)
+                                .scrollContentBackground(.hidden)  // For iOS 16+
+                                .padding(8)
+                                .background(Color.black.opacity(0.5))
+                                .cornerRadius(8)
+                                .frame(minHeight: 50, maxHeight: 80) // Adjust these values as needed.
+                                .onChange(of: block.task) { _ in
+                                    viewModel.updateDaySchedule()
+                                }
+                            
+                            Spacer()
+                        }
+                        .padding(8)
+                        .background(Color.gray.opacity(0.2))
+                        .cornerRadius(8)
                     }
-                    .padding()
-                    .background(Color.gray.opacity(0.2))
-                    .cornerRadius(8)
+
+                } else {
+                    Text("Loading time blocks...")
+                        .foregroundColor(.white)
                 }
+
                 
                 Spacer()
             }
             .padding()
         }
         .onAppear {
-            tasks = generateTasks()
+            // On appear, load today's schedule for this user
+            if let userId = session.userModel?.id {
+                viewModel.loadDaySchedule(for: selectedDate, userId: userId)
+            }
         }
     }
-}
-
-struct TimeBlock: Identifiable {
-    let id: UUID
-    var time: String
-    var task: String
-}
-
-struct TodayPriority: Identifiable {
-    let id: UUID
-    var title: String
-    var progress: Double
 }
 
 // MARK: - Week View ("Your Weekly Blueprint")
@@ -516,17 +546,6 @@ struct ToDoListView: View {
     }
 }
 
-struct ToDoItem: Identifiable {
-    let id: UUID
-    var title: String
-    var isCompleted: Bool
-}
-
-struct WeeklyPriority: Identifiable {
-    let id: UUID
-    var title: String
-    var progress: Double
-}
 
 // MARK: - Week Navigation View
 struct WeekNavigationView: View {

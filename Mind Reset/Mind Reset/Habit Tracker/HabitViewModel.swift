@@ -254,20 +254,20 @@ class HabitViewModel: ObservableObject {
     }
     
     func dailyResetIfNeeded() {
-        let todayString = dateFormatter.string(from: Date())
-        for var habit in habits {
-            let lastResetString = habit.lastReset == nil ? "" : dateFormatter.string(from: habit.lastReset!)
-            if lastResetString != todayString {
-                habit.isCompletedToday = false
-                habit.lastReset = Date()
+        let today = Date()
+        let todayString = dateFormatter.string(from: today)
+        for i in 0..<habits.count {
+            var habit = habits[i]
+            // Check if the last record is for today; if not, remove all records not from today.
+            if let lastRecord = habit.dailyRecords.last,
+               !Calendar.current.isDate(lastRecord.date, inSameDayAs: today) {
+                habit.dailyRecords.removeAll { !Calendar.current.isDate($0.date, inSameDayAs: today) }
                 updateHabit(habit)
-                if let id = habit.id {
-                    localStreaks[id] = habit.currentStreak
-                    localLongestStreaks[id] = habit.longestStreak
-                }
+                habits[i] = habit
             }
         }
     }
+
     
     // MARK: - Updated Toggle Habit Completion (for both marking and unmarking)
     func toggleHabitCompletion(_ habit: Habit, userId: String) {
@@ -278,12 +278,12 @@ class HabitViewModel: ObservableObject {
         let calendar = Calendar.current
         let today = Date()
         
-        if updated.isCompletedToday {
+        if isHabitCompleted(updated, on: today) {
             // UNMARK: Remove today's record from dailyRecords.
             updated.dailyRecords.removeAll { record in
                 calendar.isDate(record.date, inSameDayAs: today)
             }
-            updated.isCompletedToday = false
+            // Update streaks and lastReset accordingly.
             updated.currentStreak = max(updated.currentStreak - 1, 0)
             if updated.currentStreak < updated.longestStreak,
                oldHabit.currentStreak == oldHabit.longestStreak {
@@ -291,7 +291,10 @@ class HabitViewModel: ObservableObject {
             }
             updated.lastReset = nil
         } else {
-            // MARK: (Your other code adds a new record when marking as done.)
+            // MARK: Add a new record for today.
+            let newRecord = HabitRecord(date: today, value: 1)
+            updated.dailyRecords.append(newRecord)
+            // Update streak if this is the first record for today.
             let todayStr = dateFormatter.string(from: today)
             let lastResetStr = updated.lastReset == nil ? "" : dateFormatter.string(from: updated.lastReset!)
             if lastResetStr != todayStr {
@@ -301,29 +304,17 @@ class HabitViewModel: ObservableObject {
                 }
                 updated.lastReset = today
             }
-            updated.isCompletedToday = true
         }
         
-        let localVal = localStreaks[habitId] ?? habit.currentStreak
-        let localLongestVal = localLongestStreaks[habitId] ?? habit.longestStreak
-        
-        if habit.isCompletedToday {
-            localStreaks[habitId] = max(localVal - 1, 0)
-            if oldHabit.currentStreak == oldHabit.longestStreak, (localStreaks[habitId] ?? 0) < localLongestVal {
-                localLongestStreaks[habitId] = localStreaks[habitId] ?? 0
-            }
-        } else {
-            localStreaks[habitId] = localVal + 1
-            if (localStreaks[habitId] ?? 0) > localLongestVal {
-                localLongestStreaks[habitId] = (localStreaks[habitId] ?? 0)
-            }
-        }
-        
+        // Update local streak dictionaries.
+        localStreaks[habitId] = updated.currentStreak
+        localLongestStreaks[habitId] = updated.longestStreak
         habits[idx] = updated
         
         do {
             try db.collection("habits").document(habitId).setData(from: updated)
-            if updated.isCompletedToday {
+            // Award points if the habit is now completed for today.
+            if isHabitCompleted(updated, on: today) {
                 var totalPoints = dailyCompletionPoint + updated.currentStreak
                 if updated.currentStreak == 7 { totalPoints += weeklyStreakBonus }
                 if updated.currentStreak == 30 { totalPoints += monthlyStreakBonus }
@@ -340,6 +331,7 @@ class HabitViewModel: ObservableObject {
             }
         }
     }
+
     
     // MARK: - New Note-Saving Method
     
@@ -382,6 +374,16 @@ class HabitViewModel: ObservableObject {
                 print("Note deleted successfully.")
                 completion(true)
             }
+        }
+    }
+}
+
+extension HabitViewModel {
+    /// Returns true if the habit has a record for `day` with a positive value.
+    func isHabitCompleted(_ habit: Habit, on day: Date) -> Bool {
+        let cal = Calendar.current
+        return habit.dailyRecords.contains { record in
+            cal.isDate(record.date, inSameDayAs: day) && ((record.value ?? 0) > 0)
         }
     }
 }

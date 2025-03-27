@@ -28,7 +28,7 @@ struct HabitTrackerView: View {
     // Placeholder daily quote
     let dailyQuote = "Focus on what matters today."
 
-    // How many habits are finished today
+    // How many habits are finished today (computed)
     @State private var habitsFinishedToday: Int = 0
 
     // Combine Cancellables
@@ -53,7 +53,7 @@ struct HabitTrackerView: View {
                         .font(.subheadline)
                         .foregroundColor(accentCyan)
 
-                    // Habits Finished Today
+                    // Habits Finished Today (computed from dailyRecords)
                     HStack {
                         Text("Habits Finished Today: \(habitsFinishedToday)")
                             .foregroundColor(.white)
@@ -66,8 +66,13 @@ struct HabitTrackerView: View {
                             ForEach(viewModel.habits.indices, id: \.self) { index in
                                 let habit = viewModel.habits[index]
                                 let habitId = habit.id ?? ""
-
-                                // localStreak + localLongestStreak
+                                
+                                // Compute if the habit is completed for today based on dailyRecords:
+                                let completedToday = habit.dailyRecords.contains { record in
+                                    Calendar.current.isDate(record.date, inSameDayAs: Date()) && ((record.value ?? 0) > 0)
+                                }
+                                
+                                // Streaks (using current values from the habit)
                                 let localStreak  = habit.currentStreak
                                 let localLongest = habit.longestStreak
 
@@ -76,6 +81,7 @@ struct HabitTrackerView: View {
                                 ) {
                                     HabitRow(
                                         habit: habit,
+                                        completedToday: completedToday,
                                         currentStreak: localStreak,
                                         localLongestStreak: localLongest,
                                         accentCyan: accentCyan,
@@ -83,7 +89,7 @@ struct HabitTrackerView: View {
                                             deleteHabit(deletedHabit)
                                         },
                                         onToggleCompletion: {
-                                            
+                                            toggleHabitCompletion(habit)
                                         }
                                     )
                                 }
@@ -104,10 +110,8 @@ struct HabitTrackerView: View {
                     viewModel.setupDefaultHabitsIfNeeded(for: userId)
 
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        viewModel.dailyResetIfNeeded()
+                        updateHabitsFinishedToday()
                     }
-
-                    updateHabitsFinishedToday()
 
                     viewModel.$habits
                         .sink { _ in
@@ -152,7 +156,13 @@ struct HabitTrackerView: View {
     }
 
     private func updateHabitsFinishedToday() {
-        habitsFinishedToday = viewModel.habits.filter { $0.isCompletedToday }.count
+        habitsFinishedToday = viewModel.habits.filter { habit in
+            // Instead of using isCompletedToday, check the dailyRecords for today:
+            Calendar.current.isDateInToday(Date()) &&
+            habit.dailyRecords.contains { record in
+                Calendar.current.isDate(record.date, inSameDayAs: Date()) && ((record.value ?? 0) > 0)
+            }
+        }.count
     }
 
     private func toggleHabitCompletion(_ habit: Habit) {
@@ -167,6 +177,7 @@ struct HabitTrackerView: View {
 // MARK: - HabitRow
 struct HabitRow: View {
     let habit: Habit
+    let completedToday: Bool
     let currentStreak: Int
     let localLongestStreak: Int
     let accentCyan: Color
@@ -188,11 +199,11 @@ struct HabitRow: View {
                 HStack(spacing: 8) {
                     Text("Current Streak: \(habit.currentStreak)")
                         .font(.caption)
-                        .foregroundColor(((habit.currentStreak) > 0) ? .green : .white)
+                        .foregroundColor(habit.currentStreak > 0 ? .green : .white)
 
                     Text("Longest Streak: \(habit.longestStreak)")
                         .font(.caption)
-                        .foregroundColor(((habit.longestStreak) > 0) ? .green : .white)
+                        .foregroundColor(habit.longestStreak > 0 ? .green : .white)
 
                     if habit.weeklyStreakBadge {
                         StreakBadge(text: "7-Day", color: .green)
@@ -208,7 +219,7 @@ struct HabitRow: View {
             Spacer()
 
             Button(action: onToggleCompletion) {
-                if habit.isCompletedToday {
+                if completedToday {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.headline)
                         .foregroundColor(.green)

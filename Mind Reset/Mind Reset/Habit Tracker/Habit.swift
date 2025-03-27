@@ -1,6 +1,7 @@
 //
 //  Habit.swift
 //  Mind Reset
+//
 //  Defines the data model for habits with customizable metrics.
 //  Created by Andika Yudhatrisna on 1/3/25.
 //
@@ -131,7 +132,7 @@ enum PerformanceMetric: String, CaseIterable, Identifiable, Codable {
 struct HabitRecord: Identifiable, Codable {
     var id: String? = UUID().uuidString
     var date: Date
-    var value: Double? // e.g., minutes, pages, completed: 1 for yes, 0 for no
+    var value: Double? // For example, minutes, pages, or a flag (1 for completed, 0 for not)
     
     enum CodingKeys: String, CodingKey {
         case id, date, value
@@ -146,6 +147,7 @@ struct HabitRecord: Identifiable, Codable {
 // MARK: - Habit
 
 /// Defines a habit with customizable tracking metrics.
+/// NOTE: The `isCompletedToday` property has been removed in favor of tracking daily completion via `dailyRecords`.
 struct Habit: Identifiable, Codable {
     @DocumentID var id: String?
     var title: String
@@ -153,7 +155,8 @@ struct Habit: Identifiable, Codable {
     var goal: String
     var startDate: Date
     var ownerId: String
-    var isCompletedToday: Bool
+    
+    // Removed: var isCompletedToday: Bool
     var lastReset: Date?
     var points: Int
     var currentStreak: Int
@@ -174,7 +177,7 @@ struct Habit: Identifiable, Codable {
         goal: String,
         startDate: Date,
         ownerId: String,
-        isCompletedToday: Bool = false,
+        // isCompletedToday is removed – use dailyRecords for per-day tracking
         currentStreak: Int = 0,
         longestStreak: Int = 0,
         lastReset: Date? = nil,
@@ -190,7 +193,7 @@ struct Habit: Identifiable, Codable {
         self.goal = goal
         self.startDate = startDate
         self.ownerId = ownerId
-        self.isCompletedToday = isCompletedToday
+        
         self.lastReset = lastReset
         self.points = 0
         self.currentStreak = currentStreak
@@ -198,6 +201,7 @@ struct Habit: Identifiable, Codable {
         self.weeklyStreakBadge = weeklyStreakBadge
         self.monthlyStreakBadge = monthlyStreakBadge
         self.yearlyStreakBadge = yearlyStreakBadge
+        
         self.metricCategory = metricCategory
         self.metricType = metricType
         self.dailyRecords = dailyRecords
@@ -205,7 +209,10 @@ struct Habit: Identifiable, Codable {
     
     // MARK: - Codable Conformance
     enum CodingKeys: String, CodingKey {
-        case id, title, description, goal, startDate, ownerId, isCompletedToday, lastReset, points, currentStreak, longestStreak, weeklyStreakBadge, monthlyStreakBadge, yearlyStreakBadge, metricCategory, metricType, dailyRecords
+        case id, title, description, goal, startDate, ownerId,
+             // Removed isCompletedToday from the coding keys.
+             lastReset, points, currentStreak, longestStreak, weeklyStreakBadge, monthlyStreakBadge, yearlyStreakBadge,
+             metricCategory, metricType, dailyRecords
     }
 }
 

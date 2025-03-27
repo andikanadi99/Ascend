@@ -380,7 +380,6 @@ struct WeekView: View {
                         .frame(maxWidth: .infinity)
                     }
                 }
-                .padding(.horizontal)
                 
                 Spacer()
             }
@@ -708,102 +707,43 @@ struct WeekNavigationView: View {
     }
 }
 
-
 // MARK: - Month View ("Your Mindful Month")
 struct MonthView: View {
     let accentColor: Color
     let accountCreationDate: Date  // Account creation date from UserModel
-    
+
     @State private var currentMonth: Date = Date()
-    // Dynamic list for monthly priorities – default to one priority; user can add more.
-    @State private var monthlyPriorities: [MonthlyPriority] = [
-        MonthlyPriority(id: UUID(), title: "Write 5 blog posts", progress: 0.5)
-    ]
-    
-    // State for the selected day to show a summary.
     @State private var selectedDay: Date? = nil
     @State private var showDaySummary: Bool = false
-    
-    // For demonstration, sample data for day completion percentages.
-    @State private var dayCompletion: [Date: Double] = [:]
-    
+
+    @StateObject private var viewModel = MonthViewModel()
+    @EnvironmentObject var session: SessionStore
+    @EnvironmentObject var habitVM: HabitViewModel   // Inject the HabitViewModel
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Dynamic Monthly Priorities Box.
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Monthly Priorities")
-                        .font(.headline)
-                        .foregroundColor(.accentColor)
-                    Spacer()
-                    Button(action: {
-                        monthlyPriorities.append(MonthlyPriority(id: UUID(), title: "New Priority", progress: 0))
-                    }) {
-                        Image(systemName: "plus.circle")
-                            .foregroundColor(.accentColor)
-                    }
-                }
-                ForEach($monthlyPriorities) { $priority in
-                    HStack {
-                        TextEditor(text: $priority.title)
-                            .padding(8)
-                            .frame(minHeight: 50)
-                            .background(Color.black)
-                            .foregroundColor(.white)
-                            .scrollContentBackground(.hidden)  // For iOS 16+
-                            .cornerRadius(8)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if monthlyPriorities.count > 1 {
-                            Button(action: {
-                                if let index = monthlyPriorities.firstIndex(where: { $0.id == priority.id }) {
-                                    monthlyPriorities.remove(at: index)
-                                }
-                            }) {
-                                Image(systemName: "minus.circle")
-                                    .foregroundColor(.red)
-                            }
-                        }
-                    }
-                }
-            }
-            .padding()
-            .background(Color.gray.opacity(0.3))
-            .cornerRadius(8)
+            // Monthly Priorities Section
+            prioritiesSection
             
-            // Calendar view – navigation is restricted by the accountCreationDate.
-            CalendarView(currentMonth: $currentMonth, accountCreationDate: accountCreationDate, dayCompletion: dayCompletion) { day in
-                if day <= Date() {
-                    selectedDay = day
-                    showDaySummary = true
-                }
-            }
-            .frame(height: 300)
-            .onAppear {
-                let calendar = Calendar.current
-                for day in generateDemoDays(for: currentMonth) {
-                    dayCompletion[day] = Double.random(in: 0...1)
-                }
-            }
+            // Calendar Section
+            calendarSection
+                .frame(height: 300)
             
             Spacer()
         }
         .padding()
-        // Overlay a small pop-up summary in the center.
+        // Overlay for Day Summary
         .overlay(
             Group {
                 if showDaySummary, let day = selectedDay {
                     VStack {
-                        DaySummaryView(day: day, completionPercentage: dayCompletion[day] ?? 0)
-                            .cornerRadius(12)
-                        Button("Close Summary") {
+                        // Pass the actual habits via the habitVM binding.
+                        DaySummaryView(day: day, habits: $habitVM.habits, onClose: {
                             withAnimation {
                                 showDaySummary = false
                             }
-                        }
-                        .padding()
-                        .foregroundColor(.white)
-                        .background(Color.gray)
-                        .cornerRadius(8)
+                        })
+                        .cornerRadius(12)
                     }
                     .frame(maxWidth: 300)
                     .padding()
@@ -813,42 +753,134 @@ struct MonthView: View {
                 }
             }
         )
+        .onAppear {
+            if let userId = session.userModel?.id {
+                viewModel.loadMonthSchedule(for: currentMonth, userId: userId)
+                habitVM.fetchHabits(for: userId) // Ensure habits are fetched.
+            }
+        }
     }
     
-    // Helper for demo: generate all days for the current month (ignoring placeholders)
-    private func generateDemoDays(for month: Date) -> [Date] {
-        var dates: [Date] = []
-        let calendar = Calendar.current
-        guard let monthInterval = calendar.dateInterval(of: .month, for: month) else { return dates }
-        var date = calendar.startOfDay(for: monthInterval.start)
-        while date < monthInterval.end {
-            dates.append(date)
-            if let next = calendar.date(byAdding: .day, value: 1, to: date) {
-                date = next
-            } else { break }
+    // MARK: - Monthly Priorities Section
+    private var prioritiesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Monthly Priorities")
+                    .font(.headline)
+                    .foregroundColor(accentColor)
+                Spacer()
+                Button(action: {
+                    addNewMonthlyPriority()
+                }) {
+                    Image(systemName: "plus.circle")
+                        .foregroundColor(accentColor)
+                }
+            }
+            if let schedule = viewModel.schedule {
+                let bindingPriorities = Binding<[MonthlyPriority]>(
+                    get: { schedule.monthlyPriorities },
+                    set: { newValue in
+                        var updatedSchedule = schedule
+                        updatedSchedule.monthlyPriorities = newValue
+                        viewModel.schedule = updatedSchedule
+                        viewModel.updateMonthSchedule()
+                    }
+                )
+                ForEach(bindingPriorities) { $priority in
+                    HStack {
+                        TextEditor(text: $priority.title)
+                            .padding(8)
+                            .frame(minHeight: 50)
+                            .background(Color.black)
+                            .foregroundColor(.white)
+                            .scrollContentBackground(.hidden)
+                            .cornerRadius(8)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .onChange(of: priority.title) { _ in
+                                viewModel.updateMonthSchedule()
+                            }
+                        if bindingPriorities.wrappedValue.count > 1 {
+                            Button(action: {
+                                bindingPriorities.wrappedValue.removeAll { $0.id == priority.id }
+                                viewModel.updateMonthSchedule()
+                            }) {
+                                Image(systemName: "minus.circle")
+                                    .foregroundColor(.red)
+                            }
+                        }
+                    }
+                }
+            } else {
+                Text("Loading monthly priorities...")
+                    .foregroundColor(.white)
+            }
         }
-        return dates
+        .padding()
+        .background(Color.gray.opacity(0.3))
+        .cornerRadius(8)
+    }
+    
+    // MARK: - Calendar Section
+    private var calendarSection: some View {
+        CalendarView(
+            currentMonth: $currentMonth,
+            accountCreationDate: accountCreationDate,
+            onDaySelected: { day in
+                if day <= Date() {
+                    selectedDay = day
+                    showDaySummary = true
+                }
+            }
+        )
+        .onChange(of: currentMonth) { newMonth in
+            if let userId = session.userModel?.id {
+                viewModel.loadMonthSchedule(for: newMonth, userId: userId)
+            }
+        }
+    }
+    
+    // Convert the schedule's dayCompletions (stored as [String: Double]) into [Date: Double]
+    private func dayCompletionMap() -> [Date: Double] {
+        guard let schedule = viewModel.schedule else { return [:] }
+        var dict: [Date: Double] = [:]
+        for (dayKey, fraction) in schedule.dayCompletions {
+            if let date = parseDayKey(dayKey) {
+                dict[date] = fraction
+            }
+        }
+        return dict
+    }
+    
+    private func parseDayKey(_ key: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: key)
+    }
+    
+    private func addNewMonthlyPriority() {
+        guard var schedule = viewModel.schedule else { return }
+        let newPriority = MonthlyPriority(id: UUID(), title: "New Priority", progress: 0.0)
+        schedule.monthlyPriorities.append(newPriority)
+        viewModel.schedule = schedule
+        viewModel.updateMonthSchedule()
     }
 }
 
-struct MonthlyPriority: Identifiable {
-    let id: UUID
-    var title: String
-    var progress: Double  // Value between 0 and 1
-}
+
 
 // MARK: - Calendar View
 struct CalendarView: View {
     @Binding var currentMonth: Date
     let accountCreationDate: Date
-    var dayCompletion: [Date: Double] = [:]
     var onDaySelected: (Date) -> Void = { _ in }
+    
+    @EnvironmentObject var habitVM: HabitViewModel  // Use the user's habits
     
     private let columns = Array(repeating: GridItem(.flexible()), count: 7)
     
     var body: some View {
         VStack {
-            // Month header with navigation and overall completion percentage.
+            // Month header with navigation and overall average completion percentage.
             HStack {
                 if canGoBack() {
                     Button(action: {
@@ -895,11 +927,12 @@ struct CalendarView: View {
                 }
             }
             
-            // Calendar grid with placeholders.
+            // Calendar grid.
             LazyVGrid(columns: columns, spacing: 8) {
                 ForEach(generateDays(), id: \.self) { date in
                     if let date = date {
                         if date > Date() {
+                            // Future dates.
                             Text(dayString(from: date))
                                 .font(.caption2)
                                 .frame(maxWidth: .infinity, minHeight: 30)
@@ -907,11 +940,12 @@ struct CalendarView: View {
                                 .background(Color.gray)
                                 .cornerRadius(4)
                         } else {
-                            let completion = dayCompletion[date] ?? 0
+                            let normalizedDate = Calendar.current.startOfDay(for: date)
+                            let completion = completionForDay(normalizedDate)
                             let bgColor: Color = {
-                                if completion >= 0.8 {
+                                if completion == 1.0 {
                                     return Color.green.opacity(0.6)
-                                } else if completion >= 0.5 {
+                                } else if completion > 0 {
                                     return Color.yellow.opacity(0.6)
                                 } else {
                                     return Color.red.opacity(0.6)
@@ -935,6 +969,30 @@ struct CalendarView: View {
             }
             .padding(.horizontal)
         }
+    }
+    
+    /// Computes the fraction of habits completed for a given day.
+    private func completionForDay(_ day: Date) -> Double {
+        let calendar = Calendar.current
+        let normalizedDay = calendar.startOfDay(for: day)
+        
+        // For any day, count habits that have a record with a value > 0.
+        let completed = habitVM.habits.filter { habit in
+            habit.dailyRecords.contains { record in
+                calendar.isDate(record.date, inSameDayAs: normalizedDay) && ((record.value ?? 0) > 0)
+            }
+        }.count
+        let total = habitVM.habits.count
+        return total > 0 ? Double(completed) / Double(total) : 0.0
+    }
+    
+    private func computeAverageCompletion() -> Double {
+        let days = generateDays().compactMap { $0 }
+        guard !days.isEmpty else { return 0 }
+        let total = days.reduce(0) { (sum, day) -> Double in
+            return sum + completionForDay(day)
+        }
+        return total / Double(days.count)
     }
     
     private func canGoBack() -> Bool {
@@ -977,55 +1035,251 @@ struct CalendarView: View {
         }
         return days
     }
-    
-    private func computeAverageCompletion() -> Double {
-        let days = generateDays().compactMap { $0 }
-        guard !days.isEmpty else { return 0 }
-        let total = days.reduce(0) { (sum, day) -> Double in
-            return sum + (dayCompletion[day] ?? 0)
-        }
-        return total / Double(days.count)
-    }
 }
-
 // MARK: - Day Summary View
 struct DaySummaryView: View {
     let day: Date
-    let completionPercentage: Double
+    // Use a binding so changes are reflected in the parent view.
+    @Binding var habits: [Habit]
+    let onClose: () -> Void
+
+    @EnvironmentObject var viewModel: HabitViewModel
+    private var calendar: Calendar { Calendar.current }
+
+    // New state properties for the metric input overlay.
+    @State private var showMetricInput: Bool = false
+    @State private var metricInput: String = ""
+    @State private var habitBeingUpdated: Habit? = nil
+
+    // Compute the number of habits completed on the given day.
+    private var finishedCount: Int {
+        habits.filter { habit in
+            calendar.isDateCompleted(habit: habit, for: day)
+        }.count
+    }
     
-    @Environment(\.presentationMode) var presentationMode
+    private var totalCount: Int {
+        habits.count
+    }
     
     var body: some View {
-        VStack(spacing: 16) {
-            Text("Summary for \(formattedDate(day))")
+        ZStack {
+            VStack(spacing: 16) {
+                Text("Summary for \(formattedDate(day))")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                
+                // Horizontal Progress Bar Section
+                VStack(alignment: .leading, spacing: 4) {
+                    ProgressView(value: Double(finishedCount), total: Double(totalCount))
+                        .progressViewStyle(LinearProgressViewStyle(tint: progressColor()))
+                        .padding(.bottom, 4)
+                    Text("Finished \(finishedCount) of \(totalCount) habits")
+                        .font(.subheadline)
+                        .foregroundColor(progressColor())
+                }
+                .padding()
+                .background(Color.gray.opacity(0.2))
+                .cornerRadius(8)
+                
+                // List of habits with toggles.
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach($habits) { $habit in
+                        HStack {
+                            Toggle(isOn: bindingForHabitCompletion(for: habit)) {
+                                Text(habit.title)
+                                    .foregroundColor(.white)
+                            }
+                            .toggleStyle(SwitchToggleStyle(tint: .green))
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                .padding()
+                .background(Color.gray.opacity(0.2))
+                .cornerRadius(8)
+                
+                // Close Button
+                Button("Close Summary") {
+                    onClose()
+                }
                 .font(.headline)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color.gray.opacity(0.8))
                 .foregroundColor(.white)
-            Text("Completion: \(Int(completionPercentage * 100))%")
-                .font(.title)
-                .foregroundColor(completionPercentage >= 0.8 ? .green : (completionPercentage >= 0.5 ? .yellow : .red))
-            Text("Habits: Finished 3 / 5")
-                .foregroundColor(.white)
-            Button("Close Summary") {
-                presentationMode.wrappedValue.dismiss()
+                .cornerRadius(8)
             }
             .padding()
-            .background(Color.gray.opacity(0.2))
-            .foregroundColor(.white)
-            .cornerRadius(8)
+            .background(Color.black)
+            .cornerRadius(12)
+            .shadow(radius: 10)
+            
+            // Overlay the metric input if needed.
+            if showMetricInput {
+                metricInputOverlay
+                    .transition(.opacity)
+            }
         }
-        .padding()
-        .background(Color.black)
-        .cornerRadius(12)
-        .shadow(radius: 10)
     }
+    
+    // MARK: - Helper Functions
     
     private func formattedDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         return formatter.string(from: date)
     }
+    
+    private func progressColor() -> Color {
+        if totalCount == 0 { return .red }
+        if finishedCount == totalCount {
+            return .green
+        } else if finishedCount > 0 {
+            return .yellow
+        } else {
+            return .red
+        }
+    }
+    
+    // Creates a binding for a habit's completion status for the given day.
+    private func bindingForHabitCompletion(for habit: Habit) -> Binding<Bool> {
+        Binding<Bool>(
+            get: {
+                calendar.isDateCompleted(habit: habit, for: day)
+            },
+            set: { newValue in
+                if newValue {
+                    // When toggled on, present the metric input overlay.
+                    if let index = habits.firstIndex(where: { $0.id == habit.id }) {
+                        habitBeingUpdated = habits[index]
+                        showMetricInput = true
+                    }
+                } else {
+                    // When toggled off, remove all records for that day.
+                    if let index = habits.firstIndex(where: { $0.id == habit.id }) {
+                        var updatedHabit = habits[index]
+                        updatedHabit.dailyRecords.removeAll { record in
+                            calendar.isDate(record.date, inSameDayAs: day)
+                        }
+                        habits[index] = updatedHabit
+                        viewModel.updateHabit(updatedHabit)
+                    }
+                }
+            }
+        )
+    }
+    
+    // MARK: - Metric Input Overlay
+    private var metricInputOverlay: some View {
+        let prompt = metricPrompt()
+        return VStack(spacing: 16) {
+            Text(prompt)
+                .font(.headline)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.white)
+            TextField("Enter a number", text: $metricInput)
+                .keyboardType(.numberPad)
+                .padding()
+                .background(Color.white.opacity(0.2))
+                .cornerRadius(8)
+                .foregroundColor(.white)
+            if !metricInput.isEmpty {
+                if let habit = habitBeingUpdated, habit.metricType.isCompletedMetric() {
+                    if metricInput != "0" && metricInput != "1" {
+                        Text("Please enter either 0 (No) or 1 (Yes)")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                } else if Int(metricInput) == nil {
+                    Text("Please enter a valid number")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+            }
+            HStack {
+                Button("Cancel") {
+                    withAnimation {
+                        showMetricInput = false
+                        metricInput = ""
+                        habitBeingUpdated = nil
+                    }
+                }
+                .foregroundColor(.red)
+                Spacer()
+                Button("Save") {
+                    if let metricValue = Int(metricInput),
+                       let habit = habitBeingUpdated,
+                       let index = habits.firstIndex(where: { $0.id == habit.id }) {
+                        var updatedHabit = habits[index]
+                        // Append a new record for this day.
+                        updatedHabit.dailyRecords.append(HabitRecord(date: day, value: Double(metricValue)))
+                        habits[index] = updatedHabit
+                        viewModel.updateHabit(updatedHabit)
+                        withAnimation {
+                            showMetricInput = false
+                            metricInput = ""
+                            habitBeingUpdated = nil
+                        }
+                    }
+                }
+                .disabled({
+                    if let habit = habitBeingUpdated, habit.metricType.isCompletedMetric() {
+                        return !(metricInput == "0" || metricInput == "1")
+                    } else {
+                        return Int(metricInput) == nil
+                    }
+                }())
+                .foregroundColor(.green)
+            }
+        }
+        .padding()
+        .frame(width: 300)
+        .background(Color.black.opacity(0.9))
+        .cornerRadius(12)
+        .shadow(radius: 8)
+    }
+    
+    // Helper function for the dynamic metric prompt.
+    private func metricPrompt() -> String {
+        if let habit = habitBeingUpdated {
+            switch habit.metricType {
+            case .predefined(let value):
+                if value.lowercased().contains("minute") {
+                    return "How many minutes did you meditate this day?"
+                } else if value.lowercased().contains("miles") {
+                    return "How many miles did you run this day?"
+                } else if value.lowercased().contains("pages") {
+                    return "How many pages did you read this day?"
+                } else if value.lowercased().contains("reps") {
+                    return "How many reps did you complete this day?"
+                } else if value.lowercased().contains("steps") {
+                    return "How many steps did you take this day?"
+                } else if value.lowercased().contains("calories") {
+                    return "How many calories did you burn/consume this day?"
+                } else if value.lowercased().contains("hours") {
+                    return "How many hours did you sleep this day?"
+                } else if value.lowercased().contains("completed") {
+                    return "Were you able to complete the task? (Enter 1 for Yes, 0 for No)"
+                } else {
+                    return "Enter this day's \(value.lowercased()) value:"
+                }
+            case .custom(let customValue):
+                return "Enter this day's \(customValue.lowercased()) value:"
+            }
+        }
+        return "Enter a metric value:"
+    }
 }
 
+// MARK: - Calendar Extension for Habit Completion Check
+extension Calendar {
+    func isDateCompleted(habit: Habit, for day: Date) -> Bool {
+        return habit.dailyRecords.contains { record in
+            self.isDate(record.date, inSameDayAs: day) && ((record.value ?? 0) > 0)
+        }
+    }
+}
 // MARK: - Preview
 struct SchedulerView_Previews: PreviewProvider {
     static var previews: some View {

@@ -222,6 +222,7 @@ struct HabitDetailView: View {
                     Spacer()
                     
                     // Display metric info.
+                    // Display metric info.
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Metric Category:")
@@ -238,8 +239,10 @@ struct HabitDetailView: View {
                                 .foregroundColor(.white)
                             let metricText: String = {
                                 switch habit.metricType {
-                                case .predefined(let value): return value
-                                case .custom(let value): return value
+                                case .predefined(let value):
+                                    return value
+                                case .custom(let value):
+                                    return value
                                 }
                             }()
                             Text(metricText)
@@ -251,22 +254,24 @@ struct HabitDetailView: View {
                     
                     // Mark/Unmark button.
                     Button {
-                        if habit.isCompletedToday {
+                        if completedToday {
                             showUnmarkConfirmation = true
                         } else {
                             metricInput = ""
                             showMetricInput = true
                         }
                     } label: {
-                        Text(habit.isCompletedToday ? "Unmark Habit as Done" : "Mark Habit as Done")
+                        Text(completedToday ? "Unmark Habit as Done" : "Mark Habit as Done")
                             .foregroundColor(.black)
                             .fontWeight(.bold)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(habit.isCompletedToday ? Color.red : accentCyan)
+                            .background(completedToday ? Color.red : accentCyan)
                             .cornerRadius(8)
                     }
                     .padding(.bottom, 30)
+
+
                 }
                 .padding()
             }
@@ -491,17 +496,25 @@ struct HabitDetailView: View {
     private func completeHabit(with metricValue: Int) {
         let newRecord = HabitRecord(date: Date(), value: Double(metricValue))
         var updatedHabit = habit
+        let calendar = Calendar.current
+        let today = Date()
+        let alreadyCompleted = updatedHabit.dailyRecords.contains { record in
+            calendar.isDate(record.date, inSameDayAs: today) && ((record.value ?? 0) > 0)
+        }
+        
         updatedHabit.dailyRecords.append(newRecord)
-        if !updatedHabit.isCompletedToday {
+        
+        if !alreadyCompleted {
             updatedHabit.currentStreak += 1
             if updatedHabit.currentStreak > updatedHabit.longestStreak {
                 updatedHabit.longestStreak = updatedHabit.currentStreak
             }
         }
-        updatedHabit.isCompletedToday = true
+        
         viewModel.updateHabit(updatedHabit)
         habit = updatedHabit
     }
+
 
     // MARK: - Date Range Overlay (Existing Code)
     @ViewBuilder
@@ -730,6 +743,13 @@ extension HabitDetailView {
                 .disableAutocorrection(true)
             Spacer()
             Spacer().frame(width: 40)
+        }
+    }
+    
+    private var completedToday: Bool {
+        let calendar = Calendar.current
+        return habit.dailyRecords.contains { record in
+            calendar.isDate(record.date, inSameDayAs: Date()) && ((record.value ?? 0) > 0)
         }
     }
     
@@ -1223,15 +1243,38 @@ extension HabitDetailView {
     }
     
     private func toggleHabitDone() {
-        guard let habitID = habit.id else { return }
-        let localVal = localStreaks[habitID] ?? habit.currentStreak
-        if habit.isCompletedToday {
-            localStreaks[habitID] = max(localVal - 1, 0)
-        } else {
-            localStreaks[habitID] = localVal + 1
+        let calendar = Calendar.current
+        var updatedHabit = habit
+        // Determine if the habit is marked as done for today by checking dailyRecords.
+        let isCompletedToday = updatedHabit.dailyRecords.contains { record in
+            calendar.isDate(record.date, inSameDayAs: Date()) && ((record.value ?? 0) > 0)
         }
-        viewModel.toggleHabitCompletion(habit, userId: habit.ownerId)
+        
+        if isCompletedToday {
+            // Unmark the habit: Remove all records for today.
+            updatedHabit.dailyRecords.removeAll { record in
+                calendar.isDate(record.date, inSameDayAs: Date())
+            }
+            // Update local streak by decrementing.
+            if let habitID = habit.id {
+                let localVal = localStreaks[habitID] ?? habit.currentStreak
+                localStreaks[habitID] = max(localVal - 1, 0)
+            }
+        } else {
+            // Mark the habit as done: Append a new record with a default value of 1.
+            let newRecord = HabitRecord(date: Date(), value: 1)
+            updatedHabit.dailyRecords.append(newRecord)
+            // Update local streak by incrementing.
+            if let habitID = habit.id {
+                let localVal = localStreaks[habitID] ?? habit.currentStreak
+                localStreaks[habitID] = localVal + 1
+            }
+        }
+        
+        viewModel.updateHabit(updatedHabit)
+        habit = updatedHabit
     }
+
     
     private func saveEditsToHabit() {
         guard editableTitle != habit.title ||

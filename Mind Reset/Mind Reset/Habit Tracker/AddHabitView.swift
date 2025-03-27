@@ -309,16 +309,19 @@ struct AddHabitView: View {
             finalMetricType = selectedMetricType
         }
         
+        // Create the new habit without explicitly setting isCompletedToday.
         let newHabit = Habit(
             title: habitTitle,
             description: habitDescription,
             goal: habitGoal,
             startDate: startDate,
             ownerId: userId,
-            isCompletedToday: false,
             currentStreak: 0,
             longestStreak: 0,
             lastReset: Date(),
+            weeklyStreakBadge: false,
+            monthlyStreakBadge: false,
+            yearlyStreakBadge: false,
             metricCategory: selectedMetricCategory,
             metricType: finalMetricType,
             dailyRecords: []

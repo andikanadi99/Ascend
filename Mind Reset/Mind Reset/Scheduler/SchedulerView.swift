@@ -96,7 +96,7 @@ struct DayView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 
-                // "Today's Top Priority" box
+                //  Today's priority's list
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("Today's Top Priority")
@@ -119,7 +119,7 @@ struct DayView: View {
                     }
                     
                     // Show existing priorities
-                    if viewModel.schedule != nil {
+                    if let _ = viewModel.schedule {
                         // Create a binding to the non‑optional priorities array.
                         let prioritiesBinding = Binding<[TodayPriority]>(
                             get: { viewModel.schedule!.priorities },
@@ -130,16 +130,29 @@ struct DayView: View {
                             }
                         )
                         ForEach(prioritiesBinding) { $priority in
-                            TextEditor(text: $priority.title)
-                                .padding(8)
-                                .frame(minHeight: 50)
-                                .background(Color.black)
-                                .cornerRadius(8)
-                                .foregroundColor(.white)
-                                .scrollContentBackground(.hidden)
-                                .onChange(of: priority.title) { _ in
-                                    viewModel.updateDaySchedule()
+                            HStack {
+                                TextEditor(text: $priority.title)
+                                    .padding(8)
+                                    .frame(minHeight: 50)
+                                    .background(Color.black)
+                                    .cornerRadius(8)
+                                    .foregroundColor(.white)
+                                    .scrollContentBackground(.hidden)
+                                    .onChange(of: priority.title) { _ in
+                                        viewModel.updateDaySchedule()
+                                    }
+                                
+                                // Show delete button if there's more than one priority.
+                                if prioritiesBinding.wrappedValue.count > 1 {
+                                    Button(action: {
+                                        prioritiesBinding.wrappedValue.removeAll { $0.id == priority.id }
+                                        viewModel.updateDaySchedule()
+                                    }) {
+                                        Image(systemName: "minus.circle")
+                                            .foregroundColor(.red)
+                                    }
                                 }
+                            }
                         }
                     } else {
                         Text("Loading priorities...")
@@ -149,6 +162,7 @@ struct DayView: View {
                 .padding()
                 .background(Color.gray.opacity(0.3))
                 .cornerRadius(8)
+
                 
                 // Date Navigation
                 HStack {
@@ -327,71 +341,102 @@ struct WeekView: View {
     let accentColor: Color
     @EnvironmentObject var session: SessionStore
     
-    // Week navigation state.
+    @StateObject private var viewModel = WeekViewModel()
+    
+    // Week navigation state
     @State private var currentWeekStart: Date = {
         var calendar = Calendar.current
-        calendar.firstWeekday = 1 // Week starts on Sunday
+        calendar.firstWeekday = 1 // Sunday
         let now = Date()
         let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
         return calendar.date(from: components) ?? now
     }()
     
-    // Sample daily routines keyed by abbreviated weekday.
-    @State private var dailyIntentions: [String: String] = [
-        "Sun": "Rest & Reflect",
-        "Mon": "Morning Meditation",
-        "Tue": "Focused Work",
-        "Wed": "Exercise & Read",
-        "Thu": "Creative Session",
-        "Fri": "Networking",
-        "Sat": "Family Time"
-    ]
-    
-    // A dictionary to hold each day’s to‑do list.
-    @State private var dailyToDoLists: [String: [ToDoItem]] = [
-        "Sun": [ToDoItem(id: UUID(), title: "Journal", isCompleted: false)],
-        "Mon": [ToDoItem(id: UUID(), title: "Plan Day", isCompleted: false)],
-        "Tue": [ToDoItem(id: UUID(), title: "Deep Work Session", isCompleted: false)],
-        "Wed": [ToDoItem(id: UUID(), title: "Workout", isCompleted: false)],
-        "Thu": [ToDoItem(id: UUID(), title: "Write Ideas", isCompleted: false)],
-        "Fri": [ToDoItem(id: UUID(), title: "Catch Up", isCompleted: false)],
-        "Sat": [ToDoItem(id: UUID(), title: "Family Time", isCompleted: false)]
-    ]
-    
-    @State private var weeklyPriorities: [WeeklyPriority] = [
-        WeeklyPriority(id: UUID(), title: "Weekly Goals", progress: 0.5)
-    ]
-    
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Weekly Priorities")
-                        .font(.headline)
-                        .foregroundColor(.accentColor)
-                    Spacer()
-                    Button(action: {
-                        weeklyPriorities.append(WeeklyPriority(id: UUID(), title: "New Priority", progress: 0))
-                    }) {
-                        Image(systemName: "plus.circle")
-                            .foregroundColor(.accentColor)
+        ScrollView { // Wrap everything in a single ScrollView
+            VStack(alignment: .leading, spacing: 16) {
+                // Weekly Priorities Section
+                prioritiesSection
+                
+                // Week Navigation Header
+                WeekNavigationView(
+                    currentWeekStart: $currentWeekStart,
+                    accountCreationDate: session.userModel?.createdAt ?? Date()
+                )
+                .onChange(of: currentWeekStart) { newWeekStart in
+                    if let userId = session.userModel?.id {
+                        viewModel.loadWeeklySchedule(for: newWeekStart, userId: userId)
                     }
                 }
-                ForEach($weeklyPriorities) { $priority in
+                
+                // Days of the Week (now not wrapped in its own ScrollView)
+                VStack(spacing: 16) {
+                    ForEach(weekDays(for: currentWeekStart), id: \.self) { day in
+                        DayCardView(
+                            day: day,
+                            toDoItems: bindingForToDoItems(day: day),
+                            intention: bindingForIntention(day: day)
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+                .padding(.horizontal)
+                
+                Spacer()
+            }
+            .padding() // Outer padding for the content
+        }
+        .onAppear {
+            if let userId = session.userModel?.id {
+                viewModel.loadWeeklySchedule(for: currentWeekStart, userId: userId)
+            }
+        }
+    }
+    
+    // MARK: - Weekly Priorities Section
+    private var prioritiesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Weekly Priorities")
+                    .font(.headline)
+                    .foregroundColor(accentColor)
+                Spacer()
+                Button(action: {
+                    addNewPriority()
+                }) {
+                    Image(systemName: "plus.circle")
+                        .foregroundColor(accentColor)
+                }
+            }
+            if let schedule = viewModel.schedule {
+                // We'll make a Binding to the array so we can modify and update Firestore
+                let bindingPriorities = Binding<[WeeklyPriority]>(
+                    get: { schedule.weeklyPriorities },
+                    set: { newVal in
+                        var temp = schedule
+                        temp.weeklyPriorities = newVal
+                        viewModel.schedule = temp
+                    }
+                )
+                
+                ForEach(bindingPriorities) { $priority in
                     HStack {
                         TextEditor(text: $priority.title)
                             .padding(8)
                             .frame(minHeight: 50)
                             .background(Color.black)
                             .foregroundColor(.white)
-                            .scrollContentBackground(.hidden)  // For iOS 16+
+                            .scrollContentBackground(.hidden)
                             .cornerRadius(8)
                             .fixedSize(horizontal: false, vertical: true)
-                        if weeklyPriorities.count > 1 {
+                            .onChange(of: priority.title) { _ in
+                                viewModel.updateWeeklySchedule()
+                            }
+                        if bindingPriorities.count > 1 {
                             Button(action: {
-                                if let index = weeklyPriorities.firstIndex(where: { $0.id == priority.id }) {
-                                    weeklyPriorities.remove(at: index)
-                                }
+                                // remove this priority
+                                bindingPriorities.wrappedValue.removeAll { $0.id == priority.id }
+                                viewModel.updateWeeklySchedule()
                             }) {
                                 Image(systemName: "minus.circle")
                                     .foregroundColor(.red)
@@ -399,39 +444,68 @@ struct WeekView: View {
                         }
                     }
                 }
+            } else {
+                Text("Loading weekly priorities...")
+                    .foregroundColor(.white)
             }
-            .padding()
-            .background(Color.gray.opacity(0.3))
-            .cornerRadius(8)
-            // Week Navigation Header.
-            WeekNavigationView(currentWeekStart: $currentWeekStart, accountCreationDate: session.userModel?.createdAt ?? Date())
-            
-            // Vertical scroll view for the full week.
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(spacing: 16) {
-                    ForEach(weekDays(for: currentWeekStart), id: \.self) { day in
-                        DayCardView(
-                            day: day,
-                            toDoItems: Binding(
-                                get: { dailyToDoLists[shortDayKey(from: day)] ?? [] },
-                                set: { dailyToDoLists[shortDayKey(from: day)] = $0 }
-                            ),
-                            intention: Binding(
-                                get: { dailyIntentions[shortDayKey(from: day)] ?? "" },
-                                set: { dailyIntentions[shortDayKey(from: day)] = $0 }
-                            )
-                        )
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-                .padding(.horizontal)
-            }
-            Spacer()
         }
         .padding()
+        .background(Color.gray.opacity(0.3))
+        .cornerRadius(8)
     }
     
-    // Helper: Compute the seven days of the week starting from currentWeekStart.
+    // MARK: - Helper for adding a new priority
+    private func addNewPriority() {
+        guard var schedule = viewModel.schedule else { return }
+        let newPriority = WeeklyPriority(id: UUID(), title: "New Priority", progress: 0.0)
+        schedule.weeklyPriorities.append(newPriority)
+        viewModel.schedule = schedule
+        viewModel.updateWeeklySchedule()
+    }
+    
+    // MARK: - Binding for a day’s ToDoItems
+    private func bindingForToDoItems(day: Date) -> Binding<[ToDoItem]> {
+        Binding(
+            get: {
+                if let schedule = viewModel.schedule {
+                    let dayKey = shortDayKey(from: day)
+                    return schedule.dailyToDoLists[dayKey] ?? []
+                } else {
+                    return []
+                }
+            },
+            set: { newValue in
+                guard var schedule = viewModel.schedule else { return }
+                let dayKey = shortDayKey(from: day)
+                schedule.dailyToDoLists[dayKey] = newValue
+                viewModel.schedule = schedule
+                viewModel.updateWeeklySchedule()
+            }
+        )
+    }
+    
+    // MARK: - Binding for a day’s intention
+    private func bindingForIntention(day: Date) -> Binding<String> {
+        Binding(
+            get: {
+                if let schedule = viewModel.schedule {
+                    let dayKey = shortDayKey(from: day)
+                    return schedule.dailyIntentions[dayKey] ?? ""
+                } else {
+                    return ""
+                }
+            },
+            set: { newValue in
+                guard var schedule = viewModel.schedule else { return }
+                let dayKey = shortDayKey(from: day)
+                schedule.dailyIntentions[dayKey] = newValue
+                viewModel.schedule = schedule
+                viewModel.updateWeeklySchedule()
+            }
+        )
+    }
+    
+    // MARK: - Generate the 7 Days for currentWeekStart
     private func weekDays(for start: Date) -> [Date] {
         var days: [Date] = []
         let calendar = Calendar.current
@@ -443,10 +517,10 @@ struct WeekView: View {
         return days
     }
     
-    // Helper: Returns abbreviated weekday key (e.g. "Sun") from a date.
+    // MARK: - Convert Date to "Sun", "Mon", etc.
     private func shortDayKey(from date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "E"
+        formatter.dateFormat = "E"  // "Sun", "Mon", ...
         return formatter.string(from: date)
     }
 }
@@ -472,13 +546,24 @@ struct DayCardView: View {
             // Editable intention using TextEditor.
             TextEditor(text: $intention)
                 .padding(8)
-                .frame(minHeight: 50) // Default minimal height; expands as needed.
-                .background(.black)
+                .frame(minHeight: 50)
+                .background(Color.black)
                 .foregroundColor(.white)
-                .scrollContentBackground(.hidden)  // For iOS 16+
                 .cornerRadius(8)
+                .overlay(
+                    Group {
+                        if intention.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Text("Main goal for the day...")
+                                .foregroundColor(.gray)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                        }
+                    },
+                    alignment: .topLeading
+                )
+                .scrollContentBackground(.hidden)  // For iOS 16+
+
                 
-            
             // To-Do List.
             ToDoListView(toDoItems: $toDoItems)
         }
@@ -514,19 +599,35 @@ struct ToDoListView: View {
                             .foregroundColor(item.isCompleted ? .green : .white)
                     }
                     // Editable intention using TextEditor.
-                    TextEditor(text: $item.title)
-                        .padding(8)
-                        .frame(minHeight: 50) // Default minimal height; expands as needed.
-                        .background(.black)
-                        .foregroundColor(.white)
-                        .scrollContentBackground(.hidden)  // For iOS 16+
-                        .cornerRadius(8)
-                    Button(action: {
-                        toDoItems.removeAll { $0.id == item.id }
-                    }) {
-                        Image(systemName: "trash")
-                            .foregroundColor(.red)
+                    HStack() {
+                        ZStack(alignment: .topLeading) {
+                            TextEditor(text: $item.title)
+                                .padding(8)
+                                .frame(minHeight: 50)
+                                .background(Color.black)
+                                .foregroundColor(.white)
+                                .scrollContentBackground(.hidden)
+                                .cornerRadius(8)
+                                .overlay(
+                                    Group {
+                                        if item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                            Text("Enter task...")
+                                                .foregroundColor(.gray)
+                                                .padding(8)
+                    
+                                        }
+                                    },
+                                    alignment: .topLeading
+                                )
+                        }
+                        Button(action: {
+                            toDoItems.removeAll { $0.id == item.id }
+                        }) {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red)
+                        }
                     }
+
                 }
             }
             Button(action: {

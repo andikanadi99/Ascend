@@ -1,9 +1,3 @@
-//
-//  MainTabView.swift
-//  Mind Reset
-//  This View handles the landing page of the app
-//  Created by Andika Yudhatrisna on 11/25/24.
-//
 import SwiftUI
 
 struct MainTabView: View {
@@ -11,16 +5,16 @@ struct MainTabView: View {
 
     var body: some View {
         TabView {
-            // 1) Habit Tracker as Home
-            HabitTrackerView()
+            // 1) Scheduler as Home
+            SchedulerView()
                 .tabItem {
                     Label("Home", systemImage: "house.fill")
                 }
 
-            // 2) Progress Tab
-            SchedulerView()
+            // 2) Habit Tracker Tab
+            HabitTrackerView()
                 .tabItem {
-                    Label("Schedule", systemImage: "chart.bar.fill")
+                    Label("Habits", systemImage: "list.bullet")
                 }
 
             // 3) Settings Tab (Sign Out button moved here)
@@ -33,14 +27,9 @@ struct MainTabView: View {
     }
 }
 
-
-
-// MARK: - Preview
 struct MainTabView_Previews: PreviewProvider {
     static var previews: some View {
         MainTabView()
             .environmentObject(SessionStore())
     }
 }
-
-

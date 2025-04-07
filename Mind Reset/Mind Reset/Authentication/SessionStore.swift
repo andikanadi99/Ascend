@@ -261,8 +261,9 @@ class SessionStore: ObservableObject {
             return "The email address is already in use by another account."
         case .weakPassword:
             return "The password is too weak. Please choose a stronger password."
-        case .wrongPassword:
-            return "Incorrect password. Please try again."
+        // Combine wrongPassword and invalidCredential (if applicable) for a unified message.
+        case .wrongPassword, .invalidCredential:
+            return "Wrong email or password."
         case .userNotFound:
             return "No account found with this email. Please sign up."
         case .networkError:
@@ -271,6 +272,7 @@ class SessionStore: ObservableObject {
             return error.localizedDescription
         }
     }
+
     
     // MARK: - Cleanup
     deinit {

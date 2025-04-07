@@ -236,6 +236,12 @@ struct DayView: View {
                 viewModel.loadDaySchedule(for: selectedDate, userId: userId)
             }
         }
+        .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
+            if viewModel.schedule == nil, let userId = session.userModel?.id {
+                print("DayView: schedule is still nil, reloading...")
+                viewModel.loadDaySchedule(for: selectedDate, userId: userId)
+            }
+        }
     }
     
     // MARK: - Helper: Daily Priorities List

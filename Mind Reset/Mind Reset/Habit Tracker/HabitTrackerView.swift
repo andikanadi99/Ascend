@@ -20,106 +20,99 @@ struct HabitTrackerView: View {
     @EnvironmentObject var session: SessionStore
 
     @State private var showingAddHabit = false
+    @State private var habitsFinishedToday: Int = 0
+    @State private var cancellables = Set<AnyCancellable>()
+    
+    // New state variable for controlling the loading state.
+    @State private var isLoaded: Bool = false
 
     // Dark theme & accent
     let backgroundBlack = Color.black
     let accentCyan      = Color(red: 0, green: 1, blue: 1)
-
+    
     // Placeholder daily quote
     let dailyQuote = "Focus on what matters today."
-
-    // How many habits are finished today (computed)
-    @State private var habitsFinishedToday: Int = 0
-
-    // Combine Cancellables
-    @State private var cancellables = Set<AnyCancellable>()
-
+    
     var body: some View {
         NavigationView {
             ZStack {
                 backgroundBlack
                     .ignoresSafeArea()
-
-                VStack(alignment: .leading, spacing: 16) {
-                    // Personalized Greeting
-                    Text(greetingMessage)
-                        .font(.title)
-                        .fontWeight(.heavy)
-                        .foregroundColor(.white)
-                        .shadow(color: .white.opacity(0.8), radius: 4)
-
-                    // Daily Quote
-                    Text(dailyQuote)
-                        .font(.subheadline)
-                        .foregroundColor(accentCyan)
-
-                    // Habits Finished Today (computed from dailyRecords)
-                    HStack {
-                        Text("Habits Finished Today: \(habitsFinishedToday)")
+                
+                Group {
+                    if isLoaded {
+                        // Main UI when habits are loaded
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text(greetingMessage)
+                                .font(.title)
+                                .fontWeight(.heavy)
+                                .foregroundColor(.white)
+                                .shadow(color: .white.opacity(0.8), radius: 4)
+                            
+                            Text(dailyQuote)
+                                .font(.subheadline)
+                                .foregroundColor(accentCyan)
+                            
+                            HStack {
+                                Text("Habits Finished Today: \(habitsFinishedToday)")
+                                    .foregroundColor(.white)
+                            }
+                            .padding(.vertical, 10)
+                            
+                            ScrollView {
+                                LazyVStack(spacing: 12) {
+                                    ForEach(viewModel.habits.indices, id: \.self) { index in
+                                        let habit = viewModel.habits[index]
+                                        let completedToday = habit.dailyRecords.contains { record in
+                                            Calendar.current.isDate(record.date, inSameDayAs: Date()) && ((record.value ?? 0) > 0)
+                                        }
+                                        let localStreak  = habit.currentStreak
+                                        let localLongest = habit.longestStreak
+                                        
+                                        NavigationLink(
+                                            destination: HabitDetailView(habit: $viewModel.habits[index])
+                                        ) {
+                                            HabitRow(
+                                                habit: habit,
+                                                completedToday: completedToday,
+                                                currentStreak: localStreak,
+                                                localLongestStreak: localLongest,
+                                                accentCyan: accentCyan,
+                                                onDelete: { deletedHabit in
+                                                    deleteHabit(deletedHabit)
+                                                },
+                                                onToggleCompletion: {
+                                                    toggleHabitCompletion(habit)
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                                .padding(.top, 10)
+                            }
+                            
+                            Spacer()
+                        }
+                        .padding()
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                updateHabitsFinishedToday()
+                            }
+                            viewModel.$habits
+                                .sink { _ in
+                                    updateHabitsFinishedToday()
+                                }
+                                .store(in: &cancellables)
+                        }
+                    } else {
+                        // Loading indicator while waiting for habits to load.
+                        ProgressView("Loading habits...")
                             .foregroundColor(.white)
                     }
-                    .padding(.vertical, 10)
-
-                    // Scrollable Habit List
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
-                            ForEach(viewModel.habits.indices, id: \.self) { index in
-                                let habit = viewModel.habits[index]
-                                let habitId = habit.id ?? ""
-                                
-                                // Compute if the habit is completed for today based on dailyRecords:
-                                let completedToday = habit.dailyRecords.contains { record in
-                                    Calendar.current.isDate(record.date, inSameDayAs: Date()) && ((record.value ?? 0) > 0)
-                                }
-                                
-                                // Streaks (using current values from the habit)
-                                let localStreak  = habit.currentStreak
-                                let localLongest = habit.longestStreak
-
-                                NavigationLink(
-                                    destination: HabitDetailView(habit: $viewModel.habits[index])
-                                ) {
-                                    HabitRow(
-                                        habit: habit,
-                                        completedToday: completedToday,
-                                        currentStreak: localStreak,
-                                        localLongestStreak: localLongest,
-                                        accentCyan: accentCyan,
-                                        onDelete: { deletedHabit in
-                                            deleteHabit(deletedHabit)
-                                        },
-                                        onToggleCompletion: {
-                                            toggleHabitCompletion(habit)
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                        .padding(.top, 10)
-                    }
-
-                    Spacer()
                 }
-                .padding()
-                .onAppear {
-                    guard let userId = session.current_user?.uid else {
-                        print("No authenticated user found; cannot fetch habits.")
-                        return
-                    }
-                    viewModel.fetchHabits(for: userId)
-                    viewModel.setupDefaultHabitsIfNeeded(for: userId)
-
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        updateHabitsFinishedToday()
-                    }
-
-                    viewModel.$habits
-                        .sink { _ in
-                            updateHabitsFinishedToday()
-                        }
-                        .store(in: &cancellables)
-                }
-
+                .id(isLoaded ? "loaded" : "loading")
+                
+                // Floating Add Button (always visible)
                 VStack {
                     Spacer()
                     HStack {
@@ -147,32 +140,60 @@ struct HabitTrackerView: View {
                     .environmentObject(viewModel)
             }
             .navigationBarHidden(true)
+            .onAppear {
+                guard let userId = session.current_user?.uid else {
+                    print("No authenticated user found; cannot fetch habits.")
+                    return
+                }
+                viewModel.fetchHabits(for: userId)
+                viewModel.setupDefaultHabitsIfNeeded(for: userId)
+            }
+            // Timer publisher that fires every 0.5 seconds
+            .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
+                updateIsLoaded()
+            }
         }
+        
     }
-
+    
+    // MARK: - Helpers
+    
     private var greetingMessage: String {
         let userName = session.current_user?.email ?? "User"
         return "Welcome back, let’s get started!"
     }
-
+    
     private func updateHabitsFinishedToday() {
         habitsFinishedToday = viewModel.habits.filter { habit in
-            // Instead of using isCompletedToday, check the dailyRecords for today:
             Calendar.current.isDateInToday(Date()) &&
             habit.dailyRecords.contains { record in
                 Calendar.current.isDate(record.date, inSameDayAs: Date()) && ((record.value ?? 0) > 0)
             }
         }.count
     }
-
+    
     private func toggleHabitCompletion(_ habit: Habit) {
         viewModel.toggleHabitCompletion(habit, userId: habit.ownerId)
     }
-
+    
     private func deleteHabit(_ habit: Habit) {
         viewModel.deleteHabit(habit)
     }
+    
+    private func updateIsLoaded() {
+        print("updateIsLoaded: defaultsLoaded=\(viewModel.defaultsLoaded), habits.count=\(viewModel.habits.count)")
+        withAnimation {
+            isLoaded = viewModel.defaultsLoaded && !viewModel.habits.isEmpty
+        }
+        // If defaults are loaded but habits are still empty, force a refresh.
+        if viewModel.defaultsLoaded && viewModel.habits.isEmpty, let userId = session.current_user?.uid {
+            print("Forcing refresh: defaults loaded but habits is empty")
+            viewModel.fetchHabits(for: userId)
+        }
+    }
+
 }
+
 
 // MARK: - HabitRow
 struct HabitRow: View {

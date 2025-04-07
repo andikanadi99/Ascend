@@ -19,6 +19,8 @@ class HabitViewModel: ObservableObject {
     @Published var localStreaks: [String: Int] = [:]
     @Published var localLongestStreaks: [String: Int] = [:]
     
+    @Published var defaultsLoaded: Bool = false  // Loading flag
+    
     private var db = Firestore.firestore()
     private var listenerRegistration: ListenerRegistration?
     private var cancellables = Set<AnyCancellable>()
@@ -33,6 +35,7 @@ class HabitViewModel: ObservableObject {
         fmt.dateFormat = "yyyy-MM-dd"
         return fmt
     }()
+    
     
     init() {}
     
@@ -162,31 +165,47 @@ class HabitViewModel: ObservableObject {
             guard let self = self else { return }
             if let e = err {
                 print("Error fetching user doc: \(e)")
+                DispatchQueue.main.async {
+                    self.defaultsLoaded = true
+                }
                 return
             }
+            // If no document exists, set defaultsLoaded to true so UI can load.
             guard let doc = snapshot, doc.exists else {
                 print("No user doc found for \(userId). Skipping default habits.")
+                DispatchQueue.main.async {
+                    self.defaultsLoaded = true
+                }
                 return
             }
             let data = doc.data() ?? [:]
             let defaultsCreated = data["defaultHabitsCreated"] as? Bool ?? false
             if !defaultsCreated {
                 print("Creating default habits for user: \(userId).")
-                self.createDefaultHabits(for: userId)
-                userRef.updateData(["defaultHabitsCreated": true]) { updateErr in
-                    if let ue = updateErr {
-                        print("Error updating defaultHabitsCreated: \(ue)")
-                    } else {
-                        print("Default habits set for user: \(userId).")
+                self.createDefaultHabits(for: userId) {
+                    // Once defaults are created, update Firestore and set the flag.
+                    userRef.updateData(["defaultHabitsCreated": true]) { updateErr in
+                        if let ue = updateErr {
+                            print("Error updating defaultHabitsCreated: \(ue)")
+                        } else {
+                            print("Default habits set for user: \(userId).")
+                        }
+                        DispatchQueue.main.async {
+                            self.defaultsLoaded = true
+                        }
                     }
                 }
             } else {
                 print("Default habits already exist for \(userId). Doing nothing.")
+                DispatchQueue.main.async {
+                    self.defaultsLoaded = true
+                }
             }
         }
     }
+
     
-    private func createDefaultHabits(for userId: String) {
+    private func createDefaultHabits(for userId: String, completion: @escaping () -> Void) {
         let defaultHabits: [Habit] = [
             Habit(
                 title: "Daily Walk",
@@ -239,19 +258,29 @@ class HabitViewModel: ObservableObject {
                 dailyRecords: []
             )
         ]
+        
+        let group = DispatchGroup()
+        
         for habit in defaultHabits {
+            group.enter()
             addHabit(habit) { success in
                 if success {
                     print("Default habit '\(habit.title)' added successfully.")
                 } else {
                     print("Failed to add default habit '\(habit.title)'.")
                 }
+                group.leave()
             }
         }
-        DispatchQueue.main.async {
-            self.habits.append(contentsOf: defaultHabits)
+        
+        group.notify(queue: .main) {
+            // Instead of a fixed delay, repeatedly fetch until habits appear.
+            self.waitForHabitsToAppear(for: userId) {
+                completion()
+            }
         }
     }
+
     
     func dailyResetIfNeeded() {
         let today = Date()
@@ -376,6 +405,21 @@ class HabitViewModel: ObservableObject {
             }
         }
     }
+    
+    func waitForHabitsToAppear(for userId: String, attempt: Int = 0, maxAttempts: Int = 10, completion: @escaping () -> Void) {
+        // If habits are available or we've reached max attempts, call completion.
+        if !self.habits.isEmpty || attempt >= maxAttempts {
+            completion()
+        } else {
+            // Otherwise, re-fetch habits and try again after a short delay.
+            print("Attempt \(attempt): habits still empty, re-fetching...")
+            self.fetchHabits(for: userId)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.waitForHabitsToAppear(for: userId, attempt: attempt + 1, maxAttempts: maxAttempts, completion: completion)
+            }
+        }
+    }
+
 }
 
 extension HabitViewModel {
@@ -385,5 +429,17 @@ extension HabitViewModel {
         return habit.dailyRecords.contains { record in
             cal.isDate(record.date, inSameDayAs: day) && ((record.value ?? 0) > 0)
         }
+    }
+}
+
+extension HabitViewModel {
+    var isDataLoadedPublisher: AnyPublisher<Bool, Never> {
+        Publishers.CombineLatest($defaultsLoaded, $habits)
+            .map { defaultsLoaded, habits in
+                // True if default habits are loaded and we have at least one habit
+                return defaultsLoaded && !habits.isEmpty
+            }
+            .removeDuplicates() // Prevent redundant updates
+            .eraseToAnyPublisher()
     }
 }

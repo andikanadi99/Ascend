@@ -22,9 +22,17 @@ struct HabitTrackerView: View {
     @State private var showingAddHabit = false
     @State private var habitsFinishedToday: Int = 0
     @State private var cancellables = Set<AnyCancellable>()
+    @State private var habitToDelete: Habit?
+    @State private var showingDeleteAlert: Bool = false
     
     // New state variable for controlling the loading state.
     @State private var isLoaded: Bool = false
+    
+    // New state variable to trigger the dedicated edit order screen.
+    @State private var showEditOrder: Bool = false
+
+    // NEW: State variable to control the sort order.
+    @State private var sortAscending: Bool = true
 
     // Dark theme & accent
     let backgroundBlack = Color.black
@@ -41,7 +49,6 @@ struct HabitTrackerView: View {
                 
                 Group {
                     if isLoaded {
-                        // Main UI when habits are loaded
                         VStack(alignment: .leading, spacing: 16) {
                             Text(greetingMessage)
                                 .font(.title)
@@ -66,8 +73,6 @@ struct HabitTrackerView: View {
                                         let completedToday = habit.dailyRecords.contains { record in
                                             Calendar.current.isDate(record.date, inSameDayAs: Date()) && ((record.value ?? 0) > 0)
                                         }
-                                        let localStreak  = habit.currentStreak
-                                        let localLongest = habit.longestStreak
                                         
                                         NavigationLink(
                                             destination: HabitDetailView(habit: $viewModel.habits[index])
@@ -75,15 +80,17 @@ struct HabitTrackerView: View {
                                             HabitRow(
                                                 habit: habit,
                                                 completedToday: completedToday,
-                                                currentStreak: localStreak,
-                                                localLongestStreak: localLongest,
                                                 accentCyan: accentCyan,
                                                 onDelete: { deletedHabit in
-                                                    deleteHabit(deletedHabit)
+                                                    habitToDelete = deletedHabit
+                                                    showingDeleteAlert = true
                                                 },
                                                 onToggleCompletion: {
                                                     toggleHabitCompletion(habit)
-                                                }
+                                                },
+                                                // We don’t display per‑row reordering controls on the main screen.
+                                                onMoveUp: nil,
+                                                onMoveDown: nil
                                             )
                                         }
                                     }
@@ -139,7 +146,30 @@ struct HabitTrackerView: View {
                     .environmentObject(session)
                     .environmentObject(viewModel)
             }
-            .navigationBarHidden(true)
+            .sheet(isPresented: $showEditOrder) {
+                EditHabitsOrderView()
+                    .environmentObject(viewModel)
+            }
+            .alert(isPresented: $showingDeleteAlert) {
+                Alert(
+                    title: Text("Delete Habit"),
+                    message: Text("Are you sure you want to delete this habit?"),
+                    primaryButton: .destructive(Text("Delete")) {
+                        if let habit = habitToDelete {
+                            deleteHabit(habit)
+                        }
+                        habitToDelete = nil
+                    },
+                    secondaryButton: .cancel {
+                        habitToDelete = nil
+                    }
+                )
+            }
+            // The "Edit Order" button in the navigation bar.
+            .navigationBarItems(trailing: Button("Edit Order") {
+                showEditOrder = true
+            })
+            //.navigationBarHidden(true) // Uncomment if you wish to hide the navigation bar
             .onAppear {
                 guard let userId = session.current_user?.uid else {
                     print("No authenticated user found; cannot fetch habits.")
@@ -148,12 +178,11 @@ struct HabitTrackerView: View {
                 viewModel.fetchHabits(for: userId)
                 viewModel.setupDefaultHabitsIfNeeded(for: userId)
             }
-            // Timer publisher that fires every 0.5 seconds
+            // Timer publisher that fires every 0.5 seconds.
             .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
                 updateIsLoaded()
             }
         }
-        
     }
     
     // MARK: - Helpers
@@ -180,30 +209,50 @@ struct HabitTrackerView: View {
         viewModel.deleteHabit(habit)
     }
     
+    private func sortHabits() {
+        // Simple sorting by habit title alphabetically.
+        viewModel.habits.sort {
+            sortAscending
+                ? $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+                : $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedDescending
+        }
+        sortAscending.toggle()
+    }
+    
     private func updateIsLoaded() {
-        print("updateIsLoaded: defaultsLoaded=\(viewModel.defaultsLoaded), habits.count=\(viewModel.habits.count)")
         withAnimation {
             isLoaded = viewModel.defaultsLoaded && !viewModel.habits.isEmpty
         }
-        // If defaults are loaded but habits are still empty, force a refresh.
         if viewModel.defaultsLoaded && viewModel.habits.isEmpty, let userId = session.current_user?.uid {
-            print("Forcing refresh: defaults loaded but habits is empty")
             viewModel.fetchHabits(for: userId)
         }
     }
-
+    
+    private func moveHabitUp(_ habit: Habit) {
+        if let index = viewModel.habits.firstIndex(where: { $0.id == habit.id }), index > 0 {
+            viewModel.habits.swapAt(index, index - 1)
+            // Optionally persist the new order to Firestore.
+        }
+    }
+    
+    private func moveHabitDown(_ habit: Habit) {
+        if let index = viewModel.habits.firstIndex(where: { $0.id == habit.id }),
+           index < viewModel.habits.count - 1 {
+            viewModel.habits.swapAt(index, index + 1)
+            // Optionally persist the new order to Firestore.
+        }
+    }
 }
 
-
-// MARK: - HabitRow
 struct HabitRow: View {
     let habit: Habit
     let completedToday: Bool
-    let currentStreak: Int
-    let localLongestStreak: Int
     let accentCyan: Color
     let onDelete: (Habit) -> Void
     let onToggleCompletion: () -> Void
+    // New closures for moving the habit up or down.
+    let onMoveUp: (() -> Void)?
+    let onMoveDown: (() -> Void)?
 
     var body: some View {
         HStack {
@@ -211,34 +260,30 @@ struct HabitRow: View {
                 Text(habit.title)
                     .font(.headline)
                     .foregroundColor(.white)
-
                 Text(habit.goal)
                     .font(.subheadline)
                     .foregroundColor(.white.opacity(0.7))
                     .multilineTextAlignment(.leading)
-
-                HStack(spacing: 8) {
-                    Text("Current Streak: \(habit.currentStreak)")
-                        .font(.caption)
-                        .foregroundColor(habit.currentStreak > 0 ? .green : .white)
-
-                    Text("Longest Streak: \(habit.longestStreak)")
-                        .font(.caption)
-                        .foregroundColor(habit.longestStreak > 0 ? .green : .white)
-
-                    if habit.weeklyStreakBadge {
-                        StreakBadge(text: "7-Day", color: .green)
+            }
+            Spacer()
+            // Up/Down controls
+            VStack(spacing: 4) {
+                if let onMoveUp = onMoveUp {
+                    Button(action: onMoveUp) {
+                        Image(systemName: "arrow.up")
+                            .font(.caption)
+                            .foregroundColor(.white)
                     }
-                    if habit.monthlyStreakBadge {
-                        StreakBadge(text: "30-Day", color: .yellow)
-                    }
-                    if habit.yearlyStreakBadge {
-                        StreakBadge(text: "365-Day", color: .purple)
+                }
+                if let onMoveDown = onMoveDown {
+                    Button(action: onMoveDown) {
+                        Image(systemName: "arrow.down")
+                            .font(.caption)
+                            .foregroundColor(.white)
                     }
                 }
             }
-            Spacer()
-
+            // Toggle completion button.
             Button(action: onToggleCompletion) {
                 if completedToday {
                     Image(systemName: "checkmark.circle.fill")
@@ -257,13 +302,14 @@ struct HabitRow: View {
                 }
             }
             .buttonStyle(PlainButtonStyle())
-
+            // Delete button.
             Button {
                 onDelete(habit)
             } label: {
                 Image(systemName: "trash")
                     .foregroundColor(.red)
             }
+            .buttonStyle(BorderlessButtonStyle())
         }
         .padding()
         .background(
@@ -276,6 +322,8 @@ struct HabitRow: View {
         .cornerRadius(8)
     }
 }
+
+
 
 // MARK: - StreakBadge
 struct StreakBadge: View {

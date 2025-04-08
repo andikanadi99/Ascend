@@ -38,8 +38,34 @@ struct HabitTrackerView: View {
     let backgroundBlack = Color.black
     let accentCyan      = Color(red: 0, green: 1, blue: 1)
     
-    // Placeholder daily quote
-    let dailyQuote = "Focus on what matters today."
+    // Updated messages for Habit Tracker will now be computed.
+    private let greetings = [
+        "Welcome back! Let's build powerful habits today.",
+        "Welcome back! Every habit fuels progress.",
+        "Welcome back! Consistency drives success.",
+        "Welcome back! Small habits, big impact.",
+        "Welcome back! Every routine counts."
+    ]
+    
+    private let habitQuotes = [
+        "Stay consistent—habits shape your future.",
+        "Small daily actions lead to lasting outcomes.",
+        "Success is built on daily discipline.",
+        "Every small habit contributes to a bigger change.",
+        "Focus on progress, one habit at a time."
+    ]
+    
+    // Computed property to cycle through greetings based on the day of the year.
+    private var dailyGreeting: String {
+        let dayOfYear = Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 1
+        return greetings[(dayOfYear - 1) % greetings.count]
+    }
+    
+    // Computed property to cycle through habit quotes based on the day of the year.
+    private var dailyQuote: String {
+        let dayOfYear = Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 1
+        return habitQuotes[(dayOfYear - 1) % habitQuotes.count]
+    }
     
     var body: some View {
         NavigationView {
@@ -50,7 +76,8 @@ struct HabitTrackerView: View {
                 Group {
                     if isLoaded {
                         VStack(alignment: .leading, spacing: 16) {
-                            Text(greetingMessage)
+                            // Habit-Focused Greeting using computed properties.
+                            Text(dailyGreeting)
                                 .font(.title)
                                 .fontWeight(.heavy)
                                 .foregroundColor(.white)
@@ -71,7 +98,8 @@ struct HabitTrackerView: View {
                                     ForEach(viewModel.habits.indices, id: \.self) { index in
                                         let habit = viewModel.habits[index]
                                         let completedToday = habit.dailyRecords.contains { record in
-                                            Calendar.current.isDate(record.date, inSameDayAs: Date()) && ((record.value ?? 0) > 0)
+                                            Calendar.current.isDate(record.date, inSameDayAs: Date()) &&
+                                            ((record.value ?? 0) > 0)
                                         }
                                         
                                         NavigationLink(
@@ -169,7 +197,7 @@ struct HabitTrackerView: View {
             .navigationBarItems(trailing: Button("Edit Order") {
                 showEditOrder = true
             })
-            //.navigationBarHidden(true) // Uncomment if you wish to hide the navigation bar
+            //.navigationBarHidden(true)
             .onAppear {
                 guard let userId = session.current_user?.uid else {
                     print("No authenticated user found; cannot fetch habits.")
@@ -186,11 +214,6 @@ struct HabitTrackerView: View {
     }
     
     // MARK: - Helpers
-    
-    private var greetingMessage: String {
-        let userName = session.current_user?.email ?? "User"
-        return "Welcome back, let’s get started!"
-    }
     
     private func updateHabitsFinishedToday() {
         habitsFinishedToday = viewModel.habits.filter { habit in
@@ -210,7 +233,6 @@ struct HabitTrackerView: View {
     }
     
     private func sortHabits() {
-        // Simple sorting by habit title alphabetically.
         viewModel.habits.sort {
             sortAscending
                 ? $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
@@ -231,7 +253,6 @@ struct HabitTrackerView: View {
     private func moveHabitUp(_ habit: Habit) {
         if let index = viewModel.habits.firstIndex(where: { $0.id == habit.id }), index > 0 {
             viewModel.habits.swapAt(index, index - 1)
-            // Optionally persist the new order to Firestore.
         }
     }
     
@@ -239,7 +260,6 @@ struct HabitTrackerView: View {
         if let index = viewModel.habits.firstIndex(where: { $0.id == habit.id }),
            index < viewModel.habits.count - 1 {
             viewModel.habits.swapAt(index, index + 1)
-            // Optionally persist the new order to Firestore.
         }
     }
 }
@@ -323,9 +343,6 @@ struct HabitRow: View {
     }
 }
 
-
-
-// MARK: - StreakBadge
 struct StreakBadge: View {
     let text: String
     let color: Color

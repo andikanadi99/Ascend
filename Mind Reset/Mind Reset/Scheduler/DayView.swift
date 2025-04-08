@@ -38,11 +38,11 @@ struct DayView: View {
             }
         )
     }
+
     
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                // Today's Top Priority Section
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("Today's Top Priority")
@@ -66,22 +66,6 @@ struct DayView: View {
                 .padding()
                 .background(Color.gray.opacity(0.3))
                 .cornerRadius(8)
-                // Attach an alert to confirm deletion
-                .alert(item: $priorityToDelete) { priority in
-                    Alert(
-                        title: Text("Delete Priority"),
-                        message: Text("Are you sure you want to delete this priority?"),
-                        primaryButton: .destructive(Text("Delete")) {
-                            if var schedule = viewModel.schedule,
-                               let index = schedule.priorities.firstIndex(where: { $0.id == priority.id }) {
-                                schedule.priorities.remove(at: index)
-                                viewModel.schedule = schedule
-                                viewModel.updateDaySchedule()
-                            }
-                        },
-                        secondaryButton: .cancel()
-                    )
-                }
                 
                 // Date Navigation
                 HStack {
@@ -173,15 +157,7 @@ struct DayView: View {
                     .cornerRadius(8)
                 }
                 
-                // "Your Daily Intentions" header
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Your Daily Intentions")
-                        .font(.title2)
-                        .foregroundColor(.white)
-                    Text(dateString)
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.7))
-                }
+                // Removed the previous "Your Daily Intentions" header block so that only the banner appears.
                 
                 // Time Blocks
                 if viewModel.schedule != nil {

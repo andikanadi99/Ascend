@@ -12,26 +12,27 @@ import FirebaseFirestore
 
 @main
 struct Mind_ResetApp: App {
-    // MARK: - State Objects
     @StateObject var session = SessionStore()
     @StateObject var habitViewModel = HabitViewModel()
-    
+    @StateObject var dayViewState = DayViewState()
+    @StateObject var weekViewState = WeekViewState()
+    @StateObject var monthViewState = MonthViewState()  // <-- new
+
     let persistenceController = PersistenceController.shared
 
     init() {
-        // Configure Firebase
         FirebaseApp.configure()
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                // Inject your Core Data context
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
-                // Inject SessionStore
                 .environmentObject(session)
-                // Inject HabitViewModel
                 .environmentObject(habitViewModel)
+                .environmentObject(dayViewState)
+                .environmentObject(weekViewState)
+                .environmentObject(monthViewState) // <-- inject
         }
     }
 }

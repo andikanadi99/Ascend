@@ -8,20 +8,12 @@
 import SwiftUI
 import Combine
 
-// MARK: - Week View ("Your Weekly Blueprint")
+// MARK: - Main Weekly Blueprint View
 struct WeekView: View {
     let accentColor: Color
     @EnvironmentObject var session: SessionStore
+    @EnvironmentObject var weekViewState: WeekViewState // Shared week state
     @StateObject private var viewModel = WeekViewModel()
-    
-    // Week navigation state
-    @State private var currentWeekStart: Date = {
-        var calendar = Calendar.current
-        calendar.firstWeekday = 1 // Sunday
-        let now = Date()
-        let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
-        return calendar.date(from: components) ?? now
-    }()
     
     // For deletion confirmation for weekly priorities.
     @State private var weeklyPriorityToDelete: WeeklyPriority?
@@ -32,20 +24,17 @@ struct WeekView: View {
                 // Weekly Priorities Section
                 prioritiesSection
                 
-                // Week Navigation Header
-                WeekNavigationView(
-                    currentWeekStart: $currentWeekStart,
-                    accountCreationDate: session.userModel?.createdAt ?? Date()
-                )
-                .onChange(of: currentWeekStart) { newWeekStart in
-                    if let userId = session.userModel?.id {
-                        viewModel.loadWeeklySchedule(for: newWeekStart, userId: userId)
+                // Week Navigation Header using shared state
+                WeekNavigationView(currentWeekStart: $weekViewState.currentWeekStart, accountCreationDate: session.userModel?.createdAt ?? Date())
+                    .onChange(of: weekViewState.currentWeekStart) { newWeekStart in
+                        if let userId = session.userModel?.id {
+                            viewModel.loadWeeklySchedule(for: newWeekStart, userId: userId)
+                        }
                     }
-                }
                 
-                // Days of the Week
+                // Days of the Week Cards
                 VStack(spacing: 16) {
-                    ForEach(weekDays(for: currentWeekStart), id: \.self) { day in
+                    ForEach(weekDays(for: weekViewState.currentWeekStart), id: \.self) { day in
                         DayCardView(
                             day: day,
                             toDoItems: bindingForToDoItems(day: day),
@@ -60,13 +49,21 @@ struct WeekView: View {
             .padding()
         }
         .onAppear {
+            let now = Date()
+            let lastActive = UserDefaults.standard.object(forKey: "LastActiveTime") as? Date ?? now
+            if now.timeIntervalSince(lastActive) > 1800 {
+                // More than 30 minutes inactivity: reset week to the current week.
+                weekViewState.currentWeekStart = WeekViewState.startOfCurrentWeek(now)
+            }
+            UserDefaults.standard.set(now, forKey: "LastActiveTime")
+            
             if let userId = session.userModel?.id {
-                viewModel.loadWeeklySchedule(for: currentWeekStart, userId: userId)
+                viewModel.loadWeeklySchedule(for: weekViewState.currentWeekStart, userId: userId)
             }
         }
     }
     
-    // MARK: - Weekly Priorities Section (with delete confirmation)
+    // MARK: - Weekly Priorities Section
     private var prioritiesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -90,7 +87,6 @@ struct WeekView: View {
                         viewModel.schedule = temp
                     }
                 )
-                
                 ForEach(bindingPriorities) { $priority in
                     HStack {
                         TextEditor(text: $priority.title)
@@ -147,6 +143,7 @@ struct WeekView: View {
         viewModel.updateWeeklySchedule()
     }
     
+    // MARK: - Helper Bindings for To-Do Items & Intentions
     private func bindingForToDoItems(day: Date) -> Binding<[ToDoItem]> {
         Binding(
             get: {
@@ -205,6 +202,7 @@ struct WeekView: View {
     }
 }
 
+/////////////////////////////////////////////////////////////////
 // MARK: - Week Navigation View
 struct WeekNavigationView: View {
     @Binding var currentWeekStart: Date
@@ -249,7 +247,7 @@ struct WeekNavigationView: View {
         let weekEnd = calendar.date(byAdding: .day, value: 6, to: weekStart) ?? weekStart
         let formatter = DateFormatter()
         formatter.dateFormat = "M/d"
-        return "Week of \(formatter.string(from: weekStart))-\(formatter.string(from: weekEnd))"
+        return "Week of \(formatter.string(from: weekStart)) - \(formatter.string(from: weekEnd))"
     }
     
     private func canGoBack() -> Bool {
@@ -265,9 +263,8 @@ struct WeekNavigationView: View {
     }
 }
 
+/////////////////////////////////////////////////////////////////
 // MARK: - DayCardView & ToDoListView
-// Note: Moved into this file for convenience.
-// If you prefer separate files, you can isolate them as well.
 struct DayCardView: View {
     let day: Date
     @Binding var toDoItems: [ToDoItem]
@@ -337,33 +334,13 @@ struct ToDoListView: View {
                         Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
                             .foregroundColor(item.isCompleted ? .green : .white)
                     }
-                    HStack {
-                        ZStack(alignment: .topLeading) {
-                            TextEditor(text: $item.title)
-                                .padding(8)
-                                .frame(minHeight: 50)
-                                .background(Color.black)
-                                .foregroundColor(.white)
-                                .scrollContentBackground(.hidden)
-                                .cornerRadius(8)
-                                .overlay(
-                                    Group {
-                                        if item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                            Text("Enter task...")
-                                                .foregroundColor(.gray)
-                                                .padding(8)
-                                        }
-                                    },
-                                    alignment: .topLeading
-                                )
-                        }
-                        Button(action: {
-                            toDoItems.removeAll { $0.id == item.id }
-                        }) {
-                            Image(systemName: "trash")
-                                .foregroundColor(.red)
-                        }
-                    }
+                    TextEditor(text: $item.title)
+                        .padding(8)
+                        .frame(minHeight: 50)
+                        .background(Color.black)
+                        .foregroundColor(.white)
+                        .scrollContentBackground(.hidden)
+                        .cornerRadius(8)
                 }
             }
             Button(action: {

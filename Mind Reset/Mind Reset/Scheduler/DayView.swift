@@ -8,22 +8,19 @@
 import SwiftUI
 import Combine
 
-// MARK: - Day View ("Your Daily Intentions")
 struct DayView: View {
     @EnvironmentObject var session: SessionStore
     @StateObject private var viewModel = DayViewModel()
-    
-    // For date navigation
-    @State private var selectedDate: Date = Date()
+    @EnvironmentObject var dayViewState: DayViewState  // Using shared state for selectedDate
     
     // For deletion confirmation (for daily priorities)
     @State private var priorityToDelete: TodayPriority?
     
-    // Display: "Monday, March 24, 2025"
+    // Display the selected date (e.g., "Monday, March 24, 2025")
     private var dateString: String {
         let formatter = DateFormatter()
         formatter.dateStyle = .full
-        return formatter.string(from: selectedDate)
+        return formatter.string(from: dayViewState.selectedDate)
     }
     
     // A computed binding for the daily priorities (if the schedule is loaded)
@@ -38,11 +35,11 @@ struct DayView: View {
             }
         )
     }
-
     
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                // Top Priorities Section
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("Today's Top Priority")
@@ -50,7 +47,6 @@ struct DayView: View {
                             .foregroundColor(.accentColor)
                         Spacer()
                         Button(action: {
-                            // Add a new priority
                             guard var schedule = viewModel.schedule else { return }
                             let newPriority = TodayPriority(id: UUID(), title: "New Priority", progress: 0.0)
                             schedule.priorities.append(newPriority)
@@ -71,16 +67,16 @@ struct DayView: View {
                 HStack {
                     Button(action: {
                         if let accountCreationDate = session.userModel?.createdAt,
-                           let prevDay = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate),
+                           let prevDay = Calendar.current.date(byAdding: .day, value: -1, to: dayViewState.selectedDate),
                            prevDay >= accountCreationDate {
-                            selectedDate = prevDay
+                            dayViewState.selectedDate = prevDay
                             if let userId = session.userModel?.id {
                                 viewModel.loadDaySchedule(for: prevDay, userId: userId)
                             }
                         }
                     }) {
                         Image(systemName: "chevron.left")
-                            .foregroundColor(selectedDate > (session.userModel?.createdAt ?? Date()) ? .white : .gray)
+                            .foregroundColor(dayViewState.selectedDate > (session.userModel?.createdAt ?? Date()) ? .white : .gray)
                     }
                     
                     Spacer()
@@ -92,8 +88,8 @@ struct DayView: View {
                     Spacer()
                     
                     Button(action: {
-                        if let nextDay = Calendar.current.date(byAdding: .day, value: 1, to: selectedDate) {
-                            selectedDate = nextDay
+                        if let nextDay = Calendar.current.date(byAdding: .day, value: 1, to: dayViewState.selectedDate) {
+                            dayViewState.selectedDate = nextDay
                             if let userId = session.userModel?.id {
                                 viewModel.loadDaySchedule(for: nextDay, userId: userId)
                             }
@@ -107,7 +103,7 @@ struct DayView: View {
                 .background(Color.gray.opacity(0.3))
                 .cornerRadius(8)
                 
-                // Wake-up & Sleep Time pickers
+                // Wake-Up & Sleep Time Pickers
                 if let schedule = viewModel.schedule {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
@@ -129,9 +125,7 @@ struct DayView: View {
                                 .background(Color.black)
                                 .cornerRadius(4)
                             }
-                            
                             Spacer()
-                            
                             VStack(alignment: .leading) {
                                 Text("Sleep Time")
                                     .foregroundColor(.white)
@@ -156,8 +150,6 @@ struct DayView: View {
                     .background(Color.gray.opacity(0.3))
                     .cornerRadius(8)
                 }
-                
-                // Removed the previous "Your Daily Intentions" header block so that only the banner appears.
                 
                 // Time Blocks
                 if viewModel.schedule != nil {
@@ -208,14 +200,25 @@ struct DayView: View {
             .padding()
         }
         .onAppear {
+            // Check inactivity: compare LastActiveTime in UserDefaults to now.
+            let now = Date()
+            let lastActive = UserDefaults.standard.object(forKey: "LastActiveTime") as? Date ?? now
+            if now.timeIntervalSince(lastActive) > 1800 {
+                // More than 30 minutes passed; reset to today's date.
+                dayViewState.selectedDate = Date()
+            }
+            // Update LastActiveTime to now.
+            UserDefaults.standard.set(now, forKey: "LastActiveTime")
+            
+            // Only load the schedule if a user is available.
             if let userId = session.userModel?.id {
-                viewModel.loadDaySchedule(for: selectedDate, userId: userId)
+                viewModel.loadDaySchedule(for: dayViewState.selectedDate, userId: userId)
             }
         }
         .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
             if viewModel.schedule == nil, let userId = session.userModel?.id {
                 print("DayView: schedule is still nil, reloading...")
-                viewModel.loadDaySchedule(for: selectedDate, userId: userId)
+                viewModel.loadDaySchedule(for: dayViewState.selectedDate, userId: userId)
             }
         }
     }

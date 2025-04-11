@@ -13,13 +13,17 @@ struct MonthView: View {
     let accentColor: Color
     let accountCreationDate: Date
 
-    @State private var currentMonth: Date = Date()
+    // Replace local state with environment object
+    @EnvironmentObject var monthViewState: MonthViewState
+    
+    // If your app can handle user sessions:
+    @EnvironmentObject var session: SessionStore
+    @EnvironmentObject var habitVM: HabitViewModel
+    
     @State private var selectedDay: Date? = nil
     @State private var showDaySummary: Bool = false
 
     @StateObject private var viewModel = MonthViewModel()
-    @EnvironmentObject var session: SessionStore
-    @EnvironmentObject var habitVM: HabitViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -37,11 +41,15 @@ struct MonthView: View {
             Group {
                 if showDaySummary, let day = selectedDay {
                     VStack {
-                        DaySummaryView(day: day, habits: $habitVM.habits, onClose: {
-                            withAnimation {
-                                showDaySummary = false
+                        DaySummaryView(
+                            day: day,
+                            habits: $habitVM.habits,
+                            onClose: {
+                                withAnimation {
+                                    showDaySummary = false
+                                }
                             }
-                        })
+                        )
                         .cornerRadius(12)
                     }
                     .frame(maxWidth: 300)
@@ -53,8 +61,19 @@ struct MonthView: View {
             }
         )
         .onAppear {
+            // Check inactivity: compare LastActiveTime in UserDefaults to now.
+            let now = Date()
+            let lastActive = UserDefaults.standard.object(forKey: "LastActiveTime") as? Date ?? now
+            if now.timeIntervalSince(lastActive) > 1800 {
+                // More than 30 minutes => reset to current month
+                monthViewState.currentMonth = MonthViewState.startOfMonth(for: Date())
+            }
+            // Update LastActiveTime
+            UserDefaults.standard.set(now, forKey: "LastActiveTime")
+            
+            // Attempt loading the schedule for the shared month
             if let userId = session.userModel?.id {
-                viewModel.loadMonthSchedule(for: currentMonth, userId: userId)
+                viewModel.loadMonthSchedule(for: monthViewState.currentMonth, userId: userId)
                 habitVM.fetchHabits(for: userId)
             }
         }
@@ -122,16 +141,18 @@ struct MonthView: View {
     // MARK: - Calendar Section
     private var calendarSection: some View {
         CalendarView(
-            currentMonth: $currentMonth,
+            currentMonth: $monthViewState.currentMonth, // <-- use shared state
             accountCreationDate: accountCreationDate,
             onDaySelected: { day in
+                // open day summary
                 if day <= Date() {
                     selectedDay = day
                     showDaySummary = true
                 }
             }
         )
-        .onChange(of: currentMonth) { newMonth in
+        .onChange(of: monthViewState.currentMonth) { newMonth in
+            // load monthly schedule whenever the user changes the month
             if let userId = session.userModel?.id {
                 viewModel.loadMonthSchedule(for: newMonth, userId: userId)
             }
@@ -146,6 +167,7 @@ struct MonthView: View {
         viewModel.updateMonthSchedule()
     }
 }
+
 
 // MARK: - Calendar View
 struct CalendarView: View {

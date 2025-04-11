@@ -62,10 +62,12 @@ class SessionStore: ObservableObject {
                 return
             }
             
+            // If no document exists, only set an error if the user is still logged in.
             guard let document = document, document.exists else {
                 print("User document does not exist.")
                 DispatchQueue.main.async {
-                    self?.auth_error = "User data not found."
+                    // Only set the error if there is a currently authenticated user.
+                    self?.auth_error = Auth.auth().currentUser != nil ? "User data not found." : nil
                 }
                 return
             }
@@ -83,6 +85,7 @@ class SessionStore: ObservableObject {
             }
         }
     }
+
     
     // MARK: - Create Account
     /// Creates a new account with email and password in Firebase Auth.

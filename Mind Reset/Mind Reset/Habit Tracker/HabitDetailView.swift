@@ -42,6 +42,7 @@ struct HabitDetailView: View {
     // Countdown pickers
     @State private var selectedHours: Int = 0
     @State private var selectedMinutes: Int = 0
+    @State private var selectedSeconds: Int = 0
 
     // MARK: - Notes
     @State private var sessionNotes: String = ""
@@ -781,63 +782,121 @@ extension HabitDetailView {
         }
     }
     
+    // Custom circular button style.
+    struct CircularButtonStyle: ButtonStyle {
+        let backgroundColor: Color
+        let foregroundColor: Color
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .font(.headline)
+                .foregroundColor(foregroundColor)
+                .frame(width: 90, height: 90)
+                .background(backgroundColor)
+                .clipShape(Circle())
+                .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+                .animation(.easeInOut, value: configuration.isPressed)
+        }
+    }
+
     private var focusTab: some View {
         VStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .stroke(accentCyan.opacity(0.2), lineWidth: 10)
-                    .frame(width: 180, height: 180)
-                    .shadow(color: accentCyan.opacity(0.4), radius: 5)
-                Text(formatTime(countdownSeconds))
-                    .font(.largeTitle)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
+            // Show the circular clock only if the timer is running or paused.
+            if isTimerRunning || isTimerPaused {
+                ZStack {
+                    Circle()
+                        .stroke(accentCyan.opacity(0.2), lineWidth: 10)
+                        .frame(width: 180, height: 220) // Slightly taller clock
+                        .shadow(color: accentCyan.opacity(0.4), radius: 5)
+                    Text(formatTime(countdownSeconds))
+                        .font(.largeTitle)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                }
             }
+            
+            // When the timer is not running and not paused, display the segmented wheel pickers for hours, minutes, and seconds.
             if !isTimerRunning && !isTimerPaused {
                 HStack(spacing: 20) {
-                    timePickerBlock(label: "HRS", range: 0..<24, selection: $selectedHours)
-                    timePickerBlock(label: "MIN", range: 0..<60, selection: $selectedMinutes)
+                    // HOURS Picker
+                    VStack(spacing: 4) {
+                        Picker("", selection: $selectedHours) {
+                            ForEach(0..<24, id: \.self) { hour in
+                                Text("\(hour) h")
+                                    .font(.title3.monospacedDigit())
+                                    .foregroundColor(.white)
+                                    .tag(hour)
+                            }
+                        }
+                        .pickerStyle(WheelPickerStyle())
+                        .frame(width: 70, height: 130)
+                        .clipped()
+                    }
+                    
+                    // MINUTES Picker
+                    VStack(spacing: 4) {
+                        Picker("", selection: $selectedMinutes) {
+                            ForEach(0..<60, id: \.self) { minute in
+                                Text("\(minute) m")
+                                    .font(.title3.monospacedDigit())
+                                    .foregroundColor(.white)
+                                    .tag(minute)
+                            }
+                        }
+                        .pickerStyle(WheelPickerStyle())
+                        .frame(width: 70, height: 130)
+                        .clipped()
+                    }
+                    
+                    // SECONDS Picker
+                    VStack(spacing: 4) {
+                        Picker("", selection: $selectedSeconds) {
+                            ForEach(0..<60, id: \.self) { second in
+                                Text("\(second) s")
+                                    .font(.title3.monospacedDigit())
+                                    .foregroundColor(.white)
+                                    .tag(second)
+                            }
+                        }
+                        .pickerStyle(WheelPickerStyle())
+                        .frame(width: 70, height: 130)
+                        .clipped()
+                    }
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 4)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
                         .fill(Color.black.opacity(0.2))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(accentCyan.opacity(0.4), lineWidth: 1)
-                        )
                         .shadow(color: accentCyan.opacity(0.3), radius: 5)
                 )
             }
+            
+            // Timer control buttons.
             HStack(spacing: 20) {
                 if !isTimerRunning && !isTimerPaused {
                     Button("Start") {
                         if countdownSeconds == 0 {
-                            countdownSeconds = selectedHours * 3600 + selectedMinutes * 60
+                            countdownSeconds = selectedHours * 3600 + selectedMinutes * 60 + selectedSeconds
                         }
                         startTimer()
                     }
-                    .buttonStyle(HolographicButtonStyle())
+                    .buttonStyle(CircularButtonStyle(backgroundColor: accentCyan, foregroundColor: .black))
                 } else if isTimerRunning && !isTimerPaused {
                     Button("Pause") { pauseTimer() }
-                        .buttonStyle(HolographicButtonStyle())
+                        .buttonStyle(CircularButtonStyle(backgroundColor: accentCyan, foregroundColor: .black))
                     Button("Reset") { resetTimer() }
-                        .buttonStyle(HolographicButtonStyle())
+                        .buttonStyle(CircularButtonStyle(backgroundColor: accentCyan, foregroundColor: .black))
                 } else if isTimerPaused {
                     Button("Resume") { startTimer() }
-                        .buttonStyle(HolographicButtonStyle())
+                        .buttonStyle(CircularButtonStyle(backgroundColor: accentCyan, foregroundColor: .black))
                     Button("Reset") { resetTimer() }
-                        .buttonStyle(HolographicButtonStyle())
+                        .buttonStyle(CircularButtonStyle(backgroundColor: accentCyan, foregroundColor: .black))
                 }
             }
-            HStack {
-                Text("Focused: \(formatTime(totalFocusTime))")
-                    .foregroundColor(.white)
-            }
+            
         }
     }
-    
+
     private func timePickerBlock(label: String, range: Range<Int>, selection: Binding<Int>) -> some View {
         VStack(spacing: 4) {
             Text(label)
@@ -1234,6 +1293,7 @@ extension HabitDetailView {
         isTimerPaused = false
         selectedHours = 0
         selectedMinutes = 0
+        selectedSeconds = 0
     }
     
     private func formatTime(_ seconds: Int) -> String {

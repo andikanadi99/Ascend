@@ -24,6 +24,8 @@ struct MonthView: View {
     @State private var showDaySummary: Bool = false
 
     @StateObject private var viewModel = MonthViewModel()
+    
+    @State private var isRemoveMode: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -87,13 +89,9 @@ struct MonthView: View {
                     .font(.headline)
                     .foregroundColor(accentColor)
                 Spacer()
-                Button(action: {
-                    addNewMonthlyPriority()
-                }) {
-                    Image(systemName: "plus.circle")
-                        .foregroundColor(accentColor)
-                }
             }
+            
+            // List of priorities
             if let schedule = viewModel.schedule {
                 let bindingPriorities = Binding<[MonthlyPriority]>(
                     get: { schedule.monthlyPriorities },
@@ -117,9 +115,14 @@ struct MonthView: View {
                             .onChange(of: priority.title) { _ in
                                 viewModel.updateMonthSchedule()
                             }
-                        if bindingPriorities.wrappedValue.count > 1 {
+                        // Only show the delete button if removal mode is active and there is more than one priority.
+                        if isRemoveMode && bindingPriorities.wrappedValue.count > 1 {
                             Button(action: {
                                 bindingPriorities.wrappedValue.removeAll { $0.id == priority.id }
+                                // If only one priority remains, exit removal mode.
+                                if bindingPriorities.wrappedValue.count <= 1 {
+                                    isRemoveMode = false
+                                }
                                 viewModel.updateMonthSchedule()
                             }) {
                                 Image(systemName: "minus.circle")
@@ -132,6 +135,46 @@ struct MonthView: View {
                 Text("Loading monthly priorities...")
                     .foregroundColor(.white)
             }
+            
+            // Buttons Row below the priorities list
+            HStack {
+                Button(action: {
+                    guard var schedule = viewModel.schedule else { return }
+                    let newPriority = MonthlyPriority(id: UUID(), title: "New Priority", progress: 0.0)
+                    schedule.monthlyPriorities.append(newPriority)
+                    viewModel.schedule = schedule
+                    viewModel.updateMonthSchedule()
+                    // Always reset removal mode when a new priority is added.
+                    isRemoveMode = false
+                }) {
+                    Text("Add Priority")
+                        .font(.headline)
+                        .foregroundColor(.accentColor)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 16)
+                        .background(Color.black)
+                        .cornerRadius(8)
+                }
+                
+                Spacer()
+                
+                // Only show the remove toggle button if there is more than one priority.
+                if let schedule = viewModel.schedule, schedule.monthlyPriorities.count > 1 {
+                    Button(action: {
+                        // Toggle removal mode
+                        isRemoveMode.toggle()
+                    }) {
+                        Text(isRemoveMode ? "Done" : "Remove Priority")
+                            .font(.headline)
+                            .foregroundColor(.red)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 16)
+                            .background(Color.black)
+                            .cornerRadius(8)
+                    }
+                }
+            }
+            .padding(.top, 8)
         }
         .padding()
         .background(Color.gray.opacity(0.3))

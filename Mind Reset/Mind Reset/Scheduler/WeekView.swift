@@ -17,6 +17,7 @@ struct WeekView: View {
     
     // For deletion confirmation for weekly priorities.
     @State private var weeklyPriorityToDelete: WeeklyPriority?
+    @State private var isRemoveMode: Bool = false
     
     var body: some View {
         ScrollView {
@@ -62,7 +63,7 @@ struct WeekView: View {
             }
         }
     }
-    
+
     // MARK: - Weekly Priorities Section
     private var prioritiesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -71,12 +72,7 @@ struct WeekView: View {
                     .font(.headline)
                     .foregroundColor(accentColor)
                 Spacer()
-                Button(action: {
-                    addNewPriority()
-                }) {
-                    Image(systemName: "plus.circle")
-                        .foregroundColor(accentColor)
-                }
+
             }
             if let schedule = viewModel.schedule {
                 let bindingPriorities = Binding<[WeeklyPriority]>(
@@ -87,7 +83,7 @@ struct WeekView: View {
                         viewModel.schedule = temp
                     }
                 )
-                ForEach(bindingPriorities) { $priority in
+                ForEach(bindingPriorities, id: \.id) { $priority in
                     HStack {
                         TextEditor(text: $priority.title)
                             .padding(8)
@@ -100,7 +96,8 @@ struct WeekView: View {
                             .onChange(of: priority.title) { _ in
                                 viewModel.updateWeeklySchedule()
                             }
-                        if bindingPriorities.wrappedValue.count > 1 {
+                        // Show the delete (minus) button only if there is more than one priority and removal mode is active.
+                        if bindingPriorities.wrappedValue.count > 1, isRemoveMode {
                             Button(action: {
                                 weeklyPriorityToDelete = priority
                             }) {
@@ -125,6 +122,38 @@ struct WeekView: View {
                         secondaryButton: .cancel()
                     )
                 }
+                // Buttons row below the list.
+                HStack {
+                    Button(action: {
+                        addNewPriority()
+                        // Reset removal mode when adding.
+                        isRemoveMode = false
+                    }) {
+                        Text("Add Priority")
+                            .font(.headline)
+                            .foregroundColor(.accentColor)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 16)
+                            .background(Color.black)
+                            .cornerRadius(8)
+                    }
+                    Spacer()
+                    if bindingPriorities.wrappedValue.count > 1 {
+                        Button(action: {
+                            // Toggle removal mode.
+                            isRemoveMode.toggle()
+                        }) {
+                            Text(isRemoveMode ? "Done" : "Remove Priority")
+                                .font(.headline)
+                                .foregroundColor(.red)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 16)
+                                .background(Color.black)
+                                .cornerRadius(8)
+                        }
+                    }
+                }
+                .padding(.top, 8)
             } else {
                 Text("Loading weekly priorities...")
                     .foregroundColor(.white)
@@ -134,6 +163,10 @@ struct WeekView: View {
         .background(Color.gray.opacity(0.3))
         .cornerRadius(8)
     }
+
+
+
+
     
     private func addNewPriority() {
         guard var schedule = viewModel.schedule else { return }

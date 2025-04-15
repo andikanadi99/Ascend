@@ -11,11 +11,14 @@ import Combine
 struct DayView: View {
     @EnvironmentObject var session: SessionStore
     @StateObject private var viewModel = DayViewModel()
-    @EnvironmentObject var dayViewState: DayViewState  // Using shared state for selectedDate
-    
+    @EnvironmentObject var dayViewState: DayViewState  // Shared state for selectedDate
+
     // For deletion confirmation (for daily priorities)
     @State private var priorityToDelete: TodayPriority?
     
+    // New state variable to control removal mode.
+    @State private var isRemoveMode: Bool = false
+
     // Display the selected date (e.g., "Monday, March 24, 2025")
     private var dateString: String {
         let formatter = DateFormatter()
@@ -46,18 +49,50 @@ struct DayView: View {
                             .font(.headline)
                             .foregroundColor(.accentColor)
                         Spacer()
+                    }
+                    // Our custom list that conditionally shows delete icons.
+                    prioritiesList()
+                    
+                    // Buttons Row below the priorities list
+                    HStack {
                         Button(action: {
+                            // Add a new priority.
                             guard var schedule = viewModel.schedule else { return }
                             let newPriority = TodayPriority(id: UUID(), title: "New Priority", progress: 0.0)
                             schedule.priorities.append(newPriority)
                             viewModel.schedule = schedule
                             viewModel.updateDaySchedule()
+                            // Optionally reset remove mode when adding.
+                            isRemoveMode = false
                         }) {
-                            Image(systemName: "plus.circle")
+                            Text("Add Priority")
+                                .font(.headline)
                                 .foregroundColor(.accentColor)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 16)
+                                .background(Color.black)
+                                .cornerRadius(8)
+                        }
+                        
+                        Spacer()
+                        
+                        // Only show the remove button if there is more than one priority.
+                        if let binding = prioritiesBinding, binding.wrappedValue.count > 1 {
+                            Button(action: {
+                                // Toggle removal mode.
+                                isRemoveMode.toggle()
+                            }) {
+                                Text(isRemoveMode ? "Done" : "Remove Priority")
+                                    .font(.headline)
+                                    .foregroundColor(.red)
+                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, 16)
+                                    .background(Color.black)
+                                    .cornerRadius(8)
+                            }
                         }
                     }
-                    prioritiesList()
+                    .padding(.top, 8)
                 }
                 .padding()
                 .background(Color.gray.opacity(0.3))
@@ -125,7 +160,9 @@ struct DayView: View {
                                 .background(Color.black)
                                 .cornerRadius(4)
                             }
+                            
                             Spacer()
+                            
                             VStack(alignment: .leading) {
                                 Text("Sleep Time")
                                     .foregroundColor(.white)
@@ -200,17 +237,14 @@ struct DayView: View {
             .padding()
         }
         .onAppear {
-            // Check inactivity: compare LastActiveTime in UserDefaults to now.
+            // Inactivity check: reset the selected date to today if over 30 minutes inactive.
             let now = Date()
             let lastActive = UserDefaults.standard.object(forKey: "LastActiveTime") as? Date ?? now
             if now.timeIntervalSince(lastActive) > 1800 {
-                // More than 30 minutes passed; reset to today's date.
                 dayViewState.selectedDate = Date()
             }
-            // Update LastActiveTime to now.
             UserDefaults.standard.set(now, forKey: "LastActiveTime")
             
-            // Only load the schedule if a user is available.
             if let userId = session.userModel?.id {
                 viewModel.loadDaySchedule(for: dayViewState.selectedDate, userId: userId)
             }
@@ -220,6 +254,27 @@ struct DayView: View {
                 print("DayView: schedule is still nil, reloading...")
                 viewModel.loadDaySchedule(for: dayViewState.selectedDate, userId: userId)
             }
+        }
+        // Alert for deletion confirmation.
+        .alert(item: $priorityToDelete) { priority in
+            Alert(
+                title: Text("Delete Priority"),
+                message: Text("Are you sure you want to delete this priority?"),
+                primaryButton: .destructive(Text("Delete")) {
+                    if var schedule = viewModel.schedule,
+                       let index = schedule.priorities.firstIndex(where: { $0.id == priority.id }) {
+                        schedule.priorities.remove(at: index)
+                        viewModel.schedule = schedule
+                        viewModel.updateDaySchedule()
+                        
+                        // If we've dropped down to 1 priority, revert isRemoveMode to false.
+                        if schedule.priorities.count == 1 {
+                            isRemoveMode = false
+                        }
+                    }
+                },
+                secondaryButton: .cancel()
+            )
         }
     }
     
@@ -239,7 +294,8 @@ struct DayView: View {
                             .onChange(of: $priority.title.wrappedValue) { _ in
                                 viewModel.updateDaySchedule()
                             }
-                        if binding.wrappedValue.count > 1 {
+                        // Only show the delete icon if removal mode is active and more than one priority exists.
+                        if isRemoveMode && binding.wrappedValue.count > 1 {
                             Button(action: {
                                 priorityToDelete = $priority.wrappedValue
                             }) {

@@ -7,6 +7,8 @@
 
 import SwiftUI
 import Combine
+import Firebase
+import FirebaseFirestore
 
 // MARK: - Main Weekly Blueprint View
 struct WeekView: View {
@@ -19,19 +21,53 @@ struct WeekView: View {
     @State private var weeklyPriorityToDelete: WeeklyPriority?
     @State private var isRemoveMode: Bool = false
     
+    // New state variable for prompting to copy from the previous week.
+    @State private var showWeekCopyAlert: Bool = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                // Copy Button with Confirmation Alert
+                HStack {
+                    Spacer()
+                    Button(action: {
+                        // Show the copy confirmation alert.
+                        showWeekCopyAlert = true
+                    }) {
+                        Text("Copy from Previous Week")
+                            .font(.headline)
+                            .foregroundColor(.accentColor)
+                            .padding(.horizontal, 16)
+                            .background(Color.black)
+                            .cornerRadius(8)
+                    }
+                    Spacer()
+                }
+                // Attach the alert to the HStack
+                .alert(isPresented: $showWeekCopyAlert) {
+                    Alert(
+                        title: Text("Confirm Copy"),
+                        message: Text("Are you sure you want to copy the previous week's schedule?"),
+                        primaryButton: .destructive(Text("Copy")) {
+                            copyFromPreviousWeek()
+                        },
+                        secondaryButton: .cancel()
+                    )
+                }
+                
                 // Weekly Priorities Section
                 prioritiesSection
                 
                 // Week Navigation Header using shared state
-                WeekNavigationView(currentWeekStart: $weekViewState.currentWeekStart, accountCreationDate: session.userModel?.createdAt ?? Date())
-                    .onChange(of: weekViewState.currentWeekStart) { newWeekStart in
-                        if let userId = session.userModel?.id {
-                            viewModel.loadWeeklySchedule(for: newWeekStart, userId: userId)
-                        }
+                WeekNavigationView(
+                    currentWeekStart: $weekViewState.currentWeekStart,
+                    accountCreationDate: session.userModel?.createdAt ?? Date()
+                )
+                .onChange(of: weekViewState.currentWeekStart) { newWeekStart in
+                    if let userId = session.userModel?.id {
+                        viewModel.loadWeeklySchedule(for: newWeekStart, userId: userId)
                     }
+                }
                 
                 // Days of the Week Cards
                 VStack(spacing: 16) {
@@ -48,6 +84,7 @@ struct WeekView: View {
                 Spacer()
             }
             .padding()
+            .padding(.top, -20)
         }
         .onAppear {
             let now = Date()
@@ -63,7 +100,7 @@ struct WeekView: View {
             }
         }
     }
-
+    
     // MARK: - Weekly Priorities Section
     private var prioritiesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -72,7 +109,12 @@ struct WeekView: View {
                     .font(.headline)
                     .foregroundColor(accentColor)
                 Spacer()
-
+                Button(action: {
+                    addNewPriority()
+                }) {
+                    Image(systemName: "plus.circle")
+                        .foregroundColor(accentColor)
+                }
             }
             if let schedule = viewModel.schedule {
                 let bindingPriorities = Binding<[WeeklyPriority]>(
@@ -163,10 +205,6 @@ struct WeekView: View {
         .background(Color.gray.opacity(0.3))
         .cornerRadius(8)
     }
-
-
-
-
     
     private func addNewPriority() {
         guard var schedule = viewModel.schedule else { return }
@@ -233,9 +271,58 @@ struct WeekView: View {
         formatter.dateFormat = "E"
         return formatter.string(from: date)
     }
+    
+    // MARK: - Copy Feature: Copy from Previous Week
+    private func copyFromPreviousWeek() {
+        // Calculate the previous week's start date.
+        let calendar = Calendar.current
+        guard let previousWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: weekViewState.currentWeekStart) else { return }
+        
+        // Load the previous week's schedule from Firestore.
+        dbLoadPreviousWeekSchedule(previousWeekStart: previousWeekStart) { previousSchedule in
+            guard let previousSchedule = previousSchedule, var currentSchedule = viewModel.schedule else { return }
+            // Copy priorities, daily intentions, and to‑do lists.
+            currentSchedule.weeklyPriorities = previousSchedule.weeklyPriorities
+            currentSchedule.dailyIntentions = previousSchedule.dailyIntentions
+            currentSchedule.dailyToDoLists = previousSchedule.dailyToDoLists
+            viewModel.schedule = currentSchedule
+            viewModel.updateWeeklySchedule()
+        }
+    }
+    
+    // This helper function loads the previous week's schedule.
+    private func dbLoadPreviousWeekSchedule(previousWeekStart: Date, completion: @escaping (WeeklySchedule?) -> Void) {
+        guard let userId = session.userModel?.id else { completion(nil); return }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let docId = formatter.string(from: previousWeekStart)
+        let db = Firestore.firestore()
+        db.collection("users")
+            .document(userId)
+            .collection("weekSchedules")
+            .document(docId)
+            .getDocument { snapshot, error in
+                if let error = error {
+                    print("Error copying previous week: \(error)")
+                    completion(nil)
+                    return
+                }
+                if let snapshot = snapshot, snapshot.exists {
+                    do {
+                        let previousSchedule = try snapshot.data(as: WeeklySchedule.self)
+                        completion(previousSchedule)
+                    } catch {
+                        print("Error decoding previous schedule: \(error)")
+                        completion(nil)
+                    }
+                } else {
+                    print("No previous week schedule found.")
+                    completion(nil)
+                }
+            }
+    }
 }
 
-/////////////////////////////////////////////////////////////////
 // MARK: - Week Navigation View
 struct WeekNavigationView: View {
     @Binding var currentWeekStart: Date
@@ -357,8 +444,15 @@ struct DayCardView: View {
 struct ToDoListView: View {
     @Binding var toDoItems: [ToDoItem]
     
+    // New state variable to hold the task that is about to be deleted.
+    @State private var taskToDelete: ToDoItem?
+
+    // New state variable to track removal mode.
+    @State private var isRemoveMode: Bool = false
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
+            // Display each task
             ForEach($toDoItems) { $item in
                 HStack {
                     Button(action: {
@@ -374,21 +468,75 @@ struct ToDoListView: View {
                         .foregroundColor(.white)
                         .scrollContentBackground(.hidden)
                         .cornerRadius(8)
+                    
+                    // Show the delete button when removal mode is active and there's more than one task.
+                    if isRemoveMode && toDoItems.count > 1 {
+                        Button(action: {
+                            // Instead of directly deleting, assign the task to the deletion variable.
+                            taskToDelete = item
+                        }) {
+                            Image(systemName: "minus.circle")
+                                .foregroundColor(.red)
+                        }
+                    }
                 }
             }
-            Button(action: {
-                toDoItems.append(ToDoItem(id: UUID(), title: "", isCompleted: false))
-            }) {
-                HStack {
-                    Image(systemName: "plus.circle")
-                    Text("Add Task")
+            // Row with add and remove toggle buttons.
+            HStack {
+                Button(action: {
+                    // Add a new task and reset removal mode.
+                    toDoItems.append(ToDoItem(id: UUID(), title: "", isCompleted: false))
+                    isRemoveMode = false
+                }) {
+                    HStack {
+                        Image(systemName: "plus.circle")
+                        Text("Add Task")
+                    }
+                    .foregroundColor(.accentColor)
+                    .font(.headline)
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 16)
+                    .background(Color.black)
+                    .cornerRadius(8)
                 }
-                .foregroundColor(.accentColor)
+                Spacer()
+                if toDoItems.count > 1 {
+                    Button(action: {
+                        isRemoveMode.toggle()
+                    }) {
+                        Text(isRemoveMode ? "Done" : "Remove Task")
+                            .font(.headline)
+                            .foregroundColor(.red)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 8)
+                            .background(Color.black)
+                            .cornerRadius(8)
+                    }
+                }
             }
             .padding(.top, 4)
         }
         .padding()
         .background(Color.black.opacity(0.2))
         .cornerRadius(8)
+        // Present an alert when taskToDelete is set.
+        .alert(item: $taskToDelete) { task in
+            Alert(
+                title: Text("Delete Task"),
+                message: Text("Are you sure you want to delete this task?"),
+                primaryButton: .destructive(Text("Delete")) {
+                    if let index = toDoItems.firstIndex(where: { $0.id == task.id }) {
+                        toDoItems.remove(at: index)
+                    }
+                    // Optionally exit removal mode if only one task remains.
+                    if toDoItems.count <= 1 {
+                        isRemoveMode = false
+                    }
+                },
+                secondaryButton: .cancel()
+            )
+        }
     }
 }
+
+

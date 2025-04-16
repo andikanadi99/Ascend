@@ -148,4 +148,71 @@ class DayViewModel: ObservableObject {
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
     }
+    
+    func copyPreviousDaySchedule(to targetDate: Date, userId: String, completion: @escaping (Bool) -> Void) {
+        let calendar = Calendar.current
+        let sourceDate = calendar.date(byAdding: .day, value: -1, to: targetDate) ?? targetDate
+        let sourceDocId = isoDayString(from: calendar.startOfDay(for: sourceDate))
+        let targetDocId = isoDayString(from: calendar.startOfDay(for: targetDate))
+        
+        let sourceRef = db.collection("users").document(userId).collection("daySchedules").document(sourceDocId)
+        let targetRef = db.collection("users").document(userId).collection("daySchedules").document(targetDocId)
+        
+        // Fetch the source schedule.
+        sourceRef.getDocument { [weak self] snapshot, error in
+            if let error = error {
+                print("Error fetching source schedule: \(error)")
+                completion(false)
+                return
+            }
+            guard let snapshot = snapshot, snapshot.exists,
+                  let sourceSchedule = try? snapshot.data(as: DaySchedule.self) else {
+                print("Source schedule not found.")
+                completion(false)
+                return
+            }
+            
+            // Now fetch (or create) the target schedule.
+            targetRef.getDocument { snapshot, error in
+                var targetSchedule: DaySchedule
+                let baseDate = calendar.startOfDay(for: targetDate)
+                if let snapshot = snapshot, snapshot.exists,
+                   let existingSchedule = try? snapshot.data(as: DaySchedule.self) {
+                    targetSchedule = existingSchedule
+                } else {
+                    // Create a default schedule if there is no document.
+                    targetSchedule = DaySchedule(
+                        id: targetDocId,
+                        userId: userId,
+                        date: baseDate,
+                        wakeUpTime: sourceSchedule.wakeUpTime,  // default values will be overwritten below
+                        sleepTime: sourceSchedule.sleepTime,
+                        priorities: [],
+                        timeBlocks: []
+                    )
+                }
+                
+                // Copy the fields from the source schedule into the target schedule.
+                targetSchedule.priorities = sourceSchedule.priorities
+                targetSchedule.wakeUpTime = sourceSchedule.wakeUpTime
+                targetSchedule.sleepTime = sourceSchedule.sleepTime
+                targetSchedule.timeBlocks = sourceSchedule.timeBlocks
+                
+                // Save the updated target schedule to Firestore.
+                do {
+                    try targetRef.setData(from: targetSchedule)
+                    DispatchQueue.main.async {
+                        self?.schedule = targetSchedule
+                    }
+                    completion(true)
+                } catch {
+                    print("Error saving target schedule: \(error)")
+                    completion(false)
+                }
+            }
+        }
+    }
+
+
+
 }

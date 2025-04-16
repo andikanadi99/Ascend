@@ -7,6 +7,8 @@
 
 import SwiftUI
 import Combine
+import Firebase
+import FirebaseFirestore
 
 // MARK: - Month View ("Your Mindful Month")
 struct MonthView: View {
@@ -26,62 +28,92 @@ struct MonthView: View {
     @StateObject private var viewModel = MonthViewModel()
     
     @State private var isRemoveMode: Bool = false
+    // New state variable to control the prompt for copying from the previous month.
+    @State private var showMonthCopyAlert: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Monthly Priorities Section
-            prioritiesSection
-            
-            // Calendar Section
-            calendarSection
-                .frame(height: 300)
-            
-            Spacer()
-        }
-        .padding()
-        .overlay(
-            Group {
-                if showDaySummary, let day = selectedDay {
-                    VStack {
-                        DaySummaryView(
-                            day: day,
-                            habits: $habitVM.habits,
-                            onClose: {
-                                withAnimation {
-                                    showDaySummary = false
-                                }
-                            }
-                        )
-                        .cornerRadius(12)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // Copy Button Row
+                HStack {
+                    Spacer()
+                    Button(action: {
+                        // Show the alert confirmation.
+                        showMonthCopyAlert = true
+                    }) {
+                        Text("Copy from Previous Month")
+                            .font(.headline)
+                            .foregroundColor(.accentColor)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 16)
+                            .background(Color.black)
+                            .cornerRadius(8)
                     }
-                    .frame(maxWidth: 300)
-                    .padding()
-                    .background(Color.black.opacity(0.7))
-                    .cornerRadius(12)
-                    .transition(.opacity)
+                    Spacer()
                 }
+                .alert(isPresented: $showMonthCopyAlert) {
+                    Alert(
+                        title: Text("Confirm Copy"),
+                        message: Text("Are you sure you want to copy the previous month's schedule?"),
+                        primaryButton: .destructive(Text("Copy")) {
+                            copyFromPreviousMonth()
+                        },
+                        secondaryButton: .cancel()
+                    )
+                }
+                
+                // Monthly Priorities Section
+                prioritiesSection
+                
+                // Calendar Section
+                calendarSection
+                    .frame(height: 300)
+                
+                Spacer()
             }
-        )
-        .onAppear {
-            // Check inactivity: compare LastActiveTime in UserDefaults to now.
-            let now = Date()
-            let lastActive = UserDefaults.standard.object(forKey: "LastActiveTime") as? Date ?? now
-            if now.timeIntervalSince(lastActive) > 1800 {
-                // More than 30 minutes => reset to current month
-                monthViewState.currentMonth = MonthViewState.startOfMonth(for: Date())
-            }
-            // Update LastActiveTime
-            UserDefaults.standard.set(now, forKey: "LastActiveTime")
-            
-            // Attempt loading the schedule for the shared month
-            if let userId = session.userModel?.id {
-                viewModel.loadMonthSchedule(for: monthViewState.currentMonth, userId: userId)
-                habitVM.fetchHabits(for: userId)
+            .padding()
+            .padding(.top, -20)
+            .overlay(
+                Group {
+                    if showDaySummary, let day = selectedDay {
+                        VStack {
+                            DaySummaryView(
+                                day: day,
+                                habits: $habitVM.habits,
+                                onClose: {
+                                    withAnimation {
+                                        showDaySummary = false
+                                    }
+                                }
+                            )
+                            .cornerRadius(12)
+                        }
+                        .frame(maxWidth: 300)
+                        .padding()
+                        .background(Color.black.opacity(0.7))
+                        .cornerRadius(12)
+                        .transition(.opacity)
+                    }
+                }
+            )
+            .onAppear {
+                // Inactivity check – if > 30 minutes, reset to the current month.
+                let now = Date()
+                let lastActive = UserDefaults.standard.object(forKey: "LastActiveTime") as? Date ?? now
+                if now.timeIntervalSince(lastActive) > 1800 {
+                    monthViewState.currentMonth = MonthViewState.startOfMonth(for: Date())
+                }
+                UserDefaults.standard.set(now, forKey: "LastActiveTime")
+                
+                if let userId = session.userModel?.id {
+                    viewModel.loadMonthSchedule(for: monthViewState.currentMonth, userId: userId)
+                    habitVM.fetchHabits(for: userId)
+                }
             }
         }
     }
     
-    // MARK: - Monthly Priorities Section
+    // MARK: - Monthly Priorities Section (unchanged)
     private var prioritiesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -90,8 +122,6 @@ struct MonthView: View {
                     .foregroundColor(accentColor)
                 Spacer()
             }
-            
-            // List of priorities
             if let schedule = viewModel.schedule {
                 let bindingPriorities = Binding<[MonthlyPriority]>(
                     get: { schedule.monthlyPriorities },
@@ -115,11 +145,10 @@ struct MonthView: View {
                             .onChange(of: priority.title) { _ in
                                 viewModel.updateMonthSchedule()
                             }
-                        // Only show the delete button if removal mode is active and there is more than one priority.
+                        // Only show the delete button if removal mode is active and more than one priority.
                         if isRemoveMode && bindingPriorities.wrappedValue.count > 1 {
                             Button(action: {
                                 bindingPriorities.wrappedValue.removeAll { $0.id == priority.id }
-                                // If only one priority remains, exit removal mode.
                                 if bindingPriorities.wrappedValue.count <= 1 {
                                     isRemoveMode = false
                                 }
@@ -136,7 +165,7 @@ struct MonthView: View {
                     .foregroundColor(.white)
             }
             
-            // Buttons Row below the priorities list
+            // Buttons row below the priorities list.
             HStack {
                 Button(action: {
                     guard var schedule = viewModel.schedule else { return }
@@ -144,7 +173,6 @@ struct MonthView: View {
                     schedule.monthlyPriorities.append(newPriority)
                     viewModel.schedule = schedule
                     viewModel.updateMonthSchedule()
-                    // Always reset removal mode when a new priority is added.
                     isRemoveMode = false
                 }) {
                     Text("Add Priority")
@@ -158,10 +186,8 @@ struct MonthView: View {
                 
                 Spacer()
                 
-                // Only show the remove toggle button if there is more than one priority.
                 if let schedule = viewModel.schedule, schedule.monthlyPriorities.count > 1 {
                     Button(action: {
-                        // Toggle removal mode
                         isRemoveMode.toggle()
                     }) {
                         Text(isRemoveMode ? "Done" : "Remove Priority")
@@ -179,6 +205,53 @@ struct MonthView: View {
         .padding()
         .background(Color.gray.opacity(0.3))
         .cornerRadius(8)
+    }
+    
+    // MARK: - Copy Feature: Copy from Previous Month
+    private func copyFromPreviousMonth() {
+        // Ensure we have a userId and current schedule.
+        guard let userId = session.userModel?.id,
+              let currentSchedule = viewModel.schedule else { return }
+        
+        // Compute the previous month date from shared state.
+        guard let prevMonthDate = Calendar.current.date(byAdding: .month, value: -1, to: monthViewState.currentMonth) else {
+            print("Error computing previous month date.")
+            return
+        }
+        
+        // Compute the document ID string for the previous month schedule.
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM"   // Must match your MonthSchedule ID format.
+        let prevDocId = formatter.string(from: prevMonthDate)
+        
+        // Query Firestore for the previous month's schedule.
+        let db = Firestore.firestore()
+        db.collection("users")
+            .document(userId)
+            .collection("monthSchedules")
+            .document(prevDocId)
+            .getDocument { snapshot, error in
+                if let error = error {
+                    print("Error loading previous month schedule: \(error)")
+                    return
+                }
+                guard let snapshot = snapshot, snapshot.exists else {
+                    print("Previous month schedule not found.")
+                    return
+                }
+                do {
+                    let prevSchedule = try snapshot.data(as: MonthSchedule.self)
+                    DispatchQueue.main.async {
+                        var updatedSchedule = currentSchedule
+                        // Copy the relevant data (e.g., priorities, intentions, and other fields if needed).
+                        updatedSchedule.monthlyPriorities = prevSchedule.monthlyPriorities
+                        viewModel.schedule = updatedSchedule
+                        viewModel.updateMonthSchedule()
+                    }
+                } catch {
+                    print("Error decoding previous month schedule: \(error)")
+                }
+            }
     }
     
     // MARK: - Calendar Section

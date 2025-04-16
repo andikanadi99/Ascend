@@ -8,16 +8,37 @@
 import SwiftUI
 import Combine
 
+// Define an enum to represent which alert to show.
+enum DayViewAlert: Identifiable {
+    case copy
+    case delete(TodayPriority)
+    
+    var id: String {
+        switch self {
+        case .copy:
+            return "copy"
+        case .delete(let priority):
+            // Assuming `priority.id` is a UUID or something convertible to String.
+            // If it is a UUID, use: priority.id.uuidString
+            return "delete-\(priority.id)"
+        }
+    }
+}
+
+
 struct DayView: View {
     @EnvironmentObject var session: SessionStore
     @StateObject private var viewModel = DayViewModel()
     @EnvironmentObject var dayViewState: DayViewState  // Shared state for selectedDate
 
-    // For deletion confirmation (for daily priorities)
-    @State private var priorityToDelete: TodayPriority?
-    
+    // State variable to track the active alert.
+    @State private var activeAlert: DayViewAlert?
+
     // New state variable to control removal mode.
     @State private var isRemoveMode: Bool = false
+
+    // New state variable to show the Change Default Time sheet.
+    @State private var showChangeDefaultTime: Bool = false
 
     // Display the selected date (e.g., "Monday, March 24, 2025")
     private var dateString: String {
@@ -42,6 +63,24 @@ struct DayView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                
+                // Copy Previous Day Button (centered)
+                HStack {
+                    Spacer()
+                    Button(action: {
+                        print("Copy Previous Day button tapped.")
+                        activeAlert = .copy
+                    }) {
+                        Text("Copy Previous Day")
+                            .font(.headline)
+                            .foregroundColor(.accentColor)
+                            .padding(.horizontal, 8)
+                            .background(Color.black)
+                            .cornerRadius(8)
+                    }
+                    Spacer()
+                }
+                
                 // Top Priorities Section
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -50,19 +89,17 @@ struct DayView: View {
                             .foregroundColor(.accentColor)
                         Spacer()
                     }
-                    // Our custom list that conditionally shows delete icons.
                     prioritiesList()
                     
                     // Buttons Row below the priorities list
                     HStack {
                         Button(action: {
-                            // Add a new priority.
                             guard var schedule = viewModel.schedule else { return }
                             let newPriority = TodayPriority(id: UUID(), title: "New Priority", progress: 0.0)
                             schedule.priorities.append(newPriority)
                             viewModel.schedule = schedule
                             viewModel.updateDaySchedule()
-                            // Optionally reset remove mode when adding.
+                            // Reset removal mode when adding.
                             isRemoveMode = false
                         }) {
                             Text("Add Priority")
@@ -76,10 +113,8 @@ struct DayView: View {
                         
                         Spacer()
                         
-                        // Only show the remove button if there is more than one priority.
                         if let binding = prioritiesBinding, binding.wrappedValue.count > 1 {
                             Button(action: {
-                                // Toggle removal mode.
                                 isRemoveMode.toggle()
                             }) {
                                 Text(isRemoveMode ? "Done" : "Remove Priority")
@@ -98,7 +133,7 @@ struct DayView: View {
                 .background(Color.gray.opacity(0.3))
                 .cornerRadius(8)
                 
-                // Date Navigation
+                // Date Navigation Section
                 HStack {
                     Button(action: {
                         if let accountCreationDate = session.userModel?.createdAt,
@@ -188,7 +223,7 @@ struct DayView: View {
                     .cornerRadius(8)
                 }
                 
-                // Time Blocks
+                // Time Blocks Section
                 if viewModel.schedule != nil {
                     let timeBlocksBinding = Binding<[TimeBlock]>(
                         get: { viewModel.schedule!.timeBlocks },
@@ -224,7 +259,7 @@ struct DayView: View {
                             Spacer()
                         }
                         .padding(8)
-                        .background(Color.gray.opacity(0.2))
+                        .background(Color.gray.opacity(0.3))
                         .cornerRadius(8)
                     }
                 } else {
@@ -235,6 +270,7 @@ struct DayView: View {
                 Spacer()
             }
             .padding()
+            .padding(.top, -20)
         }
         .onAppear {
             // Inactivity check: reset the selected date to today if over 30 minutes inactive.
@@ -255,26 +291,46 @@ struct DayView: View {
                 viewModel.loadDaySchedule(for: dayViewState.selectedDate, userId: userId)
             }
         }
-        // Alert for deletion confirmation.
-        .alert(item: $priorityToDelete) { priority in
-            Alert(
-                title: Text("Delete Priority"),
-                message: Text("Are you sure you want to delete this priority?"),
-                primaryButton: .destructive(Text("Delete")) {
-                    if var schedule = viewModel.schedule,
-                       let index = schedule.priorities.firstIndex(where: { $0.id == priority.id }) {
-                        schedule.priorities.remove(at: index)
-                        viewModel.schedule = schedule
-                        viewModel.updateDaySchedule()
-                        
-                        // If we've dropped down to 1 priority, revert isRemoveMode to false.
-                        if schedule.priorities.count == 1 {
-                            isRemoveMode = false
+        // Single alert modifier that handles both copy and deletion.
+        .alert(item: $activeAlert) { alert in
+            switch alert {
+            case .copy:
+                return Alert(
+                    title: Text("Confirm Copy"),
+                    message: Text("Are you sure you want to copy the previous day's schedule?"),
+                    primaryButton: .destructive(Text("Copy")) {
+                        if dayViewState.selectedDate >= Calendar.current.startOfDay(for: Date()),
+                           let userId = session.userModel?.id {
+                            viewModel.copyPreviousDaySchedule(to: dayViewState.selectedDate, userId: userId) { success in
+                                if success {
+                                    print("Day schedule copied successfully.")
+                                } else {
+                                    print("Failed to copy day schedule.")
+                                }
+                            }
                         }
-                    }
-                },
-                secondaryButton: .cancel()
-            )
+                    },
+                       secondaryButton: .cancel()
+                   )
+            case .delete(let priority):
+                    return Alert(
+                        title: Text("Delete Priority"),
+                        message: Text("Are you sure you want to delete this priority?"),
+                        primaryButton: .destructive(Text("Delete")) {
+                        if var schedule = viewModel.schedule,
+                           let index = schedule.priorities.firstIndex(where: { $0.id == priority.id }) {
+                            schedule.priorities.remove(at: index)
+                            viewModel.schedule = schedule
+                            viewModel.updateDaySchedule()
+                            
+                            if schedule.priorities.count == 1 {
+                                isRemoveMode = false
+                            }
+                        }
+                    },
+                    secondaryButton: .cancel()
+                )
+            }
         }
     }
     
@@ -294,10 +350,9 @@ struct DayView: View {
                             .onChange(of: $priority.title.wrappedValue) { _ in
                                 viewModel.updateDaySchedule()
                             }
-                        // Only show the delete icon if removal mode is active and more than one priority exists.
                         if isRemoveMode && binding.wrappedValue.count > 1 {
                             Button(action: {
-                                priorityToDelete = $priority.wrappedValue
+                                activeAlert = .delete($priority.wrappedValue)
                             }) {
                                 Image(systemName: "minus.circle")
                                     .foregroundColor(.red)
@@ -312,3 +367,68 @@ struct DayView: View {
         }
     }
 }
+
+
+// MARK: - Default Time View
+//struct ChangeDefaultTimeView: View {
+//    let currentWakeUp: Date
+//    let currentSleep: Date
+//    let onSave: (Date, Date) -> Void
+//    @Environment(\.dismiss) var dismiss
+//
+//    @State private var newWakeUp: Date
+//    @State private var newSleep: Date
+//
+//    init(currentWakeUp: Date, currentSleep: Date, onSave: @escaping (Date, Date) -> Void) {
+//        self.currentWakeUp = currentWakeUp
+//        self.currentSleep = currentSleep
+//        self.onSave = onSave
+//        _newWakeUp = State(initialValue: currentWakeUp)
+//        _newSleep = State(initialValue: currentSleep)
+//    }
+//
+//    var body: some View {
+//        NavigationView {
+//            Form {
+//                Section(header: Text("Wake Up Time")
+//                            .foregroundColor(.white)) {
+//                    DatePicker("", selection: $newWakeUp, displayedComponents: .hourAndMinute)
+//                        .datePickerStyle(WheelDatePickerStyle())
+//                        .labelsHidden()
+//                        .foregroundColor(.white)
+//                }
+//                Section(header: Text("Sleep Time")
+//                            .foregroundColor(.white)) {
+//                    DatePicker("", selection: $newSleep, displayedComponents: .hourAndMinute)
+//                        .datePickerStyle(WheelDatePickerStyle())
+//                        .labelsHidden()
+//                        .foregroundColor(.white)
+//                }
+//            }
+//            // Hide the default form background and set a dark background.
+//            .scrollContentBackground(.hidden)
+//            .background(Color.black)
+//            .navigationTitle("Change Default Time")
+//            .toolbar {
+//                ToolbarItem(placement: .cancellationAction) {
+//                    Button("Cancel") {
+//                        dismiss()
+//                    }
+//                    .foregroundColor(.white)
+//                }
+//                ToolbarItem(placement: .confirmationAction) {
+//                    Button("Save") {
+//                        onSave(newWakeUp, newSleep)
+//                        dismiss()
+//                    }
+//                    .foregroundColor(.white)
+//                }
+//            }
+//        }
+//        .navigationViewStyle(StackNavigationViewStyle())
+//        .background(Color.black.edgesIgnoringSafeArea(.all))
+//    }
+//}
+
+
+

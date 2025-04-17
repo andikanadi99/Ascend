@@ -30,6 +30,8 @@ struct MonthView: View {
     @State private var isRemoveMode: Bool = false
     // New state variable to control the prompt for copying from the previous month.
     @State private var showMonthCopyAlert: Bool = false
+    
+    @State private var monthlyPriorityToDelete: MonthlyPriority?
 
     var body: some View {
         ScrollView {
@@ -148,17 +150,26 @@ struct MonthView: View {
                         // Only show the delete button if removal mode is active and more than one priority.
                         if isRemoveMode && bindingPriorities.wrappedValue.count > 1 {
                             Button(action: {
-                                bindingPriorities.wrappedValue.removeAll { $0.id == priority.id }
-                                if bindingPriorities.wrappedValue.count <= 1 {
-                                    isRemoveMode = false
-                                }
-                                viewModel.updateMonthSchedule()
+                                monthlyPriorityToDelete = priority          // ← just set it; alert appears
                             }) {
                                 Image(systemName: "minus.circle")
                                     .foregroundColor(.red)
                             }
                         }
                     }
+                }
+                .alert(item: $monthlyPriorityToDelete) { priority in
+                    Alert(
+                        title: Text("Delete Priority"),
+                        message: Text("Are you sure you want to delete “\(priority.title)” ?"),
+                        primaryButton: .destructive(Text("Delete")) {
+                            // Safe‑delete when confirmed
+                            bindingPriorities.wrappedValue.removeAll { $0.id == priority.id }
+                            if bindingPriorities.wrappedValue.count <= 1 { isRemoveMode = false }
+                            viewModel.updateMonthSchedule()
+                        },
+                        secondaryButton: .cancel()
+                    )
                 }
             } else {
                 Text("Loading monthly priorities...")

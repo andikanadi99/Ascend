@@ -39,6 +39,8 @@ struct DayView: View {
 
     // New state variable to show the Change Default Time sheet.
     @State private var showChangeDefaultTime: Bool = false
+    
+    let accentCyan      = Color(red: 0, green: 1, blue: 1)
 
     // Display the selected date (e.g., "Monday, March 24, 2025")
     private var dateString: String {
@@ -73,7 +75,7 @@ struct DayView: View {
                     }) {
                         Text("Copy Previous Day")
                             .font(.headline)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(accentCyan )
                             .padding(.horizontal, 8)
                             .background(Color.black)
                             .cornerRadius(8)
@@ -86,7 +88,7 @@ struct DayView: View {
                     HStack {
                         Text("Today's Top Priority")
                             .font(.headline)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(accentCyan )
                         Spacer()
                     }
                     prioritiesList()
@@ -104,7 +106,7 @@ struct DayView: View {
                         }) {
                             Text("Add Priority")
                                 .font(.headline)
-                                .foregroundColor(.accentColor)
+                                .foregroundColor(accentCyan)
                                 .padding(.vertical, 8)
                                 .padding(.horizontal, 16)
                                 .background(Color.black)
@@ -289,6 +291,23 @@ struct DayView: View {
             if viewModel.schedule == nil, let userId = session.userModel?.id {
                 print("DayView: schedule is still nil, reloading...")
                 viewModel.loadDaySchedule(for: dayViewState.selectedDate, userId: userId)
+            }
+        }
+        .onReceive(
+            session.$defaultWakeTime.combineLatest(session.$defaultSleepTime)
+        ) { (wakeOpt, sleepOpt) in
+            // 1️⃣  Safely unwrap the two optionals
+            guard let wake = wakeOpt, let sleep = sleepOpt else { return }
+            // 2️⃣  Make sure we have a loaded schedule
+            guard var sched = viewModel.schedule else { return }
+            // 3️⃣  Only change schedules that are today or in the future
+            let today = Calendar.current.startOfDay(for: Date())
+            if sched.date >= today {
+                sched.wakeUpTime = wake
+                sched.sleepTime  = sleep
+                viewModel.schedule = sched
+                viewModel.updateDaySchedule()
+                viewModel.regenerateBlocks()     
             }
         }
         // Single alert modifier that handles both copy and deletion.

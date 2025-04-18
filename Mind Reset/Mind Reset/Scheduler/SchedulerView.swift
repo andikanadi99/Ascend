@@ -12,6 +12,8 @@ import Combine
 struct SchedulerView: View {
     @EnvironmentObject var session: SessionStore
     @State private var selectedTab: SchedulerTab = .day
+    
+    let accentCyan      = Color(red: 0, green: 1, blue: 1)
 
     // Array of new greeting messages.
     private let greetings = [
@@ -97,12 +99,12 @@ struct SchedulerView: View {
                         case .day:
                             DayView()
                         case .week:
-                            WeekView(accentColor: .accentColor)
+                            WeekView(accentColor: accentCyan)
                         case .month:
                             if let accountCreationDate = session.userModel?.createdAt {
-                                MonthView(accentColor: .accentColor, accountCreationDate: accountCreationDate)
+                                MonthView(accentColor: accentCyan, accountCreationDate: accountCreationDate)
                             } else {
-                                MonthView(accentColor: .accentColor, accountCreationDate: Date())
+                                MonthView(accentColor: accentCyan, accountCreationDate: Date())
                             }
                         }
                     }

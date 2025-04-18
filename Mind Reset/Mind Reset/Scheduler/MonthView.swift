@@ -32,6 +32,8 @@ struct MonthView: View {
     @State private var showMonthCopyAlert: Bool = false
     
     @State private var monthlyPriorityToDelete: MonthlyPriority?
+    
+    let accentCyan      = Color(red: 0, green: 1, blue: 1)
 
     var body: some View {
         ScrollView {
@@ -45,7 +47,7 @@ struct MonthView: View {
                     }) {
                         Text("Copy from Previous Month")
                             .font(.headline)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(accentColor)
                             .padding(.vertical, 8)
                             .padding(.horizontal, 16)
                             .background(Color.black)
@@ -117,6 +119,7 @@ struct MonthView: View {
     
     // MARK: - Monthly Priorities Section (unchanged)
     private var prioritiesSection: some View {
+        
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Monthly Priorities")
@@ -188,7 +191,7 @@ struct MonthView: View {
                 }) {
                     Text("Add Priority")
                         .font(.headline)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(accentCyan)
                         .padding(.vertical, 8)
                         .padding(.horizontal, 16)
                         .background(Color.black)

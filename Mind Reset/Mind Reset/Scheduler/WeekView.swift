@@ -23,6 +23,8 @@ struct WeekView: View {
     
     // New state variable for prompting to copy from the previous week.
     @State private var showWeekCopyAlert: Bool = false
+    
+    let accentCyan      = Color(red: 0, green: 1, blue: 1)
 
     var body: some View {
         ScrollView {
@@ -36,7 +38,7 @@ struct WeekView: View {
                     }) {
                         Text("Copy from Previous Week")
                             .font(.headline)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(accentColor)
                             .padding(.horizontal, 16)
                             .background(Color.black)
                             .cornerRadius(8)
@@ -173,7 +175,7 @@ struct WeekView: View {
                     }) {
                         Text("Add Priority")
                             .font(.headline)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(accentColor)
                             .padding(.vertical, 8)
                             .padding(.horizontal, 16)
                             .background(Color.black)
@@ -449,6 +451,7 @@ struct ToDoListView: View {
 
     // New state variable to track removal mode.
     @State private var isRemoveMode: Bool = false
+    let accentCyan      = Color(red: 0, green: 1, blue: 1)
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -492,7 +495,7 @@ struct ToDoListView: View {
                         Image(systemName: "plus.circle")
                         Text("Add Task")
                     }
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(accentCyan)
                     .font(.headline)
                     .padding(.vertical, 8)
                     .padding(.horizontal, 16)

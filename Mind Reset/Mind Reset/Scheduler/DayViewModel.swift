@@ -54,26 +54,32 @@ class DayViewModel: ObservableObject {
     
     // If no doc exists, create it with sensible defaults.
     private func createDefaultDaySchedule(date: Date, userId: String) {
-        // Ensure you use the date for the schedule as your base date.
         let baseDate = date
+        
+        // ════════════════════════════════════════════════════════════
+        // ① Pull your stored defaults (or fall back to 7 am & 10 pm)
+        let storedWake = UserDefaults.standard.object(forKey: "DefaultWakeUpTime") as? Date
+                       ?? Calendar.current.date(bySettingHour: 7, minute: 0, second: 0, of: baseDate)!
+        let storedSleep = UserDefaults.standard.object(forKey: "DefaultSleepTime") as? Date
+                        ?? Calendar.current.date(bySettingHour: 22, minute: 0, second: 0, of: baseDate)!
         
         let defaultSchedule = DaySchedule(
             id: isoDayString(from: date),  // e.g., "2025-03-24"
             userId: userId,
             date: date,
-            wakeUpTime: generateDate(hour: 7, minute: 0, on: baseDate),
-            sleepTime: generateDate(hour: 22, minute: 0, on: baseDate),
+            wakeUpTime: storedWake,
+            sleepTime: storedSleep,
             priorities: [
                 TodayPriority(id: UUID(), title: "What matters most today", progress: 0.0)
             ],
             timeBlocks: generateTimeBlocks(
-                from: generateDate(hour: 7, minute: 0, on: baseDate),
-                to: generateDate(hour: 22, minute: 0, on: baseDate)
+                from: storedWake,
+                to: storedSleep
             )
         )
         
         do {
-            let ref = try db
+            try db
                 .collection("users")
                 .document(userId)
                 .collection("daySchedules")
@@ -87,7 +93,6 @@ class DayViewModel: ObservableObject {
         }
     }
 
-    
     // Writes the entire schedule back to Firestore.
     func updateDaySchedule() {
         guard let schedule = schedule, let docId = schedule.id else { return }
@@ -104,13 +109,13 @@ class DayViewModel: ObservableObject {
         }
     }
     
-    // Optionally: If the user changes wakeUpTime or sleepTime, you can regenerate timeBlocks
+    // If the user changes wakeUpTime or sleepTime, regenerate timeBlocks
     func regenerateBlocks() {
         guard var schedule = schedule else { return }
         schedule.timeBlocks = generateTimeBlocks(from: schedule.wakeUpTime, to: schedule.sleepTime)
         self.schedule = schedule
         
-        // Save immediately or wait for user action
+        // Save immediately
         updateDaySchedule()
     }
     
@@ -123,13 +128,13 @@ class DayViewModel: ObservableObject {
         
         var current = start
         while current <= end {
-            let block = TimeBlock(
-                id: UUID(),
-                time: formatter.string(from: current),
-                task: ""
+            blocks.append(
+                TimeBlock(
+                    id: UUID(),
+                    time: formatter.string(from: current),
+                    task: ""
+                )
             )
-            blocks.append(block)
-            
             guard let next = calendar.date(byAdding: .hour, value: 1, to: current) else { break }
             current = next
         }
@@ -138,8 +143,8 @@ class DayViewModel: ObservableObject {
     
     // Utility: create a date with a specific hour/minute
     private func generateDate(hour: Int, minute: Int, on baseDate: Date) -> Date {
-        // Use the given baseDate to set the hour and minute
-        return Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: baseDate) ?? baseDate
+        return Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: baseDate)
+            ?? baseDate
     }
     
     // Utility: create an ISO-like string "yyyy-MM-dd" from a Date
@@ -149,56 +154,60 @@ class DayViewModel: ObservableObject {
         return formatter.string(from: date)
     }
     
+    // Copy yesterday’s schedule into the target date
     func copyPreviousDaySchedule(to targetDate: Date, userId: String, completion: @escaping (Bool) -> Void) {
         let calendar = Calendar.current
         let sourceDate = calendar.date(byAdding: .day, value: -1, to: targetDate) ?? targetDate
         let sourceDocId = isoDayString(from: calendar.startOfDay(for: sourceDate))
         let targetDocId = isoDayString(from: calendar.startOfDay(for: targetDate))
         
-        let sourceRef = db.collection("users").document(userId).collection("daySchedules").document(sourceDocId)
-        let targetRef = db.collection("users").document(userId).collection("daySchedules").document(targetDocId)
+        let sourceRef = db
+            .collection("users").document(userId)
+            .collection("daySchedules").document(sourceDocId)
+        let targetRef = db
+            .collection("users").document(userId)
+            .collection("daySchedules").document(targetDocId)
         
-        // Fetch the source schedule.
         sourceRef.getDocument { [weak self] snapshot, error in
             if let error = error {
                 print("Error fetching source schedule: \(error)")
                 completion(false)
                 return
             }
-            guard let snapshot = snapshot, snapshot.exists,
-                  let sourceSchedule = try? snapshot.data(as: DaySchedule.self) else {
+            guard let snapshot = snapshot,
+                  snapshot.exists,
+                  let sourceSchedule = try? snapshot.data(as: DaySchedule.self)
+            else {
                 print("Source schedule not found.")
                 completion(false)
                 return
             }
             
-            // Now fetch (or create) the target schedule.
             targetRef.getDocument { snapshot, error in
                 var targetSchedule: DaySchedule
                 let baseDate = calendar.startOfDay(for: targetDate)
-                if let snapshot = snapshot, snapshot.exists,
-                   let existingSchedule = try? snapshot.data(as: DaySchedule.self) {
-                    targetSchedule = existingSchedule
+                
+                if let snapshot = snapshot,
+                   snapshot.exists,
+                   let existing = try? snapshot.data(as: DaySchedule.self) {
+                    targetSchedule = existing
                 } else {
-                    // Create a default schedule if there is no document.
                     targetSchedule = DaySchedule(
                         id: targetDocId,
                         userId: userId,
                         date: baseDate,
-                        wakeUpTime: sourceSchedule.wakeUpTime,  // default values will be overwritten below
+                        wakeUpTime: sourceSchedule.wakeUpTime,
                         sleepTime: sourceSchedule.sleepTime,
                         priorities: [],
                         timeBlocks: []
                     )
                 }
                 
-                // Copy the fields from the source schedule into the target schedule.
                 targetSchedule.priorities = sourceSchedule.priorities
                 targetSchedule.wakeUpTime = sourceSchedule.wakeUpTime
                 targetSchedule.sleepTime = sourceSchedule.sleepTime
                 targetSchedule.timeBlocks = sourceSchedule.timeBlocks
                 
-                // Save the updated target schedule to Firestore.
                 do {
                     try targetRef.setData(from: targetSchedule)
                     DispatchQueue.main.async {
@@ -212,7 +221,4 @@ class DayViewModel: ObservableObject {
             }
         }
     }
-
-
-
 }

@@ -24,6 +24,10 @@ class SessionStore: ObservableObject {
     @Published var userModel: UserModel?
     // Potentially store error messages
     @Published var auth_error: String?
+
+    //Variables to handle chose sleep and wake time
+    @Published var defaultWakeTime: Date?
+    @Published var defaultSleepTime: Date?
     
     // Firestore reference
     private var db = Firestore.firestore()
@@ -32,8 +36,52 @@ class SessionStore: ObservableObject {
     
     // MARK: - Init
     init() {
+        // Load from UserDefaults (or fallback to 7 am / 11 pm)
+        let wake = UserDefaults.standard.object(forKey: "DefaultWakeUpTime") as? Date
+            ?? Calendar.current.date(bySettingHour: 7, minute: 0, second: 0, of: Date())!
+        let sleep = UserDefaults.standard.object(forKey: "DefaultSleepTime") as? Date
+            ?? Calendar.current.date(bySettingHour: 23, minute: 0, second: 0, of: Date())!
+        self.defaultWakeTime = wake
+        self.defaultSleepTime = sleep
+        
         listen()
     }
+
+//MARK: - Functions Associated with default awake and sleep time
+    func setDefaultTimes(wake: Date, sleep: Date) {
+            // 1) update local state
+            defaultWakeTime = wake
+            defaultSleepTime = sleep
+            // 2) persist
+            UserDefaults.standard.set(wake, forKey: "DefaultWakeUpTime")
+            UserDefaults.standard.set(sleep, forKey: "DefaultSleepTime")
+            // 3) push to Firestore
+            updateFutureDaySchedules(wake: wake, sleep: sleep)
+        }
+
+        /// ➌ Batch‑update every daySchedule doc dated today or later
+        private func updateFutureDaySchedules(wake: Date, sleep: Date) {
+            guard let uid = current_user?.uid else { return }
+            let today = Calendar.current.startOfDay(for: Date())
+            let col = db.collection("users")
+                        .document(uid)
+                        .collection("daySchedules")
+            col.whereField("date", isGreaterThanOrEqualTo: Timestamp(date: today))
+               .getDocuments { snap, err in
+                guard let docs = snap?.documents else { return }
+                let batch = self.db.batch()
+                docs.forEach { doc in
+                    batch.updateData([
+                        "wakeUpTime": wake,
+                        "sleepTime": sleep
+                    ], forDocument: doc.reference)
+                }
+                batch.commit { error in
+                    if let err = error { print("Batch update failed:", err) }
+                    else { print("Future days updated.") }
+                }
+            }
+        }
     
     // MARK: - Listen to Auth State
     /// Sets up a listener to monitor authentication state changes (login/logout).

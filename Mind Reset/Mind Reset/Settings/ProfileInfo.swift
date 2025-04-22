@@ -8,6 +8,7 @@
 import SwiftUI
 import FirebaseFirestore
 
+
 struct ProfileInfo: View {
     @EnvironmentObject var session: SessionStore
 
@@ -15,7 +16,8 @@ struct ProfileInfo: View {
     @State private var isEditing = false
     @State private var updatedDisplayName = ""
     @State private var updatedEmail = ""
-    
+    @State private var showSaveProfileAlert = false
+
     // MARK: - Default wake/sleep times
     @State private var defaultWake: Date = {
         UserDefaults.standard.object(forKey: "DefaultWakeUpTime") as? Date
@@ -25,8 +27,9 @@ struct ProfileInfo: View {
         UserDefaults.standard.object(forKey: "DefaultSleepTime") as? Date
             ?? Calendar.current.date(bySettingHour: 23, minute: 0, second: 0, of: Date())!
     }()
-    
-    let accentCyan      = Color(red: 0, green: 1, blue: 1)
+    @State private var showSaveTimesAlert = false
+
+    let accentCyan = Color(red: 0, green: 1, blue: 1)
 
     var body: some View {
         ScrollView {
@@ -37,7 +40,7 @@ struct ProfileInfo: View {
                     .scaledToFit()
                     .frame(width: 100, height: 100)
                     .foregroundColor(accentCyan)
-                
+
                 // Account Info
                 if let user = session.userModel {
                     if isEditing {
@@ -47,12 +50,7 @@ struct ProfileInfo: View {
                                 .background(Color.gray.opacity(0.2))
                                 .cornerRadius(8)
                                 .foregroundColor(.white)
-                            TextField("Email", text: $updatedEmail)
-                                .padding(8)
-                                .background(Color.gray.opacity(0.2))
-                                .cornerRadius(8)
-                                .foregroundColor(.white)
-                                .autocapitalization(.none)
+                            
                         }
                     } else {
                         Text(user.displayName.isEmpty ? "No Display Name" : user.displayName)
@@ -62,7 +60,7 @@ struct ProfileInfo: View {
                             .font(.subheadline)
                             .foregroundColor(.white.opacity(0.8))
                     }
-                    
+
                     Text("Joined on \(formattedDate(user.createdAt))")
                         .font(.caption)
                         .foregroundColor(.white.opacity(0.7))
@@ -70,11 +68,11 @@ struct ProfileInfo: View {
                     Text("Loading Profile...")
                         .foregroundColor(.white)
                 }
-                
+
                 // Edit / Save Profile Button
                 Button(action: {
                     if isEditing {
-                        saveProfile()
+                        showSaveProfileAlert = true
                     } else if let user = session.userModel {
                         updatedDisplayName = user.displayName
                         updatedEmail = user.email
@@ -89,13 +87,26 @@ struct ProfileInfo: View {
                         .background(accentCyan)
                         .cornerRadius(8)
                 }
+                .alert(
+                    "Save Profile Changes?",
+                    isPresented: $showSaveProfileAlert,
+                    actions: {
+                        Button("Save", role: .destructive) {
+                            saveProfile()
+                        }
+                        Button("Cancel", role: .cancel) { }
+                    },
+                    message: {
+                        Text("Are you sure you want to overwrite your display name?")
+                    }
+                )
 
                 // Default Times Section
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Default Times")
                         .font(.headline)
                         .foregroundColor(accentCyan)
-                    
+
                     HStack(spacing: 16) {
                         VStack(alignment: .leading) {
                             Text("Wake Up")
@@ -111,9 +122,9 @@ struct ProfileInfo: View {
                             .background(Color.black)
                             .cornerRadius(4)
                         }
-                        
+
                         Spacer()
-                        
+
                         VStack(alignment: .leading) {
                             Text("Sleep")
                                 .foregroundColor(.white)
@@ -129,8 +140,10 @@ struct ProfileInfo: View {
                             .cornerRadius(4)
                         }
                     }
-                    
-                    Button(action: saveDefaultTimes) {
+
+                    Button(action: {
+                        showSaveTimesAlert = true
+                    }) {
                         Text("Save Default Times")
                             .font(.headline)
                             .foregroundColor(.black)
@@ -139,6 +152,20 @@ struct ProfileInfo: View {
                             .background(accentCyan)
                             .cornerRadius(8)
                     }
+                    .alert(
+                        "Save Default Times?",
+                        isPresented: $showSaveTimesAlert,
+                        actions: {
+                            Button("Save", role: .destructive) {
+                                saveDefaultTimes()
+                            }
+                            Button("Cancel", role: .cancel) { }
+                        },
+                        message: {
+                            Text("This will update your default wake‑up and sleep times for all future days.")
+                        }
+                    )
+
                 }
                 .padding()
                 .background(Color.gray.opacity(0.3))
@@ -148,15 +175,15 @@ struct ProfileInfo: View {
         }
         .background(Color.black.edgesIgnoringSafeArea(.all))
     }
-    
+
     // MARK: - Helpers
-    
+
     private func formattedDate(_ date: Date) -> String {
         let fmt = DateFormatter()
         fmt.dateStyle = .medium
         return fmt.string(from: date)
     }
-    
+
     private func saveProfile() {
         guard let uid = session.current_user?.uid else { return }
         let db = Firestore.firestore()
@@ -167,7 +194,6 @@ struct ProfileInfo: View {
             if let error = error {
                 print("Profile save error: \(error)")
             } else {
-                // Update the in-memory userModel immediately
                 DispatchQueue.main.async {
                     session.userModel?.displayName = updatedDisplayName
                     session.userModel?.email = updatedEmail
@@ -175,7 +201,7 @@ struct ProfileInfo: View {
             }
         }
     }
-    
+
     private func saveDefaultTimes() {
         session.setDefaultTimes(wake: defaultWake, sleep: defaultSleep)
     }

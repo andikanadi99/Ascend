@@ -1,28 +1,27 @@
+//  SettingsView.swift
+//  Mind Reset.
+//
+//  Created by Andika Yudhatrisna on 2/6/25.
+
+
 import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var session: SessionStore
-    @Environment(\.presentationMode) private var presentationMode
-
-    @State private var showDeleteAccountAlert = false
-    @State private var isDarkMode: Bool = true
-    @State private var showPrivacyPolicy = false
-    @State private var showTermsOfUse = false
-
-    let accentCyan = Color(red: 0, green: 1, blue: 1)
-
+    
+    private let accentCyan = Color(red: 0, green: 1, blue: 1)
+    
     var body: some View {
         NavigationView {
             Form {
-                // MARK: - Account Settings
-                Section(header: Text("Account Settings")
-                            .foregroundColor(accentCyan)) {
+                // Account
+                Section(header: Text("Account Settings").foregroundColor(accentCyan)) {
                     NavigationLink(destination: ProfileInfo()) {
                         Label("Profile Info", systemImage: "person.crop.circle")
                             .foregroundColor(.white)
                     }
                     NavigationLink(destination: ChangeCredentialsView()) {
-                        Label("Change Password/Email", systemImage: "key.fill")
+                        Label("Change Password", systemImage: "key.fill")
                             .foregroundColor(.white)
                     }
                     NavigationLink(destination: DeleteAccountView()) {
@@ -30,79 +29,56 @@ struct SettingsView: View {
                             .foregroundColor(.white)
                     }
                 }
-
-                // MARK: - App Settings
-                Section(header: Text("App Settings")
-                            .foregroundColor(accentCyan)) {
+                
+                // App
+                Section(header: Text("App Settings").foregroundColor(accentCyan)) {
                     NavigationLink(destination: NotificationPreferencesView()) {
                         Label("Notification Preferences", systemImage: "bell.fill")
                             .foregroundColor(.white)
                     }
                 }
-
-                // MARK: - Support
-                Section(header: Text("Support")
-                            .foregroundColor(accentCyan)) {
+                
+                // Support
+                Section(header: Text("Support").foregroundColor(accentCyan)) {
                     NavigationLink(destination: SupportSettingsView()) {
                         Label("Contact Us", systemImage: "envelope.fill")
                             .foregroundColor(.white)
                     }
                 }
-
-                // MARK: - About
-                Section(header: Text("About")
-                            .foregroundColor(accentCyan)) {
+                
+                // About
+                Section(header: Text("About").foregroundColor(accentCyan)) {
                     HStack {
-                        Text("App Version")
-                            .foregroundColor(.white)
+                        Text("App Version").foregroundColor(.white)
                         Spacer()
-                        Text("1.0.0")
-                            .foregroundColor(.gray)
+                        Text("1.0.0").foregroundColor(.gray)
                     }
                 }
-
-                // MARK: - Sign Out
+                
+                // Sign-out
                 Section {
-                    Button(action: signOut) {
+                    Button(role: .destructive) { session.signOut() } label: {
                         Text("Sign Out")
-                            .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding()
                             .background(Color.red)
                             .cornerRadius(8)
+                            .foregroundColor(.white)
                     }
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(Color.black.edgesIgnoringSafeArea(.all))
+            .background(Color.black.ignoresSafeArea())
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationBarBackButtonHidden(true)
-            .navigationBarItems(leading:
-                Button(action: {
-                    presentationMode.wrappedValue.dismiss()
-                }) {
-                    HStack {
-                        Image(systemName: "chevron.left")
-                        Text("Settings")
-                    }
-                    .foregroundColor(accentCyan)
-                }
-            )
+            .preferredColorScheme(.dark)
         }
-        .preferredColorScheme(isDarkMode ? .dark : .light)
-    }
-
-    // MARK: - Actions
-    private func signOut() {
-        session.signOut()
     }
 }
 
-// MARK: - Preview
+// ───────── Preview
 struct SettingsView_Previews: PreviewProvider {
     static var previews: some View {
-        SettingsView()
-            .environmentObject(SessionStore())
+        SettingsView().environmentObject(SessionStore())
     }
 }

@@ -313,31 +313,36 @@ struct CalendarView: View {
         VStack {
             // Month header with navigation
             HStack {
-                if canGoBack() {
-                    Button(action: {
-                        if let prevMonth = Calendar.current.date(byAdding: .month, value: -1, to: currentMonth) {
-                            currentMonth = prevMonth
-                        }
-                    }) {
-                        Image(systemName: "chevron.left")
-                            .foregroundColor(.white)
+                // ← back one month
+                Button {
+                    if canGoBack(),
+                       let prev = Calendar.current.date(byAdding: .month,
+                                                        value: -1,
+                                                        to: currentMonth) {
+                        currentMonth = prev
                     }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .foregroundColor( canGoBack() ? .white : .gray )
                 }
-                
+
                 Spacer()
-                
-                let averageCompletion = computeAverageCompletion()
-                Text("\(monthYearString(from: currentMonth)) - (\(Int(averageCompletion * 100))%)")
+
+                let avg = computeAverageCompletion()
+                Text("\(monthYearString(from: currentMonth))  (\(Int(avg * 100))%)")
                     .foregroundColor(.white)
                     .font(.headline)
-                
+
                 Spacer()
-                
-                Button(action: {
-                    if let nextMonth = Calendar.current.date(byAdding: .month, value: 1, to: currentMonth) {
-                        currentMonth = nextMonth
+
+                // → forward one month (always enabled)
+                Button {
+                    if let next = Calendar.current.date(byAdding: .month,
+                                                        value: 1,
+                                                        to: currentMonth) {
+                        currentMonth = next
                     }
-                }) {
+                } label: {
                     Image(systemName: "chevron.right")
                         .foregroundColor(.white)
                 }
@@ -345,6 +350,7 @@ struct CalendarView: View {
             .padding()
             .background(Color.gray.opacity(0.3))
             .cornerRadius(8)
+
             
             Spacer()
             

@@ -331,27 +331,38 @@ struct WeekNavigationView: View {
     let accountCreationDate: Date
     
     var body: some View {
+        // Week header with navigation
         HStack {
-            if canGoBack() {
-                Button(action: {
-                    if let prevWeek = Calendar.current.date(byAdding: .weekOfYear, value: -1, to: currentWeekStart) {
-                        currentWeekStart = prevWeek
-                    }
-                }) {
-                    Image(systemName: "chevron.left")
-                        .foregroundColor(.white)
+            // ← back one week
+            Button {
+                // attempt the move only if allowed
+                if canGoBack(),
+                   let prev = Calendar.current.date(byAdding: .weekOfYear,
+                                                    value: -1,
+                                                    to: currentWeekStart) {
+                    currentWeekStart = prev
                 }
+            } label: {
+                Image(systemName: "chevron.left")
+                    .foregroundColor( canGoBack() ? .white : .gray )
             }
+
             Spacer()
+
             Text(weekRangeString())
                 .foregroundColor(.white)
                 .font(.headline)
+
             Spacer()
-            Button(action: {
-                if let nextWeek = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: currentWeekStart) {
-                    currentWeekStart = nextWeek
+
+            // → forward one week (always enabled)
+            Button {
+                if let next = Calendar.current.date(byAdding: .weekOfYear,
+                                                    value:  1,
+                                                    to: currentWeekStart) {
+                    currentWeekStart = next
                 }
-            }) {
+            } label: {
                 Image(systemName: "chevron.right")
                     .foregroundColor(.white)
             }
@@ -359,6 +370,7 @@ struct WeekNavigationView: View {
         .padding()
         .background(Color.gray.opacity(0.3))
         .cornerRadius(8)
+
     }
     
     private func weekRangeString() -> String {

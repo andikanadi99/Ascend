@@ -135,38 +135,50 @@ struct DayView: View {
                 .background(Color.gray.opacity(0.3))
                 .cornerRadius(8)
                 
-                // Date Navigation Section
+                // MARK: – Date Navigation Section
                 HStack {
-                    Button(action: {
-                        if let accountCreationDate = session.userModel?.createdAt,
-                           let prevDay = Calendar.current.date(byAdding: .day, value: -1, to: dayViewState.selectedDate),
-                           prevDay >= accountCreationDate {
-                            dayViewState.selectedDate = prevDay
-                            if let userId = session.userModel?.id {
-                                viewModel.loadDaySchedule(for: prevDay, userId: userId)
+                    // ← back one day
+                    let canGoBack = {
+                        if let created = session.userModel?.createdAt {
+                            return dayViewState.selectedDate > Calendar.current.startOfDay(for: created)
+                        }
+                        return false
+                    }()
+
+                    Button {
+                        if canGoBack,
+                           let prev = Calendar.current.date(byAdding: .day,
+                                                            value: -1,
+                                                            to: dayViewState.selectedDate) {
+                            dayViewState.selectedDate = prev
+                            if let uid = session.userModel?.id {
+                                viewModel.loadDaySchedule(for: prev, userId: uid)
                             }
                         }
-                    }) {
+                    } label: {
                         Image(systemName: "chevron.left")
-                            .foregroundColor(dayViewState.selectedDate > (session.userModel?.createdAt ?? Date()) ? .white : .gray)
+                            .foregroundColor( canGoBack ? .white : .gray )
                     }
-                    
+
                     Spacer()
-                    
+
                     Text(dateString)
                         .font(.headline)
                         .foregroundColor(.white)
-                    
+
                     Spacer()
-                    
-                    Button(action: {
-                        if let nextDay = Calendar.current.date(byAdding: .day, value: 1, to: dayViewState.selectedDate) {
-                            dayViewState.selectedDate = nextDay
-                            if let userId = session.userModel?.id {
-                                viewModel.loadDaySchedule(for: nextDay, userId: userId)
+
+                    // → forward one day (always enabled)
+                    Button {
+                        if let next = Calendar.current.date(byAdding: .day,
+                                                            value: 1,
+                                                            to: dayViewState.selectedDate) {
+                            dayViewState.selectedDate = next
+                            if let uid = session.userModel?.id {
+                                viewModel.loadDaySchedule(for: next, userId: uid)
                             }
                         }
-                    }) {
+                    } label: {
                         Image(systemName: "chevron.right")
                             .foregroundColor(.white)
                     }
@@ -174,6 +186,7 @@ struct DayView: View {
                 .padding()
                 .background(Color.gray.opacity(0.3))
                 .cornerRadius(8)
+
                 
                 // Wake-Up & Sleep Time Pickers
                 if let schedule = viewModel.schedule {

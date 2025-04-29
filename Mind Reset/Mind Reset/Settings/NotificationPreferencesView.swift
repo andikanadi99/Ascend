@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 struct NotificationPreferencesView: View {
     // Persist toggles
@@ -9,146 +10,252 @@ struct NotificationPreferencesView: View {
     @AppStorage("dailyNotificationTime") private var dailyNotificationTime: Date = defaultDailyNotificationTime()
     @AppStorage("weeklyNotificationTime") private var weeklyNotificationTime: Date = defaultWeeklyNotificationTime()
 
-    // Customize your accent color
     private let accentCyan = Color(red: 0, green: 1, blue: 1)
 
     var body: some View {
-        NavigationView {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                // Wrap the content in a vertical ScrollView
-                ScrollView {
-                    VStack(spacing: 0) {
-                        VStack(alignment: .leading, spacing: 20) {
-                            // Daily Notification Section
-                            Toggle(isOn: $dailyNotificationsEnabled) {
-                                VStack(alignment: .leading) {
-                                    Text("Daily Reminders")
-                                        .font(.headline)
-                                        .foregroundColor(.white)
-                                    Text("Receive daily reminders to check your habits and complete your tasks.")
-                                        .font(.caption)
-                                        .foregroundColor(.white.opacity(0.7))
-                                }
-                            }
-                            .toggleStyle(SwitchToggleStyle(tint: accentCyan))
-                            
-                            if dailyNotificationsEnabled {
-                                DatePicker("Select Reminder Time", selection: $dailyNotificationTime, displayedComponents: .hourAndMinute)
-                                    .labelsHidden()
-                                    .datePickerStyle(WheelDatePickerStyle())
-                                    .accentColor(accentCyan)
-                                Text("Next daily reminder: \(formattedDateTime(nextDailyNotification()))")
-                                    .font(.caption)
-                                    .foregroundColor(.white.opacity(0.7))
-                            }
-                            
-                            // Weekly Notification Section
-                            Toggle(isOn: $weeklyNotificationsEnabled) {
-                                VStack(alignment: .leading) {
-                                    Text("Weekly Summary")
-                                        .font(.headline)
-                                        .foregroundColor(.white)
-                                    Text("Get a weekly summary of your habit progress.")
-                                        .font(.caption)
-                                        .foregroundColor(.white.opacity(0.7))
-                                }
-                            }
-                            .toggleStyle(SwitchToggleStyle(tint: accentCyan))
-                            
-                            if weeklyNotificationsEnabled {
-                                DatePicker("Select Weekly Summary Time", selection: $weeklyNotificationTime, displayedComponents: [.date, .hourAndMinute])
-                                    .labelsHidden()
-                                    .datePickerStyle(WheelDatePickerStyle())
-                                    .accentColor(accentCyan)
-                                Text("Next weekly summary: \(formattedDateTime(nextWeeklyNotification()))")
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            ScrollView {
+                VStack(spacing: 24) {
+                    // ─── Daily Reminders ─────────────────────────
+                    VStack(alignment: .leading, spacing: 12) {
+                        Toggle(isOn: $dailyNotificationsEnabled) {
+                            VStack(alignment: .leading) {
+                                Text("Daily Reminders")
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                Text("Receive a daily reminder to check your tasks.")
                                     .font(.caption)
                                     .foregroundColor(.white.opacity(0.7))
                             }
                         }
-                        .padding()
-                        .background(Color.gray.opacity(0.2))
-                        .cornerRadius(12)
-                        
-                        Spacer()
+                        .toggleStyle(SwitchToggleStyle(tint: accentCyan))
+
+                        if dailyNotificationsEnabled {
+                            DatePicker(
+                                "Reminder Time",
+                                selection: $dailyNotificationTime,
+                                displayedComponents: .hourAndMinute
+                            )
+                            .labelsHidden()
+                            .datePickerStyle(WheelDatePickerStyle())
+                            .accentColor(accentCyan)
+
+                            Text("Next daily reminder: \(formattedDateTime(nextDailyNotification()))")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.7))
+
+                            Button("Test Now") {
+                                triggerTestDaily()
+                            }
+                            .buttonStyle(PrimaryButtonStyle(color: accentCyan))
+                        }
                     }
-                    .padding() // Outer padding for the VStack
+                    .padding()
+                    .background(Color.gray.opacity(0.2))
+                    .cornerRadius(12)
+
+                    // ─── Weekly Summary ─────────────────────────
+                    VStack(alignment: .leading, spacing: 12) {
+                        Toggle(isOn: $weeklyNotificationsEnabled) {
+                            VStack(alignment: .leading) {
+                                Text("Weekly Summary")
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                Text("Get a weekly summary of your habit progress.")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
+                        }
+                        .toggleStyle(SwitchToggleStyle(tint: accentCyan))
+
+                        if weeklyNotificationsEnabled {
+                            DatePicker(
+                                "Summary Time",
+                                selection: $weeklyNotificationTime,
+                                displayedComponents: [.date, .hourAndMinute]
+                            )
+                            .labelsHidden()
+                            .datePickerStyle(WheelDatePickerStyle())
+                            .accentColor(accentCyan)
+
+                            Text("Next weekly summary: \(formattedDateTime(nextWeeklyNotification()))")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.7))
+
+                            Button("Test Now") {
+                                triggerTestWeekly()
+                            }
+                            .buttonStyle(PrimaryButtonStyle(color: accentCyan))
+                        }
+                    }
+                    .padding()
+                    .background(Color.gray.opacity(0.2))
+                    .cornerRadius(12)
+
+                    Spacer()
                 }
+                .padding()
             }
         }
-        
+        .navigationTitle("Notifications")
+        .preferredColorScheme(.dark)
+        .onAppear {
+            requestNotificationPermission()
+            updateDailyNotification()
+            updateWeeklyNotification()
+        }
+        .onChange(of: dailyNotificationsEnabled) { _ in updateDailyNotification() }
+        .onChange(of: dailyNotificationTime)    { _ in updateDailyNotification() }
+        .onChange(of: weeklyNotificationsEnabled){ _ in updateWeeklyNotification() }
+        .onChange(of: weeklyNotificationTime)   { _ in updateWeeklyNotification() }
     }
-    
-    // MARK: - Helper Functions
-    
-    // Format date and time in a medium style.
+
+    // MARK: - Request Permission
+    private func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+            if !granted {
+                print("⚠️ Notifications permission denied")
+            }
+        }
+    }
+
+    // MARK: - Daily Scheduling
+    private func updateDailyNotification() {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: ["daily_reminder"])
+
+        guard dailyNotificationsEnabled else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Daily Reminder"
+        content.body  = "Don't forget to review your tasks for today!"
+        content.sound = .default
+
+        let comps = Calendar.current.dateComponents([.hour, .minute], from: dailyNotificationTime)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
+
+        let request = UNNotificationRequest(
+            identifier: "daily_reminder",
+            content: content,
+            trigger: trigger
+        )
+        center.add(request) { error in
+            if let error = error {
+                print("Error scheduling daily reminder:", error)
+            }
+        }
+    }
+
+    // MARK: - Weekly Scheduling
+    private func updateWeeklyNotification() {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: ["weekly_summary"])
+
+        guard weeklyNotificationsEnabled else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Weekly Summary"
+        content.body  = "Here's your weekly habit summary!"
+        content.sound = .default
+
+        let comps = Calendar.current.dateComponents([.weekday, .hour, .minute], from: weeklyNotificationTime)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
+
+        let request = UNNotificationRequest(
+            identifier: "weekly_summary",
+            content: content,
+            trigger: trigger
+        )
+        center.add(request) { error in
+            if let error = error {
+                print("Error scheduling weekly summary:", error)
+            }
+        }
+    }
+
+    // MARK: - Test Notifications
+    private func triggerTestDaily() {
+        let content = UNMutableNotificationContent()
+        content.title = "Test Daily Reminder"
+        content.body  = "This is a test of your daily reminder!"
+        content.sound = .default
+
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(identifier: "test_daily", content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    private func triggerTestWeekly() {
+        let content = UNMutableNotificationContent()
+        content.title = "Test Weekly Summary"
+        content.body  = "This is a test of your weekly summary!"
+        content.sound = .default
+
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(identifier: "test_weekly", content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    // MARK: - Helpers
     private func formattedDateTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f.string(from: date)
     }
-    
-    // Compute the next daily notification.
+
     private func nextDailyNotification() -> Date {
-        let calendar = Calendar.current
+        let cal = Calendar.current
         let now = Date()
-        // Extract the time components from the stored dailyNotificationTime.
-        let timeComponents = calendar.dateComponents([.hour, .minute, .second], from: dailyNotificationTime)
-        if let todayNotification = calendar.date(bySettingHour: timeComponents.hour ?? 9,
-                                                   minute: timeComponents.minute ?? 0,
-                                                   second: timeComponents.second ?? 0,
-                                                   of: now) {
-            // If today's notification time hasn't passed yet, return it; otherwise, tomorrow's.
-            if todayNotification > now {
-                return todayNotification
-            } else {
-                return calendar.date(byAdding: .day, value: 1, to: todayNotification) ?? todayNotification
-            }
+        let comps = cal.dateComponents([.hour, .minute], from: dailyNotificationTime)
+        guard let today = cal.date(bySettingHour: comps.hour!, minute: comps.minute!, second: 0, of: now) else {
+            return now
         }
-        return now
+        return (today > now) ? today : cal.date(byAdding: .day, value: 1, to: today)!
     }
-    
-    // Compute the next weekly notification.
+
     private func nextWeeklyNotification() -> Date {
-        let calendar = Calendar.current
+        let cal = Calendar.current
         let now = Date()
-        // Use the stored weeklyNotificationTime as a reference.
-        let components = calendar.dateComponents([.weekday, .hour, .minute, .second], from: weeklyNotificationTime)
-        if let nextDate = calendar.nextDate(after: now, matching: components, matchingPolicy: .nextTimePreservingSmallerComponents) {
-            return nextDate
-        }
-        return now
+        let comps = cal.dateComponents([.weekday, .hour, .minute], from: weeklyNotificationTime)
+        return cal.nextDate(after: now, matching: comps, matchingPolicy: .nextTimePreservingSmallerComponents) ?? now
     }
 }
 
 // MARK: - Default Times
 
-func defaultDailyNotificationTime() -> Date {
-    let calendar = Calendar.current
-    let now = Date()
-    var components = calendar.dateComponents([.year, .month, .day], from: now)
-    // Default daily reminder time: 9:00 AM.
-    components.hour = 9
-    components.minute = 0
-    components.second = 0
-    return calendar.date(from: components) ?? now
+fileprivate func defaultDailyNotificationTime() -> Date {
+    var comps = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+    comps.hour = 9
+    comps.minute = 0
+    comps.second = 0
+    return Calendar.current.date(from: comps)!
 }
 
-func defaultWeeklyNotificationTime() -> Date {
-    let calendar = Calendar.current
+fileprivate func defaultWeeklyNotificationTime() -> Date {
+    let cal = Calendar.current
     let now = Date()
-    // Default weekly summary time: next Sunday at 10:00 AM.
-    let nextSunday = calendar.nextDate(after: now, matching: DateComponents(weekday: 1), matchingPolicy: .nextTime) ?? now
-    var components = calendar.dateComponents([.year, .month, .day], from: nextSunday)
-    components.hour = 10
-    components.minute = 0
-    components.second = 0
-    return calendar.date(from: components) ?? now
+    let nextSunday = cal.nextDate(after: now, matching: DateComponents(weekday: 1), matchingPolicy: .nextTime) ?? now
+    var comps = cal.dateComponents([.year, .month, .day], from: nextSunday)
+    comps.hour = 10
+    comps.minute = 0
+    comps.second = 0
+    return cal.date(from: comps)!
 }
 
-struct NotificationPreferencesView_Previews: PreviewProvider {
-    static var previews: some View {
-        NotificationPreferencesView()
+// MARK: - Button Style
+
+private struct PrimaryButtonStyle: ButtonStyle {
+    let color: Color
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundColor(.black)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(color.opacity(configuration.isPressed ? 0.7 : 1))
+            .cornerRadius(8)
     }
 }
+

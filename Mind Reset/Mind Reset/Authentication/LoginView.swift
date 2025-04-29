@@ -1,12 +1,6 @@
 //
 //  LoginView.swift
-//  This View handles the Login UI component of Mind Reset
-//  Objectives: View that allow user to:
-//      1.Enter their email and password.
-//      2.Handle input validation.
-//      3.Authenticate using the SessionStore class.
-//      4.Display error messages when login fails.
-//      5.Navigate to the SignUpView if the user doesn't have an account.
+//  Mind Reset
 //
 //  Created by Andika Yudhatrisna on 11/21/24.
 //
@@ -28,71 +22,57 @@ struct LoginView: View {
 
     var body: some View {
         ZStack {
-            // Main black background
             backgroundBlack
                 .ignoresSafeArea()
 
             VStack(spacing: 20) {
-                // Title in neonCyan
                 Text("Welcome Back")
                     .font(.largeTitle)
                     .fontWeight(.bold)
                     .foregroundColor(neonCyan)
 
-                // 1) Email Field with .prompt placeholders (iOS 16+)
+                // Email field
                 TextField(
                     "",
                     text: $email,
                     prompt: Text("Enter Your Email")
                         .foregroundColor(.white.opacity(0.8))
                 )
-                .foregroundColor(.white.opacity(0.8))
+                .foregroundColor(.white)
                 .autocapitalization(.none)
                 .keyboardType(.emailAddress)
                 .padding()
                 .background(fieldBackground)
                 .cornerRadius(8)
                 .padding(.horizontal)
-                .onChange(of: email, initial: false) { _, _ in
-                    session.auth_error = nil
-                }
+                .onChange(of: email) { _ in session.auth_error = nil }
 
-                // 2) Password Field with show/hide icon *inside*
+                // Password field with show/hide
                 ZStack(alignment: .trailing) {
-                    if showPassword {
-                        TextField(
-                            "",
-                            text: $password,
-                            prompt: Text("Enter Your Password")
-                                .foregroundColor(.white.opacity(0.8))
-                        )
-                        .foregroundColor(.white)
-                        .padding()
-                        .background(fieldBackground)
-                        .cornerRadius(8)
-                        .onChange(of: password, initial: false) { _, _ in
-                            session.auth_error = nil
-                        }
-                    } else {
-                        SecureField(
-                            "",
-                            text: $password,
-                            prompt: Text("Enter Your Password")
-                                .foregroundColor(.white.opacity(0.8))
-                        )
-                        .foregroundColor(.white)
-                        .padding()
-                        .background(fieldBackground)
-                        .cornerRadius(8)
-                        .onChange(of: password, initial: false) { _, _ in
-                            session.auth_error = nil
+                    Group {
+                        if showPassword {
+                            TextField(
+                                "",
+                                text: $password,
+                                prompt: Text("Enter Your Password")
+                                    .foregroundColor(.white.opacity(0.8))
+                            )
+                        } else {
+                            SecureField(
+                                "",
+                                text: $password,
+                                prompt: Text("Enter Your Password")
+                                    .foregroundColor(.white.opacity(0.8))
+                            )
                         }
                     }
+                    .foregroundColor(.white)
+                    .padding()
+                    .background(fieldBackground)
+                    .cornerRadius(8)
+                    .onChange(of: password) { _ in session.auth_error = nil }
 
-                    // Eye icon inside the same field area
-                    Button(action: {
-                        showPassword.toggle()
-                    }) {
+                    Button(action: { showPassword.toggle() }) {
                         Image(systemName: showPassword ? "eye.slash.fill" : "eye.fill")
                             .foregroundColor(.gray)
                             .padding(.trailing, 15)
@@ -100,17 +80,15 @@ struct LoginView: View {
                 }
                 .padding(.horizontal)
 
-                // Error message
-                if let errorMessage = session.auth_error {
+                // Only show errors that are *not* the “User data not found” one
+                if let errorMessage = session.auth_error,
+                   errorMessage != "User data not found." {
                     Text(errorMessage)
                         .foregroundColor(.red)
                         .padding(.horizontal)
                 }
 
-                // Login button: #00FFFF background, black text
-                Button(action: {
-                    login()
-                }) {
+                Button(action: login) {
                     Text("Login")
                         .foregroundColor(.black)
                         .frame(maxWidth: .infinity)
@@ -120,7 +98,6 @@ struct LoginView: View {
                 }
                 .padding(.horizontal)
 
-                // Links in neonCyan
                 NavigationLink(destination: ForgetPasswordView()) {
                     Text("Forget Password?")
                         .foregroundColor(neonCyan)
@@ -135,8 +112,10 @@ struct LoginView: View {
             .padding()
             .navigationBarHidden(true)
         }
-        .onTapGesture {
-            hideLoginKeyboard()
+        .onTapGesture { hideLoginKeyboard() }
+        .onAppear {
+            // clear out any leftover “User data not found” from a deleted account
+            session.auth_error = nil
         }
     }
 
@@ -144,8 +123,7 @@ struct LoginView: View {
 
     func isEmailValid(_ email: String) -> Bool {
         let emailRegEx = "(?:[A-Z0-9a-z._%+-]+)@(?:[A-Za-z0-9-]+\\.)+[A-Za-z]{2,64}"
-        let emailPred = NSPredicate(format:"SELF MATCHES %@", emailRegEx)
-        return emailPred.evaluate(with: email)
+        return NSPredicate(format:"SELF MATCHES %@", emailRegEx).evaluate(with: email)
     }
 
     func login() {
@@ -163,7 +141,6 @@ struct LoginView: View {
 
 #if canImport(UIKit)
 import UIKit
-
 extension View {
     func hideLoginKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
@@ -172,9 +149,7 @@ extension View {
 }
 #else
 extension View {
-    func hideLoginKeyboard() {
-        // No-op for environments where UIKit is not available (e.g., previews)
-    }
+    func hideLoginKeyboard() { }
 }
 #endif
 
@@ -183,7 +158,6 @@ struct LoginView_Previews: PreviewProvider {
         NavigationView {
             LoginView()
                 .environmentObject(SessionStore())
-                .environmentObject(HabitViewModel())
         }
         .preferredColorScheme(.dark)
     }

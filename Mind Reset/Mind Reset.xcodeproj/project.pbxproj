@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4827BDC32DC00ED900FE752A /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 4827BDC22DC00ED900FE752A /* FirebaseFunctions */; };
+		4827BDC52DC00ED900FE752A /* FirebaseFunctionsCombine-Community in Frameworks */ = {isa = PBXBuildFile; productRef = 4827BDC42DC00ED900FE752A /* FirebaseFunctionsCombine-Community */; };
 		48D4B7932CEFC94A0031EBA1 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 48D4B7922CEFC94A0031EBA1 /* FirebaseAuth */; };
 		48D4B7952CEFC94A0031EBA1 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 48D4B7942CEFC94A0031EBA1 /* FirebaseFirestore */; };
 /* End PBXBuildFile section */
@@ -28,8 +30,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4827BDC32DC00ED900FE752A /* FirebaseFunctions in Frameworks */,
 				48D4B7932CEFC94A0031EBA1 /* FirebaseAuth in Frameworks */,
 				48D4B7952CEFC94A0031EBA1 /* FirebaseFirestore in Frameworks */,
+				4827BDC52DC00ED900FE752A /* FirebaseFunctionsCombine-Community in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -82,6 +86,8 @@
 			packageProductDependencies = (
 				48D4B7922CEFC94A0031EBA1 /* FirebaseAuth */,
 				48D4B7942CEFC94A0031EBA1 /* FirebaseFirestore */,
+				4827BDC22DC00ED900FE752A /* FirebaseFunctions */,
+				4827BDC42DC00ED900FE752A /* FirebaseFunctionsCombine-Community */,
 			);
 			productName = "Mind Reset";
 			productReference = 48D4B75D2CEFB63B0031EBA1 /* Mind Reset.app */;
@@ -355,6 +361,16 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		4827BDC22DC00ED900FE752A /* FirebaseFunctions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 48D4B7912CEFC94A0031EBA1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFunctions;
+		};
+		4827BDC42DC00ED900FE752A /* FirebaseFunctionsCombine-Community */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 48D4B7912CEFC94A0031EBA1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = "FirebaseFunctionsCombine-Community";
+		};
 		48D4B7922CEFC94A0031EBA1 /* FirebaseAuth */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 48D4B7912CEFC94A0031EBA1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;

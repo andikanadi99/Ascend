@@ -6,135 +6,170 @@
 //
 
 import SwiftUI
+import FirebaseFirestore
 
 struct SupportSettingsView: View {
-    // Customize your accent color to match your dark/cyan theme.
+    @EnvironmentObject private var session: SessionStore
+    private let db = Firestore.firestore()
     private let accentCyan = Color(red: 0, green: 1, blue: 1)
     
+    /// The address your Send-Email extension is configured to deliver to.
+    private let supportAddress = "andikanadi10@gmail.com"
+    
+    // MARK: – User input
+    @State private var feedbackMessage: String = ""
+    @State private var issueMessage: String = ""
+    
+    // MARK: – Alert state
+    @State private var showAlert      = false
+    @State private var alertTitle     = ""
+    @State private var alertMessage   = ""
+    
     var body: some View {
-        NavigationView {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                
-                List {
-                    Section(header: Text("Support")
-                                .padding(.bottom)
-                                .foregroundColor(accentCyan)
-                                .font(.headline)) {
-                        NavigationLink(destination: ContactSupportView(supportType: .contact)) {
-                            Label("Question/Feedback", systemImage: "envelope")
-                                .foregroundColor(.white)
+        ZStack {
+            Color.black.ignoresSafeArea()
+            
+            ScrollView {
+                VStack(spacing: 24) {
+                    
+                    // MARK: General Feedback
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Share Feedback")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        
+                        TextEditor(text: $feedbackMessage)
+                            .frame(minHeight: 150)
+                            .padding(8)
+                            .background(Color.gray.opacity(0.2))
+                            .cornerRadius(8)
+                            .foregroundColor(.white)
+                            .overlay(
+                                Group {
+                                    if feedbackMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        Text("Your thoughts…")
+                                            .foregroundColor(.white.opacity(0.6))
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                    }
+                                },
+                                alignment: .topLeading
+                            )
+                        
+                        Button("Send Feedback") {
+                            submit(type: "Feedback", message: feedbackMessage)
                         }
-                        NavigationLink(destination: ContactSupportView(supportType: .report)) {
-                            Label("Report a Problem", systemImage: "exclamationmark.bubble")
-                                .foregroundColor(.white)
-                        }
+                        .disabled(feedbackMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .buttonStyle(CyanButtonStyle())
                     }
-                }
-                .listStyle(InsetGroupedListStyle())
-                .background(Color.black)
-            }
-            .navigationBarTitleDisplayMode(.inline)
-        }
-        .navigationViewStyle(StackNavigationViewStyle())
-    }
-}
-
-enum SupportType {
-    case contact
-    case report
-}
-
-struct ContactSupportView: View {
-    let supportType: SupportType
-    @State private var subject: String = ""
-    @State private var message: String = ""
-    @State private var showAlert: Bool = false
-    @Environment(\.presentationMode) var presentationMode
-    
-    // Customize your accent color to match your dark/cyan theme.
-    private let accentCyan = Color(red: 0, green: 1, blue: 1)
-    
-    private var titleText: String {
-        switch supportType {
-        case .contact:
-            return "Question/Feedback"
-        case .report:
-            return "Report a Problem"
-        }
-    }
-    
-    private var defaultSubject: String {
-        switch supportType {
-        case .contact:
-            return "Question/Feedback"
-        case .report:
-            return "Problem Report"
-        }
-    }
-    
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text(titleText)
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-                    .padding(.bottom, 10)
-                
-                TextEditor(text: $message)
                     .padding()
                     .background(Color.gray.opacity(0.2))
-                    .cornerRadius(8)
-                    .foregroundColor(.white)
-                    .frame(minHeight: 200)
-                    .overlay(
-                        Group {
-                            if message.isEmpty {
-                                Text("Type your message here...")
-                                    .foregroundColor(.white.opacity(0.7))
-                            }
+                    .cornerRadius(12)
+                    
+                    // MARK: Problem Reports
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Report a Problem")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        
+                        TextEditor(text: $issueMessage)
+                            .frame(minHeight: 150)
+                            .padding(8)
+                            .background(Color.gray.opacity(0.2))
+                            .cornerRadius(8)
+                            .foregroundColor(.white)
+                            .overlay(
+                                Group {
+                                    if issueMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        Text("Describe the issue…")
+                                            .foregroundColor(.white.opacity(0.6))
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                    }
+                                },
+                                alignment: .topLeading
+                            )
+                        
+                        Button("Send Report") {
+                            submit(type: "Issue Report", message: issueMessage)
                         }
-                    )
-                
-                Button(action: sendMessage) {
-                    Text("Send")
-                        .font(.headline)
-                        .foregroundColor(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(accentCyan)
-                        .cornerRadius(8)
+                        .disabled(issueMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .buttonStyle(CyanButtonStyle())
+                    }
+                    .padding()
+                    .background(Color.gray.opacity(0.2))
+                    .cornerRadius(12)
+                    
+                    Spacer()
                 }
-                
-                Spacer()
+                .padding()
             }
-            .padding()
         }
-        .background(Color.black.ignoresSafeArea())
-        .navigationBarTitleDisplayMode(.inline)
-        // Remove the explicit back button modifiers so the parent's back arrow is used.
-        .alert(isPresented: $showAlert) {
-            Alert(
-                title: Text("Message Sent"),
-                message: Text("Your \(titleText.lowercased()) message has been sent."),
-                dismissButton: .default(Text("OK")) {
-                    presentationMode.wrappedValue.dismiss()
-                }
-            )
+        .navigationBarTitle("Support", displayMode: .inline)
+        .preferredColorScheme(.dark)
+        .alert(alertTitle, isPresented: $showAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(alertMessage)
         }
     }
     
-    private func sendMessage() {
-        // In a real app, implement the functionality to send the message (e.g., via email or a support API)
-        print("Subject: \(subject)")
-        print("Message: \(message)")
-        showAlert = true
+    // MARK: – Submit to `mail` collection
+    private func submit(type: String, message: String) {
+        guard let user = session.userModel else {
+            alertTitle   = "Not Signed In"
+            alertMessage = "You must be signed in to send feedback."
+            showAlert    = true
+            return
+        }
+        
+        let emailDoc: [String: Any] = [
+            "to":     [ supportAddress ],
+            "replyTo": user.email,
+            "message": [
+                "subject": "\(type) from \(user.displayName.isEmpty ? user.email : user.displayName)",
+                "text":    message
+            ]
+        ]
+        
+        db.collection("mail")
+          .addDocument(data: emailDoc) { error in
+            if let error = error {
+                alertTitle   = "Error"
+                alertMessage = "Failed to send: \(error.localizedDescription)"
+            } else {
+                alertTitle   = "Thank You!"
+                alertMessage = (type == "Feedback")
+                    ? "Your feedback has been sent."
+                    : "Your problem report has been sent. We'll look into it."
+                // clear the appropriate box
+                if type == "Feedback" { feedbackMessage = "" }
+                else                  { issueMessage = "" }
+            }
+            showAlert = true
+        }
     }
 }
 
+// MARK: – Reusable Cyan Button Style
+private struct CyanButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        let accent = Color(red: 0, green: 1, blue: 1)
+        return configuration.label
+            .foregroundColor(.black)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(accent.opacity(configuration.isPressed ? 0.7 : 1))
+            .cornerRadius(8)
+    }
+}
+
+// MARK: – Preview
 struct SupportSettingsView_Previews: PreviewProvider {
     static var previews: some View {
-        SupportSettingsView()
+        NavigationView {
+            SupportSettingsView()
+                .environmentObject(SessionStore())
+        }
     }
 }

@@ -26,10 +26,11 @@ struct LoginView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 20) {
-                Text("Welcome Back")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundColor(neonCyan)
+                Image("AppFullWord")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 260)
+                        .padding(.top, 10)
 
                 // Email field
                 TextField(

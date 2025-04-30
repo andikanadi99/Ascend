@@ -155,9 +155,10 @@ struct AddHabitView: View {
                         )
                         .datePickerStyle(WheelDatePickerStyle())
                         .padding()
-                        .background(accentColor.opacity(0.8))
+                        .background(Color.black)                // black background behind the wheels
                         .cornerRadius(8)
                         .accentColor(accentColor)
+                        .environment(\.colorScheme, .dark)      // force dark mode here
                         .accessibilityLabel("Start Date Picker")
                         .accessibilityHint("Select the start date for your habit")
                     }

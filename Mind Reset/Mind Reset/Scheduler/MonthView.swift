@@ -34,6 +34,8 @@ struct MonthView: View {
     @State private var monthlyPriorityToDelete: MonthlyPriority?
     
     let accentCyan      = Color(red: 0, green: 1, blue: 1)
+    
+    let coolGray = Color(red: 1.0, green: 0.45, blue: 0.45)
 
     var body: some View {
         ScrollView {
@@ -308,6 +310,7 @@ struct CalendarView: View {
     @EnvironmentObject var habitVM: HabitViewModel
     
     private let columns = Array(repeating: GridItem(.flexible()), count: 7)
+    let coolGray = Color(red: 1.0, green: 0.45, blue: 0.45)
     
     var body: some View {
         VStack {
@@ -385,7 +388,7 @@ struct CalendarView: View {
                                 } else if completion > 0 {
                                     return Color.yellow.opacity(0.6)
                                 } else {
-                                    return Color.red.opacity(0.6)
+                                    return coolGray.opacity(0.6)
                                 }
                             }()
                             Text(dayString(from: date))
@@ -410,18 +413,23 @@ struct CalendarView: View {
     
     /// Computes the fraction of habits completed for a given day.
     private func completionForDay(_ day: Date) -> Double {
-        let calendar = Calendar.current
-        let normalizedDay = calendar.startOfDay(for: day)
-        
-        let completed = habitVM.habits.filter { habit in
-            habit.dailyRecords.contains { record in
-                calendar.isDate(record.date, inSameDayAs: normalizedDay) && ((record.value ?? 0) > 0)
+        let cal = Calendar.current
+        let norm = cal.startOfDay(for: day)
+
+        // Only habits whose startDate is on / before this calendar day
+        let relevant = habitVM.habits.filter {
+            cal.compare($0.startDate, to: norm, toGranularity: .day) != .orderedDescending
+        }
+
+        let done = relevant.filter { habit in
+            habit.dailyRecords.contains { rec in
+                cal.isDate(rec.date, inSameDayAs: norm) && ((rec.value ?? 0) > 0)
             }
         }.count
-        let total = habitVM.habits.count
-        return total > 0 ? Double(completed) / Double(total) : 0.0
+
+        let total = relevant.count
+        return total > 0 ? Double(done) / Double(total) : 0.0
     }
-    
     private func computeAverageCompletion() -> Double {
         let days = generateDays().compactMap { $0 }
         guard !days.isEmpty else { return 0 }
@@ -484,124 +492,120 @@ struct DaySummaryView: View {
     let onClose: () -> Void
     
     @EnvironmentObject var viewModel: HabitViewModel
-    private var calendar: Calendar { Calendar.current }
+    private var cal: Calendar { .current }
     
-    @State private var showMetricInput: Bool = false
-    @State private var metricInput: String = ""
-    @State private var habitBeingUpdated: Habit? = nil
+    // UI state
+    @State private var showMetricInput = false
+    @State private var metricInput = ""
+    @State private var habitBeingUpdated: Habit?
     
-    private var finishedCount: Int {
-        habits.filter { habit in
-            calendar.isDateCompleted(habit: habit, for: day)
-        }.count
+    private let coolGray = Color(red: 1.0, green: 0.45, blue: 0.45)
+    
+    // Helper: is the habit active on (or before) this day?
+    private func isActive(_ habit: Habit) -> Bool {
+        cal.compare(habit.startDate, to: day, toGranularity: .day) != .orderedDescending
     }
     
-    private var totalCount: Int {
-        habits.count
+    // Filter once, reuse
+    private var relevantHabits: [Habit] { habits.filter(isActive) }
+    
+    private var finishedCount: Int {
+        relevantHabits.filter { cal.isDateCompleted(habit: $0, for: day) }.count
     }
     
     var body: some View {
         ZStack {
-            VStack(spacing: 16) {
-                Text("Summary for \(formattedDate(day))")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    ProgressView(value: Double(finishedCount), total: Double(totalCount))
-                        .progressViewStyle(LinearProgressViewStyle(tint: progressColor()))
-                        .padding(.bottom, 4)
-                    Text("Finished \(finishedCount) of \(totalCount) habits")
-                        .font(.subheadline)
-                        .foregroundColor(progressColor())
-                }
-                .padding()
-                .background(Color.gray.opacity(0.2))
-                .cornerRadius(8)
-                
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach($habits) { $habit in
-                        HStack {
-                            Toggle(isOn: bindingForHabitCompletion(for: habit)) {
-                                Text(habit.title)
-                                    .foregroundColor(.white)
-                            }
-                            .toggleStyle(SwitchToggleStyle(tint: .green))
-                        }
-                        .padding(.vertical, 4)
+            summaryCard
+            if showMetricInput { metricInputOverlay.transition(.opacity) }
+        }
+    }
+    
+    // ───── summary card ─────
+    private var summaryCard: some View {
+        VStack(spacing: 16) {
+            Text("Summary for \(formattedDate(day))")
+                .font(.headline)
+                .foregroundColor(.white)
+            
+            // Progress section
+            VStack(alignment: .leading, spacing: 4) {
+                ProgressView(value: Double(finishedCount), total: Double(relevantHabits.count))
+                    .progressViewStyle(LinearProgressViewStyle(tint: progressColor()))
+                    .padding(.bottom, 4)
+                Text("Finished \(finishedCount) of \(relevantHabits.count) habits")
+                    .font(.subheadline)
+                    .foregroundColor(progressColor())
+            }
+            .padding()
+            .background(Color.gray.opacity(0.2))
+            .cornerRadius(8)
+            
+            // Toggle list
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(relevantHabits.enumerated()), id: \.element.id) { idx, habit in
+                    Toggle(isOn: bindingForHabitCompletion(indexInAll: indexInHabitsArray(for: habit))) {
+                        Text(habit.title).foregroundColor(.white)
                     }
+                    .toggleStyle(SwitchToggleStyle(tint: .green))
+                    .padding(.vertical, 4)
                 }
-                .padding()
-                .background(Color.gray.opacity(0.2))
-                .cornerRadius(8)
-                
-                Button("Close Summary") {
-                    onClose()
-                }
+            }
+            .padding()
+            .background(Color.gray.opacity(0.2))
+            .cornerRadius(8)
+            
+            Button("Close Summary") { onClose() }
                 .font(.headline)
                 .padding()
                 .frame(maxWidth: .infinity)
                 .background(Color.gray.opacity(0.8))
                 .foregroundColor(.white)
                 .cornerRadius(8)
-            }
-            .padding()
-            .background(Color.black)
-            .cornerRadius(12)
-            .shadow(radius: 10)
-            
-            // If the user toggles on a habit -> show metric input
-            if showMetricInput {
-                metricInputOverlay
-                    .transition(.opacity)
-            }
         }
+        .padding()
+        .background(Color.black)
+        .cornerRadius(12)
+        .shadow(radius: 10)
     }
     
-    private func formattedDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        return formatter.string(from: date)
+    // ───── bindings & helpers ─────
+    private func indexInHabitsArray(for habit: Habit) -> Int {
+        habits.firstIndex(where: { $0.id == habit.id }) ?? 0
     }
     
-    private func progressColor() -> Color {
-        if totalCount == 0 { return .red }
-        if finishedCount == totalCount {
-            return .green
-        } else if finishedCount > 0 {
-            return .yellow
-        } else {
-            return .red
-        }
-    }
-    
-    private func bindingForHabitCompletion(for habit: Habit) -> Binding<Bool> {
+    private func bindingForHabitCompletion(indexInAll idx: Int) -> Binding<Bool> {
         Binding<Bool>(
             get: {
-                calendar.isDateCompleted(habit: habit, for: day)
+                cal.isDateCompleted(habit: habits[idx], for: day)
             },
             set: { newValue in
                 if newValue {
-                    // Toggled ON -> present the metric input
-                    if let index = habits.firstIndex(where: { $0.id == habit.id }) {
-                        habitBeingUpdated = habits[index]
-                        showMetricInput = true
-                    }
+                    habitBeingUpdated = habits[idx]
+                    showMetricInput = true
                 } else {
-                    // Toggled OFF -> remove the record for that day
-                    if let index = habits.firstIndex(where: { $0.id == habit.id }) {
-                        var updatedHabit = habits[index]
-                        updatedHabit.dailyRecords.removeAll { record in
-                            calendar.isDate(record.date, inSameDayAs: day)
-                        }
-                        habits[index] = updatedHabit
-                        viewModel.updateHabit(updatedHabit)
+                    var updated = habits[idx]
+                    updated.dailyRecords.removeAll { rec in
+                        cal.isDate(rec.date, inSameDayAs: day)
                     }
+                    habits[idx] = updated
+                    viewModel.updateHabit(updated)
                 }
             }
         )
     }
     
+    private func formattedDate(_ d: Date) -> String {
+        let f = DateFormatter(); f.dateStyle = .medium; return f.string(from: d)
+    }
+    
+    private func progressColor() -> Color {
+        if relevantHabits.isEmpty { return coolGray }
+        if finishedCount == relevantHabits.count { return .green }
+        if finishedCount > 0 { return .yellow }
+        return coolGray
+    }
+    
+    // ───── metric input overlay & prompt  (unchanged) ─────
     private var metricInputOverlay: some View {
         let prompt = metricPrompt()
         return VStack(spacing: 16) {
@@ -609,6 +613,7 @@ struct DaySummaryView: View {
                 .font(.headline)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.white)
+            
             TextField("Enter a number", text: $metricInput)
                 .keyboardType(.numberPad)
                 .padding()
@@ -643,14 +648,13 @@ struct DaySummaryView: View {
                 Spacer()
                 
                 Button("Save") {
-                    if let metricValue = Int(metricInput),
-                       let habit = habitBeingUpdated,
-                       let index = habits.firstIndex(where: { $0.id == habit.id }) {
-                        var updatedHabit = habits[index]
-                        updatedHabit.dailyRecords.append(HabitRecord(date: day, value: Double(metricValue)))
-                        habits[index] = updatedHabit
-                        viewModel.updateHabit(updatedHabit)
-                        
+                    if let val = Int(metricInput),
+                       let h = habitBeingUpdated,
+                       let idx = habits.firstIndex(where: { $0.id == h.id }) {
+                        var updated = habits[idx]
+                        updated.dailyRecords.append(HabitRecord(date: day, value: Double(val)))
+                        habits[idx] = updated
+                        viewModel.updateHabit(updated)
                         withAnimation {
                             showMetricInput = false
                             metricInput = ""
@@ -659,7 +663,7 @@ struct DaySummaryView: View {
                     }
                 }
                 .disabled({
-                    if let habit = habitBeingUpdated, habit.metricType.isCompletedMetric() {
+                    if let h = habitBeingUpdated, h.metricType.isCompletedMetric() {
                         return !(metricInput == "0" || metricInput == "1")
                     } else {
                         return Int(metricInput) == nil
@@ -676,35 +680,26 @@ struct DaySummaryView: View {
     }
     
     private func metricPrompt() -> String {
-        if let habit = habitBeingUpdated {
-            switch habit.metricType {
-            case .predefined(let value):
-                if value.lowercased().contains("minute") {
-                    return "How many minutes did you meditate this day?"
-                } else if value.lowercased().contains("miles") {
-                    return "How many miles did you run this day?"
-                } else if value.lowercased().contains("pages") {
-                    return "How many pages did you read this day?"
-                } else if value.lowercased().contains("reps") {
-                    return "How many reps did you complete this day?"
-                } else if value.lowercased().contains("steps") {
-                    return "How many steps did you take this day?"
-                } else if value.lowercased().contains("calories") {
-                    return "How many calories did you burn/consume this day?"
-                } else if value.lowercased().contains("hours") {
-                    return "How many hours did you sleep this day?"
-                } else if value.lowercased().contains("completed") {
-                    return "Were you able to complete the task? (Enter 1 for Yes, 0 for No)"
-                } else {
-                    return "Enter this day's \(value.lowercased()) value:"
-                }
-            case .custom(let customValue):
-                return "Enter this day's \(customValue.lowercased()) value:"
-            }
+        guard let habit = habitBeingUpdated else { return "Enter a metric value:" }
+        switch habit.metricType {
+        case .predefined(let v): return predefinedPrompt(for: v)
+        case .custom(let v):     return "Enter this day's \(v.lowercased()) value:"
         }
-        return "Enter a metric value:"
+    }
+    private func predefinedPrompt(for value: String) -> String {
+        let lower = value.lowercased()
+        if lower.contains("minute")   { return "How many minutes did you meditate this day?" }
+        if lower.contains("mile")     { return "How many miles did you run this day?" }
+        if lower.contains("page")     { return "How many pages did you read this day?" }
+        if lower.contains("rep")      { return "How many reps did you complete this day?" }
+        if lower.contains("step")     { return "How many steps did you take this day?" }
+        if lower.contains("calorie")  { return "How many calories did you burn/consume this day?" }
+        if lower.contains("hour")     { return "How many hours did you sleep this day?" }
+        if lower.contains("completed"){ return "Were you able to complete the task? (1 = Yes, 0 = No)" }
+        return "Enter this day's \(lower) value:"
     }
 }
+
 
 // MARK: - Calendar Extension
 extension Calendar {

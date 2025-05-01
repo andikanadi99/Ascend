@@ -610,8 +610,34 @@ struct CustomCalendarView: View {
     let accentColor: Color
 
     private let columns = Array(repeating: GridItem(.flexible()), count: 7)
-    
-    init(month: Date, minDate: Date, maxDate: Date, startDate: Binding<Date>, endDate: Binding<Date>, accentColor: Color) {
+    private var calendar: Calendar { .current }
+
+    // Compute the first day of the month for any date
+    private func startOfMonth(_ date: Date) -> Date {
+        let comps = calendar.dateComponents([.year, .month], from: date)
+        return calendar.date(from: comps)!
+    }
+
+    // Whether we can go back one month without crossing minDate
+    private var canGoBack: Bool {
+        let prev = calendar.date(byAdding: .month, value: -1, to: currentMonth)!
+        return startOfMonth(prev) >= startOfMonth(minDate)
+    }
+
+    // Whether we can go forward one month without crossing maxDate
+    private var canGoForward: Bool {
+        let next = calendar.date(byAdding: .month, value: 1, to: currentMonth)!
+        return startOfMonth(next) <= startOfMonth(maxDate)
+    }
+
+    init(
+        month: Date,
+        minDate: Date,
+        maxDate: Date,
+        startDate: Binding<Date>,
+        endDate: Binding<Date>,
+        accentColor: Color
+    ) {
         self._currentMonth = State(initialValue: month)
         self.minDate = minDate
         self.maxDate = maxDate
@@ -619,35 +645,43 @@ struct CustomCalendarView: View {
         self._endDate = endDate
         self.accentColor = accentColor
     }
-    
+
     var body: some View {
         VStack {
-            // Header with month navigation.
+            // Header with month navigation
             HStack {
                 Button(action: {
-                    if let prevMonth = Calendar.current.date(byAdding: .month, value: -1, to: currentMonth) {
-                        currentMonth = prevMonth
-                    }
+                    guard canGoBack,
+                          let prevMonth = calendar.date(byAdding: .month, value: -1, to: currentMonth)
+                    else { return }
+                    currentMonth = prevMonth
                 }) {
                     Image(systemName: "chevron.left")
-                        .foregroundColor(.white)
+                        .foregroundColor(canGoBack ? .white : .gray)
                 }
+                .disabled(!canGoBack)
+
                 Spacer()
+
                 Text(monthYearString(from: currentMonth))
                     .foregroundColor(.white)
                     .font(.headline)
+
                 Spacer()
+
                 Button(action: {
-                    if let nextMonth = Calendar.current.date(byAdding: .month, value: 1, to: currentMonth) {
-                        currentMonth = nextMonth
-                    }
+                    guard canGoForward,
+                          let nextMonth = calendar.date(byAdding: .month, value: 1, to: currentMonth)
+                    else { return }
+                    currentMonth = nextMonth
                 }) {
                     Image(systemName: "chevron.right")
-                        .foregroundColor(.white)
+                        .foregroundColor(canGoForward ? .white : .gray)
                 }
+                .disabled(!canGoForward)
             }
             .padding(.horizontal)
-            
+
             // Calendar grid
             LazyVGrid(columns: columns, spacing: 8) {
                 ForEach(generateDays(for: currentMonth), id: \.self) { day in
@@ -659,49 +693,46 @@ struct CustomCalendarView: View {
                         .background(background(for: day))
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                         .onTapGesture {
-                            if isSelectable {
-                                select(day: day)
-                            }
+                            guard isSelectable else { return }
+                            select(day: day)
                         }
                 }
             }
             .padding(.horizontal)
         }
     }
-    
+
     private func monthYearString(from date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMMM yyyy"
         return formatter.string(from: date)
     }
-    
+
     private func dayString(from date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "d"
         return formatter.string(from: date)
     }
-    
+
     private func background(for date: Date) -> Color {
-        // Highlight if the date falls between the selected start and end dates.
         if date >= startDate && date <= endDate {
             return accentColor.opacity(0.5)
-        } else if Calendar.current.isDate(date, inSameDayAs: startDate) || Calendar.current.isDate(date, inSameDayAs: endDate) {
+        } else if calendar.isDate(date, inSameDayAs: startDate)
+               || calendar.isDate(date, inSameDayAs: endDate) {
             return accentColor
         } else {
             return Color.clear
         }
     }
-    
+
     private func select(day: Date) {
-        // Update the selected dates based on the tap.
         if day < startDate {
             startDate = day
         } else if day > endDate {
             endDate = day
         } else {
-            // If tapped within the range, choose the closer boundary to update.
-            let diffToStart = abs(Calendar.current.dateComponents([.day], from: startDate, to: day).day ?? 0)
-            let diffToEnd = abs(Calendar.current.dateComponents([.day], from: day, to: endDate).day ?? 0)
+            let diffToStart = abs(calendar.dateComponents([.day], from: startDate, to: day).day ?? 0)
+            let diffToEnd   = abs(calendar.dateComponents([.day], from: day, to: endDate).day ?? 0)
             if diffToStart < diffToEnd {
                 startDate = day
             } else {
@@ -709,20 +740,19 @@ struct CustomCalendarView: View {
             }
         }
     }
-    
+
     private func generateDays(for month: Date) -> [Date] {
         var dates: [Date] = []
-        let calendar = Calendar.current
         guard let monthInterval = calendar.dateInterval(of: .month, for: month) else { return dates }
         var date = calendar.startOfDay(for: monthInterval.start)
         while date < monthInterval.end {
             dates.append(date)
-            guard let nextDate = calendar.date(byAdding: .day, value: 1, to: date) else { break }
-            date = nextDate
+            date = calendar.date(byAdding: .day, value: 1, to: date)!
         }
         return dates
     }
 }
+
 
 // MARK: - Subviews & Helpers (unchanged)
 extension HabitDetailView {
@@ -923,17 +953,38 @@ extension HabitDetailView {
     }
     
     private var progressTab: some View {
-        let userCreationDate = session.userModel?.createdAt ?? habit.startDate
+        // Base everything on the habit’s startDate
+        let habitStart = Calendar.current.startOfDay(for: habit.startDate)
+        let today = Calendar.current.startOfDay(for: Date())
+
+        // Compute week intervals
+        let currentWeek = currentWeekInterval(offset: weekOffset)
+        let prevWeek = currentWeekInterval(offset: weekOffset - 1)
+        let nextWeek = currentWeekInterval(offset: weekOffset + 1)
+
+        // Can navigate only if the interval start/end stays within [habitStart, today]
+        let canPrevWeek = Calendar.current.compare(prevWeek.start, to: habitStart, toGranularity: .day) != .orderedAscending
+        let canNextWeek = nextWeek.start <= today
+
+        // Compute month dates
+        let currentMonthDate = currentMonthDate(offset: monthOffset)
+        let prevMonthDate = Calendar.current.date(byAdding: .month, value: -1, to: currentMonthDate)!
+        let nextMonthDate = Calendar.current.date(byAdding: .month, value: 1, to: currentMonthDate)!
+
+        let canPrevMonth = Calendar.current.compare(prevMonthDate, to: habitStart, toGranularity: .day) != .orderedAscending
+        let canNextMonth = nextMonthDate <= today
+
         return VStack(spacing: 20) {
             if selectedTimeRange == .weekly {
-                Text("Current Week: \(formatWeekInterval(currentWeekInterval(offset: weekOffset)))")
+                Text("Current Week: \(formatWeekInterval(currentWeek))")
                     .foregroundColor(.white)
                     .font(.headline)
             } else {
-                Text("Current Month: \(formatMonth(currentMonthDate(offset: monthOffset)))")
+                Text("Current Month: \(formatMonth(currentMonthDate))")
                     .foregroundColor(.white)
                     .font(.headline)
             }
+
             Picker("Time Range", selection: $selectedTimeRange) {
                 Text("Weekly").tag(TimeRange.weekly)
                 Text("Monthly").tag(TimeRange.monthly)
@@ -943,8 +994,13 @@ extension HabitDetailView {
             .background(.gray)
             .cornerRadius(8)
             .padding(.horizontal, 10)
+
             if selectedTimeRange == .weekly {
-                let (weekLabels, weekValues) = weeklyData(habit: habit, offset: weekOffset, userCreationDate: userCreationDate)
+                let (weekLabels, weekValues) = weeklyData(
+                    habit: habit,
+                    offset: weekOffset,
+                    userCreationDate: habitStart
+                )
                 SingleLineGraphView(
                     timeRange: .weekly,
                     dates: weekLabels,
@@ -955,23 +1011,26 @@ extension HabitDetailView {
                 .background(accentCyan.opacity(0.15))
                 .cornerRadius(8)
                 .padding(.horizontal, 12)
+
                 HStack(spacing: 20) {
                     Button {
-                        if weekOffset > minWeekOffset {
+                        if canPrevWeek {
                             weekOffset -= 1
                         }
                     } label: {
-                        navigationButtonLabel(title: "Prev\nWeek", isDisabled: weekOffset <= minWeekOffset)
+                        navigationButtonLabel(
+                            title: "Prev\nWeek",
+                            isDisabled: !canPrevWeek
+                        )
                     }
-                    .disabled(weekOffset <= minWeekOffset)
+                    .disabled(!canPrevWeek)
+
                     Button {
                         showDateRangeOverlay = true
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "calendar")
-                                .font(.callout)
-                            Text("Choose Week")
-                                .font(.callout)
+                            Image(systemName: "calendar").font(.callout)
+                            Text("Choose Week").font(.callout)
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
@@ -979,15 +1038,13 @@ extension HabitDetailView {
                         .background(accentCyan)
                         .cornerRadius(6)
                     }
-                    // NEW: Custom Range button.
+
                     Button {
                         withAnimation { showCustomDateRangeOverlay = true }
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "calendar.badge.plus")
-                                .font(.callout)
-                            Text("Custom Range")
-                                .font(.callout)
+                            Image(systemName: "calendar.badge.plus").font(.callout)
+                            Text("Custom Range").font(.callout)
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
@@ -995,42 +1052,50 @@ extension HabitDetailView {
                         .background(accentCyan)
                         .cornerRadius(6)
                     }
+
                     Button {
-                        if weekOffset < maxWeekOffset {
+                        if canNextWeek {
                             weekOffset += 1
                         }
                     } label: {
-                        navigationButtonLabel(title: "Next\nWeek", isDisabled: weekOffset >= maxWeekOffset)
+                        navigationButtonLabel(
+                            title: "Next\nWeek",
+                            isDisabled: !canNextWeek
+                        )
                     }
-                    .disabled(weekOffset >= maxWeekOffset)
+                    .disabled(!canNextWeek)
                 }
                 .padding(.top, 10)
+
             } else {
                 MonthlyCurrentMonthGridView(
                     accentColor: accentCyan,
                     offset: monthOffset,
                     dailyRecords: habit.dailyRecords,
-                    userCreationDate: userCreationDate
+                    userCreationDate: habitStart
                 )
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 12)
+
                 HStack(spacing: 20) {
                     Button {
-                        if monthOffset > minMonthOffset {
+                        if canPrevMonth {
                             monthOffset -= 1
                         }
                     } label: {
-                        navigationButtonLabel(title: "Prev\nMonth", isDisabled: monthOffset <= minMonthOffset)
+                        navigationButtonLabel(
+                            title: "Prev\nMonth",
+                            isDisabled: !canPrevMonth
+                        )
                     }
-                    .disabled(monthOffset <= minMonthOffset)
+                    .disabled(!canPrevMonth)
+
                     Button {
                         showDateRangeOverlay = true
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "calendar")
-                                .font(.callout)
-                            Text("Choose Month")
-                                .font(.callout)
+                            Image(systemName: "calendar").font(.callout)
+                            Text("Choose Month").font(.callout)
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
@@ -1038,20 +1103,25 @@ extension HabitDetailView {
                         .background(accentCyan)
                         .cornerRadius(6)
                     }
+
                     Button {
-                        if monthOffset < maxMonthOffset {
+                        if canNextMonth {
                             monthOffset += 1
                         }
                     } label: {
-                        navigationButtonLabel(title: "Next\nMonth", isDisabled: monthOffset >= maxMonthOffset)
+                        navigationButtonLabel(
+                            title: "Next\nMonth",
+                            isDisabled: !canNextMonth
+                        )
                     }
-                    .disabled(monthOffset >= maxMonthOffset)
+                    .disabled(!canNextMonth)
                 }
                 .padding(.top, 10)
             }
         }
         .padding(.top, 10)
     }
+
     
     private func weeklyData(habit: Habit, offset: Int, userCreationDate: Date) -> ([String], [CGFloat?]) {
         let dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]

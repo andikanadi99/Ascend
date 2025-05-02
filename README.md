@@ -105,7 +105,7 @@ A: Press the trash icon next to the habit to remove it; this deletes all associa
 A: Go to **Settings → Reminders** to customize when and how often Ascend nudges you.
 
 ## Contact & Support
-If you need additional help, please open an [issue on GitHub](https://github.com/yourusername/ascend-support/issues) or email us at **support@ascendapp.io**. We aim to respond within 24 hours.
+If you need additional help, please open an [issue on GitHub](https://github.com/yourusername/ascend-support/issues) or email us at **support@ascendapp.app**. We aim to respond within 24 hours.
 
 © 2025 Ascend, Inc. All rights reserved.
 

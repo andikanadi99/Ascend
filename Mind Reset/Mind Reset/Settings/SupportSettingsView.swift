@@ -124,8 +124,9 @@ struct SupportSettingsView: View {
         }
         
         let emailDoc: [String: Any] = [
-            "to":     [ supportAddress ],
-            "replyTo": user.email,
+            "to":      [ supportAddress ],
+            "from":    user.email,            // send from the current user’s email
+            "replyTo": supportAddress,        // replies go to your support inbox
             "message": [
                 "subject": "\(type) from \(user.displayName.isEmpty ? user.email : user.displayName)",
                 "text":    message

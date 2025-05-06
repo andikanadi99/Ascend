@@ -183,7 +183,7 @@ class DayViewModel: ObservableObject {
                 return
             }
             
-            targetRef.getDocument { snapshot, error in
+            targetRef.getDocument(source: .default) { snapshot, error in
                 var targetSchedule: DaySchedule
                 let baseDate = calendar.startOfDay(for: targetDate)
                 

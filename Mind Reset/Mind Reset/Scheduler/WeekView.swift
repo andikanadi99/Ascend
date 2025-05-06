@@ -303,7 +303,7 @@ struct WeekView: View {
             .document(userId)
             .collection("weekSchedules")
             .document(docId)
-            .getDocument { snapshot, error in
+            .getDocument(source: .default) { snapshot, error in
                 if let error = error {
                     print("Error copying previous week: \(error)")
                     completion(nil)

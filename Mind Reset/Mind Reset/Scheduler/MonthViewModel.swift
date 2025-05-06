@@ -6,11 +6,11 @@
 //
 
 import SwiftUI
-import Firebase
+import Firebase 
 import FirebaseFirestore
 
 class MonthViewModel: ObservableObject {
-    @Published var schedule: MonthSchedule?
+    @Published var schedule: MonthSchedule?  
     
     private let db = Firestore.firestore()
     

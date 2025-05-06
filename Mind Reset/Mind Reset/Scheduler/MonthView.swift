@@ -18,7 +18,7 @@ struct MonthView: View {
     // Replace local state with environment object
     @EnvironmentObject var monthViewState: MonthViewState
     
-    // If your app can handle user sessions:
+    // If your app can handle user sessions: 
     @EnvironmentObject var session: SessionStore
     @EnvironmentObject var habitVM: HabitViewModel
     
@@ -31,7 +31,7 @@ struct MonthView: View {
     // New state variable to control the prompt for copying from the previous month.
     @State private var showMonthCopyAlert: Bool = false
     
-    @State private var monthlyPriorityToDelete: MonthlyPriority?
+    @State private var monthlyPriorityToDelete: MonthlyPriority?  
     
     let accentCyan      = Color(red: 0, green: 1, blue: 1)
     
@@ -243,10 +243,10 @@ struct MonthView: View {
         // Query Firestore for the previous month's schedule.
         let db = Firestore.firestore()
         db.collection("users")
-            .document(userId)
+            .document(userId) 
             .collection("monthSchedules")
             .document(prevDocId)
-            .getDocument { snapshot, error in
+            .getDocument(source: .default) { snapshot, error in
                 if let error = error {
                     print("Error loading previous month schedule: \(error)")
                     return

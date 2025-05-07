@@ -27,3 +27,7 @@ Carthage/Checkouts/
 # Firebase
 GoogleService-Info.plist
 
+
+# macOS metadata
+.DS_Store
+*.xcuserstate

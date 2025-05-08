@@ -8,6 +8,8 @@
 import SwiftUI
 import FirebaseCore
 import FirebaseFirestore
+import FirebaseAuth           // ← added
+import FirebaseFunctions      // ← added
 import UserNotifications
 
 @main
@@ -20,32 +22,45 @@ struct Mind_ResetApp: App {
 
     let persistenceController = PersistenceController.shared
 
-    // -------------------------------------------------------------
     init() {
-        // Firebase bootstrap
+        // 1️⃣ Firebase bootstrap
         FirebaseApp.configure()
 
-        // Enable Firestore disk cache
-        var settings = FirestoreSettings()
-        settings.isPersistenceEnabled = true
+        /*
+        #if DEBUG
+        // ← Comment out or delete this whole block before you ship:
+        // Auth emulator
+        Auth.auth().useEmulator(withHost: "localhost", port: 9099)
 
+        // Firestore emulator
+        let fdb = Firestore.firestore()
+        var fSettings = fdb.settings
+        fSettings.host = "localhost:8080"
+        fSettings.isPersistenceEnabled = false
+        fSettings.isSSLEnabled = false
+        fdb.settings = fSettings
+
+        // Functions emulator
+        Functions.functions().useEmulator(withHost: "localhost", port: 5001)
+        #endif
+        */
+
+        // 5️⃣ Enable Firestore disk cache (production / release)
+        var prodSettings = FirestoreSettings()
+        prodSettings.isPersistenceEnabled = true
         if #available(iOS 17, *) {
-            settings.cacheSettings =
+            prodSettings.cacheSettings =
                 PersistentCacheSettings(sizeBytes: NSNumber(value: 20 * 1024 * 1024))
         }
-        Firestore.firestore().settings = settings
+        Firestore.firestore().settings = prodSettings
 
-        // Notifications setup
+        // 6️⃣ Notifications setup
         _ = NotificationDelegate.shared
         UNUserNotificationCenter.current().requestAuthorization(
             options: [.alert, .sound, .badge]
-        ) { granted, error in
-            // …
-        }
+        ) { granted, error in /* … */ }
     }
 
-
-    // -------------------------------------------------------------
     var body: some Scene {
         WindowGroup {
             ContentView()

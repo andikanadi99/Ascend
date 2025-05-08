@@ -8,6 +8,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var session: SessionStore
+    @State private var showSignOutAlert = false
     
     private let accentCyan = Color(red: 0, green: 1, blue: 1)
     
@@ -57,13 +58,24 @@ struct SettingsView: View {
                 
                 // Sign-out
                 Section {
-                    Button(role: .destructive) { session.signOut() } label: {
+                    Button(role: .destructive) {
+                        showSignOutAlert = true
+                    } label: {
                         Text("Sign Out")
                             .frame(maxWidth: .infinity)
                             .padding()
                             .background(Color.red)
                             .cornerRadius(8)
                             .foregroundColor(.white)
+                    }
+                    .alert("Confirm Sign Out",
+                           isPresented: $showSignOutAlert) {
+                        Button("Cancel", role: .cancel) { }
+                        Button("Sign Out", role: .destructive) {
+                            session.signOut()
+                        }
+                    } message: {
+                        Text("Are you sure you want to sign out?")
                     }
                 }
             }
@@ -82,3 +94,4 @@ struct SettingsView_Previews: PreviewProvider {
         SettingsView().environmentObject(SessionStore())
     }
 }
+

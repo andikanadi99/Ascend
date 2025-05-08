@@ -11,21 +11,18 @@ struct ContentView: View {
     @EnvironmentObject var session: SessionStore
 
     var body: some View {
-        NavigationView{
+        NavigationView {
             Group {
                 if session.current_user != nil {
-                    // Show the MainTabView once user is authenticated
                     MainTabView()
                 } else {
                     LoginView()
                 }
             }
-            .onAppear {
-                session.listen()
-            }
         }
     }
 }
+
 
 #Preview {
     ContentView()

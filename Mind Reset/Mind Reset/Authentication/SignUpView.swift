@@ -9,7 +9,7 @@ import SwiftUI
 @available(iOS 16.0, *)
 struct SignUpView: View {
     @EnvironmentObject var session: SessionStore
-    
+    @State private var isSigningUp = false
     // ───────── UI state
     @State private var email             = ""
     @State private var password          = ""
@@ -61,11 +61,24 @@ struct SignUpView: View {
                     }
                     
                     // ── Sign-up
-                    Button("Sign Up", action: signUp)
-                        .frame(maxWidth: .infinity).padding()
-                        .background(neonCyan).cornerRadius(8)
-                        .foregroundColor(.black)
-                        .padding(.horizontal)
+                    Button(action: signUp) {
+                      if isSigningUp {
+                        ProgressView()
+                          .progressViewStyle(.circular)
+                          .frame(maxWidth: .infinity)
+                          .padding()
+                      } else {
+                        Text("Sign Up")
+                          .frame(maxWidth: .infinity)
+                          .padding()
+                      }
+                    }
+                    .background(neonCyan)
+                    .cornerRadius(8)
+                    .foregroundColor(.black)
+                    .padding(.horizontal)
+                    .disabled(isSigningUp)    // prevent double-taps
+
                     
                     NavigationLink("Already have an account? Log In",
                                    destination: LoginView())
@@ -108,15 +121,28 @@ struct SignUpView: View {
     }
     
     private func signUp() {
-        // basic validation
-        guard !email.isEmpty, !password.isEmpty, !confirmPassword.isEmpty else {
-            session.auth_error = "Please fill in all fields."; return }
-        guard password == confirmPassword else {
-            session.auth_error = "Passwords do not match."; return }
-        guard password.count >= 6 else {
-            session.auth_error = "Passwords must be at least 6 characters."; return }
-        
-        session.createAccount(email: email, password: password) { _ in }
+      // basic validation…
+      guard !email.isEmpty, !password.isEmpty, !confirmPassword.isEmpty else {
+        session.auth_error = "Please fill in all fields."
+        return
+      }
+      guard password == confirmPassword else {
+        session.auth_error = "Passwords do not match."
+        return
+      }
+      guard password.count >= 6 else {
+        session.auth_error = "Passwords must be at least 6 characters."
+        return
+      }
+
+      isSigningUp = true
+      session.createAccount(email: email, password: password) { success in
+        isSigningUp = false
+        if !success {
+          // auth_error already set by SessionStore
+        }
+        // on success, SessionStore will update current_user → view navigates away
+      }
     }
 }
 

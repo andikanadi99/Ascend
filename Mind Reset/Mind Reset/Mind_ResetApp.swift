@@ -6,40 +6,46 @@
 //
 
 import SwiftUI
-import Firebase
 import FirebaseCore
 import FirebaseFirestore
-import UserNotifications  // ← for local notifications
+import UserNotifications
 
 @main
 struct Mind_ResetApp: App {
-    @StateObject var session = SessionStore()
-    @StateObject var habitViewModel = HabitViewModel()
-    @StateObject var dayViewState = DayViewState()
-    @StateObject var weekViewState = WeekViewState()
-    @StateObject var monthViewState = MonthViewState()  // <-- new
+    @StateObject var session         = SessionStore()
+    @StateObject var habitViewModel  = HabitViewModel()
+    @StateObject var dayViewState    = DayViewState()
+    @StateObject var weekViewState   = WeekViewState()
+    @StateObject var monthViewState  = MonthViewState()
 
     let persistenceController = PersistenceController.shared
 
+    // -------------------------------------------------------------
     init() {
-        // Firebase
+        // Firebase bootstrap
         FirebaseApp.configure()
 
-        // 1️⃣ Wire up our notification delegate so we can show banners in-app
-        _ = NotificationDelegate.shared
+        // Enable Firestore disk cache
+        var settings = FirestoreSettings()
+        settings.isPersistenceEnabled = true
 
-        // 2️⃣ Request user permission for alerts, sounds, badges
+        if #available(iOS 17, *) {
+            settings.cacheSettings =
+                PersistentCacheSettings(sizeBytes: NSNumber(value: 20 * 1024 * 1024))
+        }
+        Firestore.firestore().settings = settings
+
+        // Notifications setup
+        _ = NotificationDelegate.shared
         UNUserNotificationCenter.current().requestAuthorization(
             options: [.alert, .sound, .badge]
         ) { granted, error in
-            if let error = error {
-                print("Notification auth request failed: \(error.localizedDescription)")
-            } else {
-                print("Notifications permission granted? \(granted)")
-            }
+            // …
         }
     }
 
+
+    // -------------------------------------------------------------
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -49,8 +55,7 @@ struct Mind_ResetApp: App {
                 .environmentObject(habitViewModel)
                 .environmentObject(dayViewState)
                 .environmentObject(weekViewState)
-                .environmentObject(monthViewState) // <-- inject
+                .environmentObject(monthViewState)
         }
     }
 }
-

@@ -21,7 +21,16 @@ class HabitViewModel: ObservableObject {
     
     @Published var defaultsLoaded: Bool = false  // Loading flag
     
-    private var db = Firestore.firestore()
+    private static let cachedDB: Firestore = {
+        let f = Firestore.firestore()
+        var s = f.settings
+        s.isPersistenceEnabled = true          // Serve cached docs first
+        f.settings = s
+        return f
+    }()
+    
+    private var db = HabitViewModel.cachedDB
+    
     private var listenerRegistration: ListenerRegistration?
     private var cancellables = Set<AnyCancellable>()
     
@@ -44,45 +53,65 @@ class HabitViewModel: ObservableObject {
     }
     
     func fetchHabits(for userId: String) {
+        // Tear down any previous listener
         listenerRegistration?.remove()
+
+        // Use a background queue for decoding to keep the main thread free
+        let workerQ = DispatchQueue(label: "habit-decoder", qos: .userInitiated)
+
         listenerRegistration = db.collection("habits")
             .whereField("ownerId", isEqualTo: userId)
             .order(by: "startDate", descending: true)
-            .addSnapshotListener { [weak self] (querySnapshot, error) in
+            .addSnapshotListener(includeMetadataChanges: false) { [weak self] (snap, error) in
                 guard let self = self else { return }
+
+                // --- Error path --------------------------------------------------
                 if let error = error {
-                    print("Error fetching habits: \(error.localizedDescription)")
+                    print("Error fetching habits:", error.localizedDescription)
                     DispatchQueue.main.async {
                         self.errorMessage = "Failed to fetch habits."
                     }
                     return
                 }
-                guard let documents = querySnapshot?.documents else {
-                    print("No habits found.")
-                    DispatchQueue.main.async { self.habits = [] }
+
+                // --- Decode path -------------------------------------------------
+                guard let docs = snap?.documents, !docs.isEmpty else {
+                    DispatchQueue.main.async {
+                        self.habits = []
+                    }
                     return
                 }
-                self.habits = documents.compactMap { doc in
-                    do {
-                        return try doc.data(as: Habit.self)
-                    } catch {
-                        print("Error decoding habit (ID: \(doc.documentID)): \(error.localizedDescription)")
-                        return nil
+
+                // Decode on the worker queue
+                var fresh = [Habit]()
+                fresh.reserveCapacity(docs.count)
+
+                for d in docs {
+                    if let h = try? d.data(as: Habit.self) {
+                        fresh.append(h)
+                        // Keep local streak caches in sync
+                        if let id = h.id {
+                            if h.currentStreak > (self.localStreaks[id] ?? 0) {
+                                self.localStreaks[id] = h.currentStreak
+                            }
+                            if h.longestStreak > (self.localLongestStreaks[id] ?? 0) {
+                                self.localLongestStreaks[id] = h.longestStreak
+                            }
+                        }
                     }
                 }
-                for habit in self.habits {
-                    guard let habitID = habit.id else { continue }
-                    let localCurrent = self.localStreaks[habitID] ?? 0
-                    if habit.currentStreak > localCurrent {
-                        self.localStreaks[habitID] = habit.currentStreak
-                    }
-                    let localLongest = self.localLongestStreaks[habitID] ?? 0
-                    if habit.longestStreak > localLongest {
-                        self.localLongestStreaks[habitID] = habit.longestStreak
+
+                // Publish only if changed
+                DispatchQueue.main.async {
+                    if fresh != self.habits {  // Habit: Equatable
+                        self.habits = fresh
                     }
                 }
             }
     }
+
+
+
     
     func addHabit(_ habit: Habit, completion: @escaping (Bool) -> Void) {
         guard let authenticatedUserId = Auth.auth().currentUser?.uid, authenticatedUserId == habit.ownerId else {

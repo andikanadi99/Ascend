@@ -129,7 +129,7 @@ enum PerformanceMetric: String, CaseIterable, Identifiable, Codable {
 // MARK: - HabitRecord
 
 /// Represents daily records for a habit, including the date and the metric value.
-struct HabitRecord: Identifiable, Codable {
+struct HabitRecord: Identifiable, Codable, Equatable {
     var id: String? = UUID().uuidString
     var date: Date
     var value: Double? // For example, minutes, pages, or a flag (1 for completed, 0 for not)
@@ -148,7 +148,7 @@ struct HabitRecord: Identifiable, Codable {
 
 /// Defines a habit with customizable tracking metrics.
 /// NOTE: The `isCompletedToday` property has been removed in favor of tracking daily completion via `dailyRecords`.
-struct Habit: Identifiable, Codable {
+struct Habit: Identifiable, Codable, Equatable {
     @DocumentID var id: String?
     var title: String
     var description: String

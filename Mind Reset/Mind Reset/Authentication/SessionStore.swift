@@ -29,8 +29,18 @@ class SessionStore: ObservableObject {
     @Published var defaultWakeTime: Date?
     @Published var defaultSleepTime: Date?
     
+    private var userDocListener: ListenerRegistration?
+    
+    private var isUpdatingSchedules = false
+    
     // Firestore reference
-    private var db = Firestore.firestore()
+    private var db: Firestore = {
+        let f = Firestore.firestore()
+        let settings = f.settings
+        settings.isPersistenceEnabled = true
+        f.settings = settings
+        return f
+    }()
     // For listening to auth state changes
     private var handle: AuthStateDidChangeListenerHandle?
     
@@ -61,6 +71,12 @@ class SessionStore: ObservableObject {
 
         /// ➌ Batch‑update every daySchedule doc dated today or later
         private func updateFutureDaySchedules(wake: Date, sleep: Date) {
+            
+            guard !isUpdatingSchedules else { return }
+            isUpdatingSchedules = true
+            defer { isUpdatingSchedules = false }
+            
+            
             guard let uid = current_user?.uid else { return }
             let today = Calendar.current.startOfDay(for: Date())
             let col = db.collection("users")
@@ -86,13 +102,25 @@ class SessionStore: ObservableObject {
     // MARK: - Listen to Auth State
     /// Sets up a listener to monitor authentication state changes (login/logout).
     func listen() {
-        handle = Auth.auth().addStateDidChangeListener { [weak self] auth, user in
-            self?.current_user = user
-            if let user = user {
-                self?.fetchUserModel(userId: user.uid)
-            } else {
-                self?.userModel = nil
+        handle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
+        guard let self = self else { return }
+        self.current_user = user
+        self.userModel    = nil
+        self.userDocListener?.remove()
+        guard let uid = user?.uid else { return }
+        // single, live listener—no more getDocument calls
+        self.userDocListener = self.db
+          .collection("users")
+          .document(uid)
+          .addSnapshotListener { snap, error in
+            if let error = error {
+              print("Profile listener error:", error)
+              return
             }
+            if let model = try? snap?.data(as: UserModel.self) {
+              self.userModel = model
+            }
+          }
         }
     }
     

@@ -21,15 +21,7 @@ class HabitViewModel: ObservableObject {
     
     @Published var defaultsLoaded: Bool = false  // Loading flag
     
-    private static let cachedDB: Firestore = {
-        let f = Firestore.firestore()
-        var s = f.settings
-        s.isPersistenceEnabled = true          // Serve cached docs first
-        f.settings = s
-        return f
-    }()
-    
-    private var db = HabitViewModel.cachedDB
+    private let db = Firestore.firestore() 
     
     private var listenerRegistration: ListenerRegistration?
     private var cancellables = Set<AnyCancellable>()

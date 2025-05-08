@@ -2,35 +2,35 @@
 //  WeeklySchedule.swift
 //  Mind Reset
 //
-//  Created by Andika Yudhatrisna on 3/26/25.
 //
 
 import Foundation
 import FirebaseFirestore
 
-struct WeeklySchedule: Identifiable, Codable {
+// MARK: - WeeklySchedule
+struct WeeklySchedule: Identifiable, Codable, Equatable {
     @DocumentID var id: String? = nil
-    
-    var userId: String          // The user who owns this schedule
-    var startOfWeek: Date       // We can store it as a Date
+
+    var userId: String            // Owner of this schedule
+    var startOfWeek: Date         // First day (Sunday) of the ISO‑week
     var weeklyPriorities: [WeeklyPriority]
-    // dailyIntentions maps "Sun", "Mon", etc. to a string
+
+    /// Maps "Sun", "Mon", … to an intention string
     var dailyIntentions: [String: String]
-    // dailyToDoLists maps "Sun", "Mon", etc. to an array of ToDoItem
+
+    /// Maps "Sun", "Mon", … to a list of tasks
     var dailyToDoLists: [String: [ToDoItem]]
 }
 
-// Keep WeeklyPriority and ToDoItem as you have them,
-// but ensure they're Codable as well:
-
-struct WeeklyPriority: Identifiable, Codable {
+// MARK: - WeeklyPriority
+struct WeeklyPriority: Identifiable, Codable, Equatable {
     var id: UUID
     var title: String
-    var progress: Double
+    var progress: Double          // 0.0 – 1.0
 }
 
-// If needed, add 'Codable' for your ToDoItem
-struct ToDoItem: Identifiable, Codable {
+// MARK: - ToDoItem
+struct ToDoItem: Identifiable, Codable, Equatable {
     var id: UUID
     var title: String
     var isCompleted: Bool

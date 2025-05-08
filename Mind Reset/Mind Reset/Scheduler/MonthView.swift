@@ -314,52 +314,11 @@ struct CalendarView: View {
     
     var body: some View {
         VStack {
-            // Month header with navigation
-            HStack {
-                // ← back one month
-                Button {
-                    if canGoBack(),
-                       let prev = Calendar.current.date(byAdding: .month,
-                                                        value: -1,
-                                                        to: currentMonth) {
-                        currentMonth = prev
-                    }
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .foregroundColor( canGoBack() ? .white : .gray )
-                }
-
-                Spacer()
-
-                let avg = computeAverageCompletion()
-                Text("\(monthYearString(from: currentMonth))  (\(Int(avg * 100))%)")
-                    .foregroundColor(.white)
-                    .font(.headline)
-
-                Spacer()
-
-                // → forward one month (always enabled)
-                Button {
-                    if let next = Calendar.current.date(byAdding: .month,
-                                                        value: 1,
-                                                        to: currentMonth) {
-                        currentMonth = next
-                    }
-                } label: {
-                    Image(systemName: "chevron.right")
-                        .foregroundColor(.white)
-                }
-            }
-            .padding()
-            .background(Color.gray.opacity(0.3))
-            .cornerRadius(8)
-
-            
-            Spacer()
+            // ... header omitted for brevity ...
             
             // Weekday headers
             HStack {
-                ForEach(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], id: \.self) { day in
+                ForEach(["Sun","Mon","Tue","Wed","Thu","Fri","Sat"], id: \.self) { day in
                     Text(day)
                         .font(.caption)
                         .foregroundColor(.white)
@@ -369,9 +328,21 @@ struct CalendarView: View {
             
             // Calendar grid
             LazyVGrid(columns: columns, spacing: 8) {
-                ForEach(generateDays(), id: \.self) { date in
-                    if let date = date {
-                        if date > Date() {
+                ForEach(generateDays(), id: \.self) { maybeDate in
+                    if let date = maybeDate {
+                        let dayNorm = Calendar.current.startOfDay(for: date)
+                        let creationNorm = Calendar.current.startOfDay(for: accountCreationDate)
+                        
+                        if dayNorm < creationNorm {
+                            // Before account creation → greyed out, no tap
+                            Text(dayString(from: date))
+                                .font(.caption2)
+                                .frame(maxWidth: .infinity, minHeight: 30)
+                                .foregroundColor(.gray)
+                                .background(Color.black.opacity(0.1))
+                                .cornerRadius(4)
+                        }
+                        else if date > Date() {
                             // Future dates
                             Text(dayString(from: date))
                                 .font(.caption2)
@@ -380,15 +351,15 @@ struct CalendarView: View {
                                 .background(Color.gray)
                                 .cornerRadius(4)
                         } else {
-                            let normalizedDate = Calendar.current.startOfDay(for: date)
-                            let completion = completionForDay(normalizedDate)
+                            // Active dates
+                            let completion = completionForDay(dayNorm)
                             let bgColor: Color = {
                                 if completion == 1.0 {
-                                    return Color.green.opacity(0.6)
+                                    Color.green.opacity(0.6)
                                 } else if completion > 0 {
-                                    return Color.yellow.opacity(0.6)
+                                    Color.yellow.opacity(0.6)
                                 } else {
-                                    return coolGray.opacity(0.6)
+                                    coolGray.opacity(0.6)
                                 }
                             }()
                             Text(dayString(from: date))

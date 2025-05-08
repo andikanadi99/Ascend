@@ -1,123 +1,152 @@
 //
 //  MonthViewModel.swift
-//  Mind Reset
+//  Mind Reset
 //
+//  Optimised: background‑queue decoding, shared Firestore, static formatters.
 //  Created by Andika Yudhatrisna on 3/27/25.
 //
 
 import SwiftUI
-import Firebase 
 import FirebaseFirestore
+import FirebaseAuth   // (if you later need the uid here)
 
-class MonthViewModel: ObservableObject {
-    @Published var schedule: MonthSchedule?  
+final class MonthViewModel: ObservableObject {
     
-    private let db = Firestore.firestore()
+    // ───── Public state ────────────────────────────────────────────
+    @Published var schedule: MonthSchedule?
+    @Published var errorMessage: String?
     
+    // ───── Firestore plumbing ─────────────────────────────────────
+    private static let cachedDB: Firestore = {
+        // Settings are already configured once in Mind_ResetApp.
+        Firestore.firestore()
+    }()
+    private let db = MonthViewModel.cachedDB
+    
+    private var listener: ListenerRegistration?
+    
+    // Decode on a high‑priority background queue
+    private let decodeQ = DispatchQueue(label: "month-decoder", qos: .userInitiated)
+    
+    // ───── Formatter singletons ───────────────────────────────────
+    private static let monthFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM"      // 2025‑03
+        return f
+    }()
+    private static let dayFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"   // 2025‑03‑05
+        return f
+    }()
+    
+    deinit { listener?.remove() }
+    
+    // MARK: - Public API
+    //------------------------------------------------------------------
     func loadMonthSchedule(for month: Date, userId: String) {
-        let docId = isoMonthString(from: month)  // e.g. "2025-03"
+        // 1️⃣ Tear down any previous listener
+        listener?.remove()
         
-        db.collection("users")
-            .document(userId)
-            .collection("monthSchedules")
-            .document(docId)
-            .getDocument { [weak self] snapshot, error in
-                if let error = error {
-                    print("Error loading month schedule: \(error)")
-                    return
-                }
-                
-                if let snapshot = snapshot, snapshot.exists {
-                    // decode existing doc
-                    do {
-                        let schedule = try snapshot.data(as: MonthSchedule.self)
-                        DispatchQueue.main.async {
-                            self?.schedule = schedule
-                        }
-                    } catch {
-                        print("Error decoding MonthSchedule: \(error)")
-                    }
-                } else {
-                    // create a default doc for that month
-                    self?.createDefaultMonthSchedule(month: month, userId: userId)
-                }
+        // 2️⃣ Reference
+        let docID  = Self.monthFmt.string(from: month)
+        let docRef = db.collection("users")
+                       .document(userId)
+                       .collection("monthSchedules")
+                       .document(docID)
+        
+        // 3️⃣ Real‑time listener, decode off‑main
+        listener = docRef.addSnapshotListener(includeMetadataChanges: false) { [weak self] snap, err in
+            guard let self = self else { return }
+            
+            if let err = err {
+                print("Error loading month schedule:", err)
+                DispatchQueue.main.async { self.errorMessage = "Failed to fetch month schedule." }
+                return
             }
+            
+            guard let snap = snap, snap.exists else {
+                // create default if none
+                DispatchQueue.main.async {
+                    self.createDefaultMonthSchedule(month: month, userId: userId)
+                }
+                return
+            }
+            
+            // we’re already on a background thread
+            if let sched = try? snap.data(as: MonthSchedule.self) {
+                DispatchQueue.main.async { self.schedule = sched }
+            } else {
+                print("❗️Couldn’t decode MonthSchedule \(docID)")
+            }
+        }
+
     }
     
+    //------------------------------------------------------------------
+    func updateMonthSchedule() {
+        guard let sched = schedule, let id = sched.id else { return }
+        do {
+            try db.collection("users")
+                  .document(sched.userId)
+                  .collection("monthSchedules")
+                  .document(id)
+                  .setData(from: sched)
+        } catch {
+            print("Error updating month schedule:", error)
+            errorMessage = "Failed to save month data."
+        }
+    }
+    
+    // MARK: - Private helpers
+    //------------------------------------------------------------------
     private func createDefaultMonthSchedule(month: Date, userId: String) {
-        let docId = isoMonthString(from: month)
+        let docID = Self.monthFmt.string(from: month)
         
-        // Build a dictionary for each day in the month, defaulting to 0.0 completion
-        let dates = generateAllDates(for: month)
-        var dayCompletions: [String: Double] = [:]
-        for date in dates {
-            let key = isoDayString(from: date) // "2025-03-01", etc.
-            dayCompletions[key] = 0.0
+        // Build 0‑progress entries for every day in the month
+        var dayCompletions = [String : Double]()
+        for date in generateDates(in: month) {
+            dayCompletions[ Self.dayFmt.string(from: date) ] = 0.0
         }
         
         let newSchedule = MonthSchedule(
-            id: docId,
+            id: docID,
             userId: userId,
-            yearMonth: docId,
+            yearMonth: docID,
             monthlyPriorities: [
-                MonthlyPriority(id: UUID(), title: "Monthly Goal", progress: 0.0)
+                MonthlyPriority(id: UUID(),
+                                title: "Monthly Goal",
+                                progress: 0.0)
             ],
             dayCompletions: dayCompletions
         )
         
         do {
             try db.collection("users")
-                .document(userId)
-                .collection("monthSchedules")
-                .document(docId)
-                .setData(from: newSchedule)
-            DispatchQueue.main.async {
-                self.schedule = newSchedule
-            }
+                  .document(userId)
+                  .collection("monthSchedules")
+                  .document(docID)
+                  .setData(from: newSchedule)
+            schedule = newSchedule        // already on main
         } catch {
-            print("Error creating default MonthSchedule: \(error)")
+            print("Error creating default MonthSchedule:", error)
+            errorMessage = "Failed to create month schedule."
         }
     }
     
-    func updateMonthSchedule() {
-        guard let schedule = schedule, let docId = schedule.id else { return }
-        do {
-            try db.collection("users")
-                .document(schedule.userId)
-                .collection("monthSchedules")
-                .document(docId)
-                .setData(from: schedule)
-        } catch {
-            print("Error updating month schedule: \(error)")
-        }
-    }
-    
-    // Utility to produce something like "2025-03"
-    private func isoMonthString(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM"
-        return formatter.string(from: date)
-    }
-    
-    // For each day in that month
-    private func generateAllDates(for month: Date) -> [Date] {
+    //------------------------------------------------------------------
+    private func generateDates(in month: Date) -> [Date] {
         var dates: [Date] = []
-        let calendar = Calendar.current
-        guard let monthInterval = calendar.dateInterval(of: .month, for: month) else { return dates }
-        var date = calendar.startOfDay(for: monthInterval.start)
-        while date < monthInterval.end {
-            dates.append(date)
-            if let next = calendar.date(byAdding: .day, value: 1, to: date) {
-                date = next
-            } else { break }
+        let cal = Calendar.current
+        
+        guard let interval = cal.dateInterval(of: .month, for: month) else { return [] }
+        var cursor = cal.startOfDay(for: interval.start)
+        
+        while cursor < interval.end {
+            dates.append(cursor)
+            guard let next = cal.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
         }
         return dates
-    }
-    
-    // Utility to produce "2025-03-01" for each day
-    private func isoDayString(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
     }
 }

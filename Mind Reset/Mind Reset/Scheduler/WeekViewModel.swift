@@ -6,103 +6,133 @@
 //
 
 import SwiftUI
-import Firebase
 import FirebaseFirestore
+import FirebaseAuth             // if you need the user ID here
+import Combine
 
-class WeekViewModel: ObservableObject {
+final class WeekViewModel: ObservableObject {
+
+    // ───────────────────────── Published state
     @Published var schedule: WeeklySchedule?
-    
+    @Published var errorMessage: String?
+
+    // ───────────────────────── Firestore plumbing
     private let db = Firestore.firestore()
-    
-    // We'll store a doc with an ID like "2025-03-23" (the startOfWeek),
-    // or "year-14" for (2025 week #14), whichever you prefer.
+    private var listener: ListenerRegistration?
+
+    // Decoding off‑main
+    private let decodeQ = DispatchQueue(label: "week-decode", qos: .userInitiated)
+
+    // Re‑usable ISO formatter (“yyyy‑MM‑dd”)
+    private static let iso: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    deinit { listener?.remove() }
+
+    // MARK: – Public API
     func loadWeeklySchedule(for startOfWeek: Date, userId: String) {
-        let docId = isoWeekString(from: startOfWeek)
-        
-        db.collection("users")
-            .document(userId)
-            .collection("weekSchedules")
-            .document(docId)
-            .getDocument { [weak self] snapshot, error in
-                if let error = error {
-                    print("Error loading weekly schedule: \(error)")
+
+        // 1️⃣ Remove any old listener
+        listener?.remove()
+
+        // 2️⃣ Canonical doc‑ID for the week (start‑of‑week 00:00)
+        let start = Calendar.current.startOfDay(for: startOfWeek)
+        let docID = Self.iso.string(from: start)
+
+        let docRef = db.collection("users")
+                       .document(userId)
+                       .collection("weekSchedules")
+                       .document(docID)
+
+        // 3️⃣ Attach listener (decode on background queue)
+        listener = docRef.addSnapshotListener(includeMetadataChanges: false) { [weak self] snap, error in
+            guard let self else { return }
+
+            // ── Error path
+            if let error = error {
+                print("❌ Week snapshot error:", error)
+                DispatchQueue.main.async { self.errorMessage = "Failed to fetch weekly schedule." }
+                return
+            }
+
+            // ── No doc?  Create defaults.
+            guard let snap, snap.exists else {
+                self.createDefaultWeekSchedule(startOfWeek: start, userId: userId)
+                return
+            }
+
+            // ── Decode off‑main
+            self.decodeQ.async {
+                guard let decoded = try? snap.data(as: WeeklySchedule.self) else {
+                    print("❌ Decode WeeklySchedule failed.")
                     return
                 }
-                
-                if let snapshot = snapshot, snapshot.exists {
-                    // decode existing doc
-                    do {
-                        let schedule = try snapshot.data(as: WeeklySchedule.self)
-                        DispatchQueue.main.async {
-                            self?.schedule = schedule
-                        }
-                    } catch {
-                        print("Error decoding WeeklySchedule: \(error)")
+
+                // Publish only if changed (requires Equatable conformance)
+                DispatchQueue.main.async {
+                    if decoded != self.schedule {
+                        self.schedule = decoded
                     }
-                } else {
-                    // create a default doc
-                    self?.createDefaultWeekSchedule(startOfWeek: startOfWeek, userId: userId)
                 }
             }
-    }
-    
-    private func createDefaultWeekSchedule(startOfWeek: Date, userId: String) {
-        let docId = isoWeekString(from: startOfWeek)
-        // Create default daily intentions for each day
-        let days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
-        var defaultIntentions: [String: String] = [:]
-        var defaultToDoLists: [String: [ToDoItem]] = [:]
-        
-        for day in days {
-            defaultIntentions[day] = ""
-            defaultToDoLists[day] = []
-        }
-        
-        let newSchedule = WeeklySchedule(
-            id: docId,
-            userId: userId,
-            startOfWeek: startOfWeek,
-            weeklyPriorities: [
-                WeeklyPriority(id: UUID(), title: "Weekly Goals", progress: 0.0)
-            ],
-            dailyIntentions: defaultIntentions,
-            dailyToDoLists: defaultToDoLists
-        )
-        
-        do {
-            try db.collection("users")
-                .document(userId)
-                .collection("weekSchedules")
-                .document(docId)
-                .setData(from: newSchedule)
-            
-            DispatchQueue.main.async {
-                self.schedule = newSchedule
-            }
-        } catch {
-            print("Error creating default weekly schedule: \(error)")
         }
     }
-    
+
+    // ------------------------------------------------------------------
+    /// Persists the current `schedule` back to Firestore.
     func updateWeeklySchedule() {
-        guard let schedule = schedule, let docId = schedule.id else { return }
-        
+        guard let schedule, let docID = schedule.id else { return }
+
         do {
             try db.collection("users")
-                .document(schedule.userId)
-                .collection("weekSchedules")
-                .document(docId)
-                .setData(from: schedule)
+                  .document(schedule.userId)
+                  .collection("weekSchedules")
+                  .document(docID)
+                  .setData(from: schedule)
         } catch {
-            print("Error updating weekly schedule: \(error)")
+            print("❌ Update weekly schedule:", error)
+            errorMessage = "Couldn't save weekly schedule."
         }
     }
-    
-    // Example: if you want an ID like "2025-Week14" or "2025-03-23"
-    private func isoWeekString(from date: Date) -> String {
-        // For simplicity, let's do "yyyy-MM-dd" of the startOfWeek
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+
+    // MARK: – Defaults --------------------------------------------------
+    private func createDefaultWeekSchedule(startOfWeek: Date, userId: String) {
+
+        let docID = Self.iso.string(from: startOfWeek)
+
+        // Empty intentions / todo‑lists for Sun→Sat
+        let days = Calendar.current.shortWeekdaySymbols   // ["Sun","Mon",...]
+        var intentions  = [String:String]()
+        var todoBuckets = [String:[ToDoItem]]()
+        for d in days {
+            intentions[d]  = ""
+            todoBuckets[d] = []
+        }
+
+        let fresh = WeeklySchedule(
+            id:             docID,
+            userId:         userId,
+            startOfWeek:    startOfWeek,
+            weeklyPriorities: [WeeklyPriority(id: UUID(),
+                                              title: "Weekly Goals",
+                                              progress: 0)],
+            dailyIntentions:  intentions,
+            dailyToDoLists:   todoBuckets
+        )
+
+        do {
+            try db.collection("users")
+                  .document(userId)
+                  .collection("weekSchedules")
+                  .document(docID)
+                  .setData(from: fresh)
+            DispatchQueue.main.async { self.schedule = fresh }
+        } catch {
+            print("❌ Create default week:", error)
+        }
     }
 }
+

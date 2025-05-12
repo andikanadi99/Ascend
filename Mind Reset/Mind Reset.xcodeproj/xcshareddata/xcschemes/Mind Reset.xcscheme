@@ -17,7 +17,7 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "48D4B75C2CEFB63B0031EBA1"
                BuildableName = "Ascend.app"
-               BlueprintName = "Mind Reset"
+               BlueprintName = "Ascento"
                ReferencedContainer = "container:Mind Reset.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -46,7 +46,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "48D4B75C2CEFB63B0031EBA1"
             BuildableName = "Ascend.app"
-            BlueprintName = "Mind Reset"
+            BlueprintName = "Ascento"
             ReferencedContainer = "container:Mind Reset.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -63,7 +63,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "48D4B75C2CEFB63B0031EBA1"
             BuildableName = "Ascend.app"
-            BlueprintName = "Mind Reset"
+            BlueprintName = "Ascento"
             ReferencedContainer = "container:Mind Reset.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

@@ -1,0 +1,456 @@
+[debug] [2025-05-08T18:19:22.487Z] ----------------------------------------------------------------------
+[debug] [2025-05-08T18:19:22.489Z] Command:       /opt/homebrew/Cellar/node/23.11.0/bin/node /usr/local/bin/firebase emulators:start --only functions
+[debug] [2025-05-08T18:19:22.489Z] CLI Version:   13.27.0
+[debug] [2025-05-08T18:19:22.489Z] Platform:      darwin
+[debug] [2025-05-08T18:19:22.489Z] Node Version:  v23.11.0
+[debug] [2025-05-08T18:19:22.489Z] Time:          Thu May 08 2025 14:19:22 GMT-0400 (Eastern Daylight Time)
+[debug] [2025-05-08T18:19:22.489Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-05-08T18:19:22.541Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-08T18:19:22.542Z] > authorizing via signed-in user (andikanadi10@gmail.com)
+[info] i  emulators: Starting emulators: functions {"metadata":{"emulator":{"name":"hub"},"message":"Starting emulators: functions"}}
+[debug] [2025-05-08T18:19:22.681Z] [logging] Logging Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2025-05-08T18:19:22.681Z] assigned listening specs for emulators {"user":{"hub":[{"address":"127.0.0.1","family":"IPv4","port":4400},{"address":"::1","family":"IPv6","port":4400}],"ui":[{"address":"127.0.0.1","family":"IPv4","port":4000},{"address":"::1","family":"IPv6","port":4000}],"logging":[{"address":"127.0.0.1","family":"IPv4","port":4500}]},"metadata":{"message":"assigned listening specs for emulators"}}
+[debug] [2025-05-08T18:19:22.684Z] [hub] writing locator at /var/folders/1l/b0zbh7z52157r1hyf4twllk40000gn/T/hub-mindreset-f37a7.json
+[debug] [2025-05-08T18:19:22.815Z] [functions] Functions Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2025-05-08T18:19:22.815Z] [eventarc] Eventarc Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2025-05-08T18:19:22.815Z] [tasks] Cloud Tasks Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2025-05-08T18:19:22.815Z] late-assigned ports for functions and eventarc emulators {"user":{"hub":[{"address":"127.0.0.1","family":"IPv4","port":4400},{"address":"::1","family":"IPv6","port":4400}],"ui":[{"address":"127.0.0.1","family":"IPv4","port":4000},{"address":"::1","family":"IPv6","port":4000}],"logging":[{"address":"127.0.0.1","family":"IPv4","port":4500}],"functions":[{"address":"127.0.0.1","family":"IPv4","port":5001}],"eventarc":[{"address":"127.0.0.1","family":"IPv4","port":9299}],"tasks":[{"address":"127.0.0.1","family":"IPv4","port":9499}]},"metadata":{"message":"late-assigned ports for functions and eventarc emulators"}}
+[warn] ⚠  functions: The following emulators are not running, calls to these services from the Functions emulator will affect production: apphosting, auth, firestore, database, hosting, pubsub, storage, dataconnect {"metadata":{"emulator":{"name":"functions"},"message":"The following emulators are not running, calls to these services from the Functions emulator will affect production: \u001b[1mapphosting, auth, firestore, database, hosting, pubsub, storage, dataconnect\u001b[22m"}}
+[debug] [2025-05-08T18:19:22.816Z] defaultcredentials: writing to file /Users/andikanadi/.config/firebase/andikanadi10_gmail_com_application_default_credentials.json
+[debug] [2025-05-08T18:19:22.819Z] Setting GAC to /Users/andikanadi/.config/firebase/andikanadi10_gmail_com_application_default_credentials.json {"metadata":{"emulator":{"name":"functions"},"message":"Setting GAC to /Users/andikanadi/.config/firebase/andikanadi10_gmail_com_application_default_credentials.json"}}
+[debug] [2025-05-08T18:19:22.819Z] Checked if tokens are valid: true, expires at: 1746729948424
+[debug] [2025-05-08T18:19:22.819Z] Checked if tokens are valid: true, expires at: 1746729948424
+[debug] [2025-05-08T18:19:22.820Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/mindreset-f37a7/adminSdkConfig [none]
+[debug] [2025-05-08T18:19:23.262Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/mindreset-f37a7/adminSdkConfig 200
+[debug] [2025-05-08T18:19:23.263Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/mindreset-f37a7/adminSdkConfig {"projectId":"mindreset-f37a7","storageBucket":"mindreset-f37a7.firebasestorage.app"}
+[info] i  functions: Watching "/Users/andikanadi/Documents/Ascend/functions" for Cloud Functions... {"metadata":{"emulator":{"name":"functions"},"message":"Watching \"/Users/andikanadi/Documents/Ascend/functions\" for Cloud Functions..."}}
+[debug] [2025-05-08T18:19:23.301Z] Validating nodejs source
+[warn] ⚠  functions: package.json indicates an outdated version of firebase-functions. Please upgrade using npm install --save firebase-functions@latest in your functions directory. 
+[warn] ⚠  functions: Please note that there will be breaking changes when you upgrade. 
+[debug] [2025-05-08T18:19:23.775Z] > [functions] package.json contents: {
+  "name": "functions",
+  "description": "Cloud Functions for Firebase",
+  "main": "index.js",
+  "engines": {
+    "node": "18"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "11.10.0",
+    "firebase-functions": "3.24.1"
+  },
+  "devDependencies": {
+    "eslint": "^8.15.0",
+    "eslint-config-google": "^0.14.0"
+  },
+  "private": true
+}
+[debug] [2025-05-08T18:19:23.776Z] Building nodejs source
+[debug] [2025-05-08T18:19:23.776Z] Failed to find version of module node: reached end of search path /Users/andikanadi/Documents/Ascend/functions/node_modules
+[warn] ⚠  functions: Your requested "node" version "18" doesn't match your global version "23". Using node@23 from host. 
+[info] i  functions: You are using a version of firebase-functions SDK (3.24.1) that does not have support for the newest Firebase Extensions features. Please update firebase-functions SDK to >=5.1.0 to use them correctly 
+[debug] [2025-05-08T18:19:23.778Z] Could not find functions.yaml. Must use http discovery
+[debug] [2025-05-08T18:19:23.780Z] Found firebase-functions binary at '/Users/andikanadi/Documents/Ascend/functions/node_modules/.bin/firebase-functions'
+[info] Serving at port 8956
+
+[debug] [2025-05-08T18:19:24.117Z] Got response from /__/functions.yaml {"endpoints":{"nukeUserData":{"platform":"gcfv1","eventTrigger":{"eventType":"providers/firebase.auth/eventTypes/user.delete","eventFilters":{"resource":"projects/mindreset-f37a7"},"retry":false},"labels":{},"entryPoint":"nukeUserData"}},"specVersion":"v1alpha1","requiredAPIs":[]}
+[info] shutdown requested via /__/quitquitquit
+
+[info] ✔  functions: Loaded functions definitions from source: nukeUserData. {"metadata":{"emulator":{"name":"functions"},"message":"Loaded functions definitions from source: nukeUserData."}}
+[debug] [2025-05-08T18:19:28.141Z] addAuthTrigger {"eventTrigger":{"eventType":"providers/firebase.auth/eventTypes/user.delete","resource":"projects/mindreset-f37a7"}}
+[info] ✔  functions[us-central1-nukeUserData]: auth function initialized. {"metadata":{"emulator":{"name":"functions"},"message":"\u001b[1mauth\u001b[22m function initialized."}}
+[debug] [2025-05-08T18:19:28.145Z] Could not find VSCode notification endpoint: FetchError: request to http://localhost:40001/vscode/notify failed, reason: . If you are not running the Firebase Data Connect VSCode extension, this is expected and not an issue.
+[info] 
+┌─────────────────────────────────────────────────────────────┐
+│ ✔  All emulators ready! It is now safe to connect your app. │
+│ i  View Emulator UI at http://127.0.0.1:4000/               │
+└─────────────────────────────────────────────────────────────┘
+
+┌───────────┬────────────────┬─────────────────────────────────┐
+│ Emulator  │ Host:Port      │ View in Emulator UI             │
+├───────────┼────────────────┼─────────────────────────────────┤
+│ Functions │ 127.0.0.1:5001 │ http://127.0.0.1:4000/functions │
+└───────────┴────────────────┴─────────────────────────────────┘
+  Emulator Hub running at 127.0.0.1:4400
+  Other reserved ports: 4500
+
+Issues? Report them at https://github.com/firebase/firebase-tools/issues and attach the *-debug.log files.
+ 
+[debug] [2025-05-08T18:31:59.327Z] File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers {"metadata":{"emulator":{"name":"functions"},"message":"File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers"}}
+[debug] [2025-05-08T18:32:00.333Z] Validating nodejs source
+[warn] ⚠  functions: package.json indicates an outdated version of firebase-functions. Please upgrade using npm install --save firebase-functions@latest in your functions directory. 
+[warn] ⚠  functions: Please note that there will be breaking changes when you upgrade. 
+[debug] [2025-05-08T18:32:01.072Z] > [functions] package.json contents: {
+  "name": "functions",
+  "description": "Cloud Functions for Firebase",
+  "main": "index.js",
+  "engines": {
+    "node": "18"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "11.10.0",
+    "firebase-functions": "3.24.1"
+  },
+  "devDependencies": {
+    "eslint": "^8.15.0",
+    "eslint-config-google": "^0.14.0"
+  },
+  "private": true
+}
+[debug] [2025-05-08T18:32:01.072Z] Building nodejs source
+[debug] [2025-05-08T18:32:01.072Z] Failed to find version of module node: reached end of search path /Users/andikanadi/Documents/Ascend/functions/node_modules
+[warn] ⚠  functions: Your requested "node" version "18" doesn't match your global version "23". Using node@23 from host. 
+[info] i  functions: You are using a version of firebase-functions SDK (3.24.1) that does not have support for the newest Firebase Extensions features. Please update firebase-functions SDK to >=5.1.0 to use them correctly 
+[debug] [2025-05-08T18:32:01.073Z] Could not find functions.yaml. Must use http discovery
+[debug] [2025-05-08T18:32:01.075Z] Found firebase-functions binary at '/Users/andikanadi/Documents/Ascend/functions/node_modules/.bin/firebase-functions'
+[info] Serving at port 8666
+
+[debug] [2025-05-08T18:32:01.264Z] Got response from /__/functions.yaml {"endpoints":{"nukeUserData":{"platform":"gcfv1","eventTrigger":{"eventType":"providers/firebase.auth/eventTypes/user.delete","eventFilters":{"resource":"projects/mindreset-f37a7"},"retry":false},"labels":{},"entryPoint":"nukeUserData"}},"specVersion":"v1alpha1","requiredAPIs":[]}
+[info] shutdown requested via /__/quitquitquit
+
+[info] ✔  functions: Loaded functions definitions from source: nukeUserData. {"metadata":{"emulator":{"name":"functions"},"message":"Loaded functions definitions from source: nukeUserData."}}
+[debug] [2025-05-08T18:34:34.074Z] File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers {"metadata":{"emulator":{"name":"functions"},"message":"File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers"}}
+[debug] [2025-05-08T18:34:35.103Z] Validating nodejs source
+[warn] ⚠  functions: package.json indicates an outdated version of firebase-functions. Please upgrade using npm install --save firebase-functions@latest in your functions directory. 
+[warn] ⚠  functions: Please note that there will be breaking changes when you upgrade. 
+[debug] [2025-05-08T18:34:36.092Z] > [functions] package.json contents: {
+  "name": "functions",
+  "description": "Cloud Functions for Firebase",
+  "main": "index.js",
+  "engines": {
+    "node": "18"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "11.10.0",
+    "firebase-functions": "3.24.1"
+  },
+  "devDependencies": {
+    "eslint": "^8.15.0",
+    "eslint-config-google": "^0.14.0"
+  },
+  "private": true
+}
+[debug] [2025-05-08T18:34:36.093Z] Building nodejs source
+[debug] [2025-05-08T18:34:36.093Z] Failed to find version of module node: reached end of search path /Users/andikanadi/Documents/Ascend/functions/node_modules
+[warn] ⚠  functions: Your requested "node" version "18" doesn't match your global version "23". Using node@23 from host. 
+[info] i  functions: You are using a version of firebase-functions SDK (3.24.1) that does not have support for the newest Firebase Extensions features. Please update firebase-functions SDK to >=5.1.0 to use them correctly 
+[debug] [2025-05-08T18:34:36.094Z] Could not find functions.yaml. Must use http discovery
+[debug] [2025-05-08T18:34:36.096Z] Found firebase-functions binary at '/Users/andikanadi/Documents/Ascend/functions/node_modules/.bin/firebase-functions'
+[debug] [2025-05-08T18:34:36.098Z] File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers {"metadata":{"emulator":{"name":"functions"},"message":"File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers"}}
+[info] Serving at port 8428
+
+[debug] [2025-05-08T18:34:36.266Z] Got response code 400; body Failed to generate manifest from function source: ReferenceError: functions is not defined
+[debug] [2025-05-08T18:34:36.602Z] File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers {"metadata":{"emulator":{"name":"functions"},"message":"File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers"}}
+[debug] [2025-05-08T18:34:37.604Z] Validating nodejs source
+[warn] ⚠  functions: package.json indicates an outdated version of firebase-functions. Please upgrade using npm install --save firebase-functions@latest in your functions directory. 
+[warn] ⚠  functions: Please note that there will be breaking changes when you upgrade. 
+[debug] [2025-05-08T18:34:38.016Z] > [functions] package.json contents: {
+  "name": "functions",
+  "description": "Cloud Functions for Firebase",
+  "main": "index.js",
+  "engines": {
+    "node": "18"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "11.10.0",
+    "firebase-functions": "3.24.1"
+  },
+  "devDependencies": {
+    "eslint": "^8.15.0",
+    "eslint-config-google": "^0.14.0"
+  },
+  "private": true
+}
+[debug] [2025-05-08T18:34:38.016Z] Building nodejs source
+[debug] [2025-05-08T18:34:38.016Z] Failed to find version of module node: reached end of search path /Users/andikanadi/Documents/Ascend/functions/node_modules
+[warn] ⚠  functions: Your requested "node" version "18" doesn't match your global version "23". Using node@23 from host. 
+[info] i  functions: You are using a version of firebase-functions SDK (3.24.1) that does not have support for the newest Firebase Extensions features. Please update firebase-functions SDK to >=5.1.0 to use them correctly 
+[debug] [2025-05-08T18:34:38.017Z] Could not find functions.yaml. Must use http discovery
+[debug] [2025-05-08T18:34:38.018Z] Found firebase-functions binary at '/Users/andikanadi/Documents/Ascend/functions/node_modules/.bin/firebase-functions'
+[debug] [2025-05-08T18:34:38.019Z] File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers {"metadata":{"emulator":{"name":"functions"},"message":"File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers"}}
+[info] Serving at port 8870
+
+[debug] [2025-05-08T18:34:38.160Z] Got response from /__/functions.yaml {"endpoints":{"nukeUserData":{"platform":"gcfv1","eventTrigger":{"eventType":"providers/firebase.auth/eventTypes/user.delete","eventFilters":{"resource":"projects/mindreset-f37a7"},"retry":false},"labels":{},"entryPoint":"nukeUserData"}},"specVersion":"v1alpha1","requiredAPIs":[]}
+[debug] [2025-05-08T18:34:39.021Z] Validating nodejs source
+[warn] ⚠  functions: package.json indicates an outdated version of firebase-functions. Please upgrade using npm install --save firebase-functions@latest in your functions directory. 
+[warn] ⚠  functions: Please note that there will be breaking changes when you upgrade. 
+[debug] [2025-05-08T18:34:39.415Z] > [functions] package.json contents: {
+  "name": "functions",
+  "description": "Cloud Functions for Firebase",
+  "main": "index.js",
+  "engines": {
+    "node": "18"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "11.10.0",
+    "firebase-functions": "3.24.1"
+  },
+  "devDependencies": {
+    "eslint": "^8.15.0",
+    "eslint-config-google": "^0.14.0"
+  },
+  "private": true
+}
+[debug] [2025-05-08T18:34:39.415Z] Building nodejs source
+[debug] [2025-05-08T18:34:39.415Z] Failed to find version of module node: reached end of search path /Users/andikanadi/Documents/Ascend/functions/node_modules
+[warn] ⚠  functions: Your requested "node" version "18" doesn't match your global version "23". Using node@23 from host. 
+[info] i  functions: You are using a version of firebase-functions SDK (3.24.1) that does not have support for the newest Firebase Extensions features. Please update firebase-functions SDK to >=5.1.0 to use them correctly 
+[debug] [2025-05-08T18:34:39.416Z] Could not find functions.yaml. Must use http discovery
+[debug] [2025-05-08T18:34:39.416Z] Found firebase-functions binary at '/Users/andikanadi/Documents/Ascend/functions/node_modules/.bin/firebase-functions'
+[info] Serving at port 8483
+
+[debug] [2025-05-08T18:34:39.519Z] Got response from /__/functions.yaml {"endpoints":{"nukeUserData":{"platform":"gcfv1","eventTrigger":{"eventType":"providers/firebase.auth/eventTypes/user.delete","eventFilters":{"resource":"projects/mindreset-f37a7"},"retry":false},"labels":{},"entryPoint":"nukeUserData"}},"specVersion":"v1alpha1","requiredAPIs":[]}
+[info] shutdown requested via /__/quitquitquit
+
+[error] ⬢  functions: Failed to load function definition from source: FirebaseError: Functions codebase could not be analyzed successfully. It may have a syntax or runtime error {"metadata":{"emulator":{"name":"functions"},"message":"Failed to load function definition from source: FirebaseError: Functions codebase could not be analyzed successfully. It may have a syntax or runtime error"}}
+[info] shutdown requested via /__/quitquitquit
+
+[info] ✔  functions: Loaded functions definitions from source: nukeUserData. {"metadata":{"emulator":{"name":"functions"},"message":"Loaded functions definitions from source: nukeUserData."}}
+[debug] [2025-05-08T18:34:42.245Z] File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers {"metadata":{"emulator":{"name":"functions"},"message":"File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers"}}
+[debug] [2025-05-08T18:34:43.247Z] Validating nodejs source
+[warn] ⚠  functions: package.json indicates an outdated version of firebase-functions. Please upgrade using npm install --save firebase-functions@latest in your functions directory. 
+[warn] ⚠  functions: Please note that there will be breaking changes when you upgrade. 
+[debug] [2025-05-08T18:34:43.646Z] > [functions] package.json contents: {
+  "name": "functions",
+  "description": "Cloud Functions for Firebase",
+  "main": "index.js",
+  "engines": {
+    "node": "18"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "11.10.0",
+    "firebase-functions": "3.24.1"
+  },
+  "devDependencies": {
+    "eslint": "^8.15.0",
+    "eslint-config-google": "^0.14.0"
+  },
+  "private": true
+}
+[debug] [2025-05-08T18:34:43.646Z] Building nodejs source
+[debug] [2025-05-08T18:34:43.646Z] Failed to find version of module node: reached end of search path /Users/andikanadi/Documents/Ascend/functions/node_modules
+[warn] ⚠  functions: Your requested "node" version "18" doesn't match your global version "23". Using node@23 from host. 
+[info] i  functions: You are using a version of firebase-functions SDK (3.24.1) that does not have support for the newest Firebase Extensions features. Please update firebase-functions SDK to >=5.1.0 to use them correctly 
+[debug] [2025-05-08T18:34:43.647Z] Could not find functions.yaml. Must use http discovery
+[debug] [2025-05-08T18:34:43.648Z] Found firebase-functions binary at '/Users/andikanadi/Documents/Ascend/functions/node_modules/.bin/firebase-functions'
+[info] shutdown requested via /__/quitquitquit
+
+[info] ✔  functions: Loaded functions definitions from source: nukeUserData. {"metadata":{"emulator":{"name":"functions"},"message":"Loaded functions definitions from source: nukeUserData."}}
+[info] Serving at port 8015
+
+[debug] [2025-05-08T18:34:43.814Z] Got response from /__/functions.yaml {"endpoints":{"nukeUserData":{"platform":"gcfv1","eventTrigger":{"eventType":"providers/firebase.auth/eventTypes/user.delete","eventFilters":{"resource":"projects/mindreset-f37a7"},"retry":false},"labels":{},"entryPoint":"nukeUserData"}},"specVersion":"v1alpha1","requiredAPIs":[]}
+[info] shutdown requested via /__/quitquitquit
+
+[info] ✔  functions: Loaded functions definitions from source: nukeUserData. {"metadata":{"emulator":{"name":"functions"},"message":"Loaded functions definitions from source: nukeUserData."}}
+[debug] [2025-05-08T18:34:53.439Z] File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers {"metadata":{"emulator":{"name":"functions"},"message":"File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers"}}
+[debug] [2025-05-08T18:34:54.442Z] Validating nodejs source
+[warn] ⚠  functions: package.json indicates an outdated version of firebase-functions. Please upgrade using npm install --save firebase-functions@latest in your functions directory. 
+[warn] ⚠  functions: Please note that there will be breaking changes when you upgrade. 
+[debug] [2025-05-08T18:34:54.949Z] > [functions] package.json contents: {
+  "name": "functions",
+  "description": "Cloud Functions for Firebase",
+  "main": "index.js",
+  "engines": {
+    "node": "18"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "11.10.0",
+    "firebase-functions": "3.24.1"
+  },
+  "devDependencies": {
+    "eslint": "^8.15.0",
+    "eslint-config-google": "^0.14.0"
+  },
+  "private": true
+}
+[debug] [2025-05-08T18:34:54.949Z] Building nodejs source
+[debug] [2025-05-08T18:34:54.949Z] Failed to find version of module node: reached end of search path /Users/andikanadi/Documents/Ascend/functions/node_modules
+[warn] ⚠  functions: Your requested "node" version "18" doesn't match your global version "23". Using node@23 from host. 
+[info] i  functions: You are using a version of firebase-functions SDK (3.24.1) that does not have support for the newest Firebase Extensions features. Please update firebase-functions SDK to >=5.1.0 to use them correctly 
+[debug] [2025-05-08T18:34:54.950Z] Could not find functions.yaml. Must use http discovery
+[debug] [2025-05-08T18:34:54.950Z] Found firebase-functions binary at '/Users/andikanadi/Documents/Ascend/functions/node_modules/.bin/firebase-functions'
+[info] Serving at port 8112
+
+[debug] [2025-05-08T18:34:55.111Z] Got response from /__/functions.yaml {"endpoints":{"nukeUserData":{"platform":"gcfv1","eventTrigger":{"eventType":"providers/firebase.auth/eventTypes/user.delete","eventFilters":{"resource":"projects/mindreset-f37a7"},"retry":false},"labels":{},"entryPoint":"nukeUserData"}},"specVersion":"v1alpha1","requiredAPIs":[]}
+[info] shutdown requested via /__/quitquitquit
+
+[info] ✔  functions: Loaded functions definitions from source: nukeUserData. {"metadata":{"emulator":{"name":"functions"},"message":"Loaded functions definitions from source: nukeUserData."}}
+[debug] [2025-05-08T18:35:05.755Z] File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers {"metadata":{"emulator":{"name":"functions"},"message":"File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers"}}
+[debug] [2025-05-08T18:35:06.761Z] Validating nodejs source
+[warn] ⚠  functions: package.json indicates an outdated version of firebase-functions. Please upgrade using npm install --save firebase-functions@latest in your functions directory. 
+[warn] ⚠  functions: Please note that there will be breaking changes when you upgrade. 
+[debug] [2025-05-08T18:35:07.408Z] > [functions] package.json contents: {
+  "name": "functions",
+  "description": "Cloud Functions for Firebase",
+  "main": "index.js",
+  "engines": {
+    "node": "18"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "11.10.0",
+    "firebase-functions": "3.24.1"
+  },
+  "devDependencies": {
+    "eslint": "^8.15.0",
+    "eslint-config-google": "^0.14.0"
+  },
+  "private": true
+}
+[debug] [2025-05-08T18:35:07.408Z] Building nodejs source
+[debug] [2025-05-08T18:35:07.408Z] Failed to find version of module node: reached end of search path /Users/andikanadi/Documents/Ascend/functions/node_modules
+[warn] ⚠  functions: Your requested "node" version "18" doesn't match your global version "23". Using node@23 from host. 
+[info] i  functions: You are using a version of firebase-functions SDK (3.24.1) that does not have support for the newest Firebase Extensions features. Please update firebase-functions SDK to >=5.1.0 to use them correctly 
+[debug] [2025-05-08T18:35:07.409Z] Could not find functions.yaml. Must use http discovery
+[debug] [2025-05-08T18:35:07.410Z] Found firebase-functions binary at '/Users/andikanadi/Documents/Ascend/functions/node_modules/.bin/firebase-functions'
+[debug] [2025-05-08T18:35:07.411Z] File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers {"metadata":{"emulator":{"name":"functions"},"message":"File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers"}}
+[info] Serving at port 8615
+
+[debug] [2025-05-08T18:35:07.620Z] Got response from /__/functions.yaml {"endpoints":{"nukeUserData":{"platform":"gcfv1","eventTrigger":{"eventType":"providers/firebase.auth/eventTypes/user.delete","eventFilters":{"resource":"projects/mindreset-f37a7"},"retry":false},"labels":{},"entryPoint":"nukeUserData"}},"specVersion":"v1alpha1","requiredAPIs":[]}
+[debug] [2025-05-08T18:35:08.413Z] Validating nodejs source
+[warn] ⚠  functions: package.json indicates an outdated version of firebase-functions. Please upgrade using npm install --save firebase-functions@latest in your functions directory. 
+[warn] ⚠  functions: Please note that there will be breaking changes when you upgrade. 
+[debug] [2025-05-08T18:35:08.899Z] > [functions] package.json contents: {
+  "name": "functions",
+  "description": "Cloud Functions for Firebase",
+  "main": "index.js",
+  "engines": {
+    "node": "18"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "11.10.0",
+    "firebase-functions": "3.24.1"
+  },
+  "devDependencies": {
+    "eslint": "^8.15.0",
+    "eslint-config-google": "^0.14.0"
+  },
+  "private": true
+}
+[debug] [2025-05-08T18:35:08.900Z] Building nodejs source
+[debug] [2025-05-08T18:35:08.900Z] Failed to find version of module node: reached end of search path /Users/andikanadi/Documents/Ascend/functions/node_modules
+[warn] ⚠  functions: Your requested "node" version "18" doesn't match your global version "23". Using node@23 from host. 
+[info] i  functions: You are using a version of firebase-functions SDK (3.24.1) that does not have support for the newest Firebase Extensions features. Please update firebase-functions SDK to >=5.1.0 to use them correctly 
+[debug] [2025-05-08T18:35:08.900Z] Could not find functions.yaml. Must use http discovery
+[debug] [2025-05-08T18:35:08.901Z] Found firebase-functions binary at '/Users/andikanadi/Documents/Ascend/functions/node_modules/.bin/firebase-functions'
+[info] Serving at port 8626
+
+[debug] [2025-05-08T18:35:09.053Z] Got response from /__/functions.yaml {"endpoints":{"nukeUserData":{"platform":"gcfv1","eventTrigger":{"eventType":"providers/firebase.auth/eventTypes/user.delete","eventFilters":{"resource":"projects/mindreset-f37a7"},"retry":false},"labels":{},"entryPoint":"nukeUserData"}},"specVersion":"v1alpha1","requiredAPIs":[]}
+[debug] [2025-05-08T18:35:10.417Z] File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers {"metadata":{"emulator":{"name":"functions"},"message":"File /Users/andikanadi/Documents/Ascend/functions/index.js changed, reloading triggers"}}
+[debug] [2025-05-08T18:35:11.421Z] Validating nodejs source
+[warn] ⚠  functions: package.json indicates an outdated version of firebase-functions. Please upgrade using npm install --save firebase-functions@latest in your functions directory. 
+[warn] ⚠  functions: Please note that there will be breaking changes when you upgrade. 
+[debug] [2025-05-08T18:35:11.946Z] > [functions] package.json contents: {
+  "name": "functions",
+  "description": "Cloud Functions for Firebase",
+  "main": "index.js",
+  "engines": {
+    "node": "18"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "11.10.0",
+    "firebase-functions": "3.24.1"
+  },
+  "devDependencies": {
+    "eslint": "^8.15.0",
+    "eslint-config-google": "^0.14.0"
+  },
+  "private": true
+}
+[debug] [2025-05-08T18:35:11.946Z] Building nodejs source
+[debug] [2025-05-08T18:35:11.946Z] Failed to find version of module node: reached end of search path /Users/andikanadi/Documents/Ascend/functions/node_modules
+[warn] ⚠  functions: Your requested "node" version "18" doesn't match your global version "23". Using node@23 from host. 
+[info] i  functions: You are using a version of firebase-functions SDK (3.24.1) that does not have support for the newest Firebase Extensions features. Please update firebase-functions SDK to >=5.1.0 to use them correctly 
+[debug] [2025-05-08T18:35:11.947Z] Could not find functions.yaml. Must use http discovery
+[debug] [2025-05-08T18:35:11.948Z] Found firebase-functions binary at '/Users/andikanadi/Documents/Ascend/functions/node_modules/.bin/firebase-functions'
+[info] shutdown requested via /__/quitquitquit
+
+[info] ✔  functions: Loaded functions definitions from source: nukeUserData. {"metadata":{"emulator":{"name":"functions"},"message":"Loaded functions definitions from source: nukeUserData."}}
+[info] Serving at port 8646
+
+[debug] [2025-05-08T18:35:12.121Z] Got response from /__/functions.yaml {"endpoints":{"nukeUserData":{"platform":"gcfv1","eventTrigger":{"eventType":"providers/firebase.auth/eventTypes/user.delete","eventFilters":{"resource":"projects/mindreset-f37a7"},"retry":false},"labels":{},"entryPoint":"nukeUserData"}},"specVersion":"v1alpha1","requiredAPIs":[]}
+[info] shutdown requested via /__/quitquitquit
+
+[info] ✔  functions: Loaded functions definitions from source: nukeUserData. {"metadata":{"emulator":{"name":"functions"},"message":"Loaded functions definitions from source: nukeUserData."}}
+[info] shutdown requested via /__/quitquitquit
+
+[info] ✔  functions: Loaded functions definitions from source: nukeUserData. {"metadata":{"emulator":{"name":"functions"},"message":"Loaded functions definitions from source: nukeUserData."}}

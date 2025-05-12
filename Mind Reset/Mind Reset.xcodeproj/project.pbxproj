@@ -67,9 +67,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		48D4B75C2CEFB63B0031EBA1 /* Mind Reset */ = {
+		48D4B75C2CEFB63B0031EBA1 /* Ascento */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 48D4B7702CEFB63E0031EBA1 /* Build configuration list for PBXNativeTarget "Mind Reset" */;
+			buildConfigurationList = 48D4B7702CEFB63E0031EBA1 /* Build configuration list for PBXNativeTarget "Ascento" */;
 			buildPhases = (
 				48D4B7592CEFB63B0031EBA1 /* Sources */,
 				48D4B75A2CEFB63B0031EBA1 /* Frameworks */,
@@ -82,7 +82,7 @@
 			fileSystemSynchronizedGroups = (
 				48D4B75F2CEFB63B0031EBA1 /* Mind Reset */,
 			);
-			name = "Mind Reset";
+			name = Ascento;
 			packageProductDependencies = (
 				48D4B7922CEFC94A0031EBA1 /* FirebaseAuth */,
 				48D4B7942CEFC94A0031EBA1 /* FirebaseFirestore */,
@@ -125,7 +125,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				48D4B75C2CEFB63B0031EBA1 /* Mind Reset */,
+				48D4B75C2CEFB63B0031EBA1 /* Ascento */,
 			);
 		};
 /* End PBXProject section */
@@ -276,11 +276,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"Mind Reset/Preview Content\"";
 				DEVELOPMENT_TEAM = AXW5JHF47R;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Ascento;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -290,8 +291,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.andikayudhatrisna.Ascend;
+				MARKETING_VERSION = 1.11;
+				PRODUCT_BUNDLE_IDENTIFIER = com.andikayudhatrisna.Ascento;
 				PRODUCT_NAME = Ascend;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -305,11 +306,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"Mind Reset/Preview Content\"";
 				DEVELOPMENT_TEAM = AXW5JHF47R;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Ascento;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -319,8 +321,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.andikayudhatrisna.Ascend;
+				MARKETING_VERSION = 1.11;
+				PRODUCT_BUNDLE_IDENTIFIER = com.andikayudhatrisna.Ascento;
 				PRODUCT_NAME = Ascend;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -340,7 +342,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		48D4B7702CEFB63E0031EBA1 /* Build configuration list for PBXNativeTarget "Mind Reset" */ = {
+		48D4B7702CEFB63E0031EBA1 /* Build configuration list for PBXNativeTarget "Ascento" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				48D4B7712CEFB63E0031EBA1 /* Debug */,

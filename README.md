@@ -1,6 +1,6 @@
 # Ascento – Habit & Schedule Support
 
-Welcome to the official support repository for **Ascend: Personal Growth**. This page provides documentation, troubleshooting tips, and contact information to help you get the most out of Ascend.
+Welcome to the official support repository for **Ascento**. This page provides documentation, troubleshooting tips, and contact information to help you get the most out of Ascento.
 
 ---
 
@@ -16,7 +16,7 @@ Welcome to the official support repository for **Ascend: Personal Growth**. This
 ---
 
 ## Description
-Ascento is designed to help you build consistency and confidence by turning good intentions into steady progress. With intuitive planning tools and habit tracking, Ascend keeps your priorities visible and your growth measurable.
+Ascento is designed to help you build consistency and confidence by turning good intentions into steady progress. With intuitive planning tools and habit tracking, Ascento keeps your priorities visible and your growth measurable.
 
 ---
 
@@ -49,7 +49,7 @@ Ascento is designed to help you build consistency and confidence by turning good
 ---
 
 ## Getting Started
-1. **Download Ascend** from the App Store on your iPhone or iPad.
+1. **Download Ascento** from the App Store on your iPhone or iPad.
 2. **Sign in / Create Account** with your email or Apple ID.
 3. **Set up your first habit**:
    - Tap **Add Habit** on the Habits list.
@@ -102,10 +102,10 @@ A: Ascento automatically syncs with iCloud/Firebase. All your habits and records
 A: Press the trash icon next to the habit to remove it; this deletes all associated records permanently.
 
 **Q: How can I adjust reminder times?**  
-A: Go to **Settings → Reminders** to customize when and how often Ascend nudges you.
+A: Go to **Settings → Reminders** to customize when and how often Ascento nudges you.
 
 ## Contact & Support
-If you need additional help, please email us at **support@ascendapp.app**. We aim to respond within 24 hours.
+If you need additional help, please email us at **support@Ascentoapp.app**. We aim to respond within 24 hours.
 
 © 2025 Andika Yudhatrisna, Inc. All rights reserved.
 

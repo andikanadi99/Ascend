@@ -12,8 +12,8 @@ import Combine
 struct SchedulerView: View {
     @EnvironmentObject var session: SessionStore
     @State private var selectedTab: SchedulerTab = .day
-    
-    let accentCyan      = Color(red: 0, green: 1, blue: 1)
+
+    let accentCyan = Color(red: 0, green: 1, blue: 1)
 
     // Array of new greeting messages.
     private let greetings = [
@@ -23,8 +23,8 @@ struct SchedulerView: View {
         "Welcome back! Today is a new chance to excel.",
         "Welcome back! Keep pushing forward."
     ]
-    
-    // Productivity & encouragement quotes (unchanged).
+
+    // Productivity & encouragement quotes.
     private let quotes = [
         "Small daily steps lead to big achievements.",
         "Discipline is choosing between what you want now and what you want most.",
@@ -37,69 +37,65 @@ struct SchedulerView: View {
         "A focused mind can conquer any goal.",
         "Every day is a chance to improve."
     ]
-    
-    // Computed daily greeting based on the day of the year.
+
     private var dailyGreeting: String {
         let dayOfYear = Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 1
         return greetings[(dayOfYear - 1) % greetings.count]
     }
-    
-    // Computed daily quote based on the day of the year.
+
     private var dailyQuote: String {
         let dayOfYear = Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 1
         return quotes[(dayOfYear - 1) % quotes.count]
     }
-    
+
     var body: some View {
-        NavigationView {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                
-                VStack {
-                    // Top banner for daily greeting & daily quote.
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(dailyGreeting)
-                            .font(.title)
-                            .fontWeight(.heavy)
-                            .foregroundColor(.white)
-                            .shadow(color: .white.opacity(0.8), radius: 4)
-                        
-                        Text(dailyQuote)
-                            .font(.subheadline)
-                            .foregroundColor(Color(red: 0, green: 1, blue: 1)) // Accent color
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            VStack {
+                // Top banner
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(dailyGreeting)
+                        .font(.title).fontWeight(.heavy)
+                        .foregroundColor(.white)
+                        .shadow(color: .white.opacity(0.8), radius: 4)
+
+                    Text(dailyQuote)
+                        .font(.subheadline)
+                        .foregroundColor(accentCyan)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.top, 30)
+                .padding(.bottom, 20)
+
+                // Segmented picker
+                VStack(spacing: 4) {
+                    Picker("Tabs", selection: $selectedTab) {
+                        Text("Day").tag(SchedulerTab.day)
+                        Text("Week").tag(SchedulerTab.week)
+                        Text("Month").tag(SchedulerTab.month)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .pickerStyle(SegmentedPickerStyle())
+                    .tint(.gray)
+                    .background(Color.gray)
+                    .cornerRadius(8)
                     .padding(.horizontal, 10)
-                    .padding(.top, 30)
-                    .padding(.bottom, 20)
-                    
-                    // Tab header with segmented picker and divider.
-                    VStack(spacing: 4) {
-                        Picker("Tabs", selection: $selectedTab) {
-                            Text("Day").tag(SchedulerTab.day)
-                            Text("Week").tag(SchedulerTab.week)
-                            Text("Month").tag(SchedulerTab.month)
-                        }
-                        .pickerStyle(SegmentedPickerStyle())
-                        .tint(.gray)
-                        .background(Color.gray)
-                        .cornerRadius(8)
+
+                    Rectangle()
+                        .fill(Color.black)
+                        .frame(height: 4)
                         .padding(.horizontal, 10)
-                        
-                        Rectangle()
-                            .fill(Color.black)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 4)
-                            .padding(.horizontal, 10)
-                    }
-                    
-                    // Switch between views based on the selected tab.
-                    Group {
+                }
+
+                // Content area
+                Group {
                         switch selectedTab {
                         case .day:
                             DayView()
                         case .week:
                             WeekView(accentColor: accentCyan)
+                            .environmentObject(session)
                         case .month:
                             if let accountCreationDate = session.userModel?.createdAt {
                                 MonthView(accentColor: accentCyan, accountCreationDate: accountCreationDate)
@@ -109,14 +105,13 @@ struct SchedulerView: View {
                         }
                     }
                     .padding()
-                    
-                    Spacer()
-                }
+
+                Spacer()
             }
-            .navigationBarHidden(true)
         }
     }
 }
+
 
 // MARK: - Scheduler Tab Options
 enum SchedulerTab: String, CaseIterable {

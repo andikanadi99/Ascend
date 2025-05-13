@@ -7,103 +7,99 @@
 
 import SwiftUI
 import Combine
-import Firebase
+import UIKit
 import FirebaseFirestore
 
-// MARK: - Main Weekly Blueprint View
+// MARK: - Focusable Fields
+private enum Field: Hashable {
+    case weeklyPriority(UUID)
+    case intention(Date)
+    case todo(UUID)
+}
+
+extension Color {
+  static let accentCyan = Color(red: 0, green: 1, blue: 1)
+}
+// MARK: - WeekView
 struct WeekView: View {
     let accentColor: Color
     @EnvironmentObject var session: SessionStore
-    @EnvironmentObject var weekViewState: WeekViewState // Shared week state
+    @EnvironmentObject var weekViewState: WeekViewState
     @StateObject private var viewModel = WeekViewModel()
-    
-    // For deletion confirmation for weekly priorities.
+
+    @FocusState private var focusedField: Field?
     @State private var weeklyPriorityToDelete: WeeklyPriority?
-    @State private var isRemoveMode: Bool = false
-    
-    // New state variable for prompting to copy from the previous week.
-    @State private var showWeekCopyAlert: Bool = false
-    
-    let accentCyan      = Color(red: 0, green: 1, blue: 1)
+    @State private var isRemoveMode = false
+    @State private var showWeekCopyAlert = false
+
+    private var schedule: WeeklySchedule? { viewModel.schedule }
+    private var bindingPriorities: Binding<[WeeklyPriority]>? {
+        guard let sched = schedule else { return nil }
+        return Binding<[WeeklyPriority]>(
+            get: {
+                sched.weeklyPriorities
+            },
+            set: { newVal in
+                var tmp = sched
+                tmp.weeklyPriorities = newVal
+                viewModel.schedule = tmp
+            }
+        )
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                // Copy Button with Confirmation Alert
-                HStack {
-                    Spacer()
-                    Button(action: {
-                        // Show the copy confirmation alert.
-                        showWeekCopyAlert = true
-                    }) {
-                        Text("Copy from Previous Week")
-                            .font(.headline)
-                            .foregroundColor(accentColor)
-                            .padding(.horizontal, 16)
-                            .background(Color.black)
-                            .cornerRadius(8)
-                    }
-                    Spacer()
-                }
-                // Attach the alert to the HStack
-                .alert(isPresented: $showWeekCopyAlert) {
-                    Alert(
-                        title: Text("Confirm Copy"),
-                        message: Text("Are you sure you want to copy the previous week's schedule?"),
-                        primaryButton: .destructive(Text("Copy")) {
-                            copyFromPreviousWeek()
-                        },
-                        secondaryButton: .cancel()
-                    )
-                }
-                
-                // Weekly Priorities Section
-                prioritiesSection
-                
-                // Week Navigation Header using shared state
-                WeekNavigationView(
-                    currentWeekStart: $weekViewState.currentWeekStart,
-                    accountCreationDate: session.userModel?.createdAt ?? Date()
-                )
-                .onChange(of: weekViewState.currentWeekStart) { newWeekStart in
-                    if let userId = session.userModel?.id {
-                        viewModel.loadWeeklySchedule(for: newWeekStart, userId: userId)
-                    }
-                }
-                
-                // Days of the Week Cards
-                VStack(spacing: 16) {
-                    ForEach(weekDays(for: weekViewState.currentWeekStart), id: \.self) { day in
-                        DayCardView(
-                            day: day,
-                            toDoItems: bindingForToDoItems(day: day),
-                            intention: bindingForIntention(day: day)
-                        )
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-                
-                Spacer()
-            }
-            .padding()
-            .padding(.top, -20)
+           ScrollView(.vertical) {
+               VStack(alignment: .leading, spacing: 16) {
+                   copyButton
+                   prioritiesSection
+                   weekNavigation
+                   dayCards
+                   Spacer()
+               }
+               .padding()
+               .padding(.top, -20)
+           }
+           // attach the keyboard toolbar here
+           .toolbar {
+               ToolbarItemGroup(placement: .keyboard) {
+                   Spacer()
+                   Button("Done") {
+                       focusedField = nil
+                       UIApplication.shared.sendAction(
+                           #selector(UIResponder.resignFirstResponder),
+                           to: nil, from: nil, for: nil
+                       )
+                   }
+               }
+           }
+           .navigationTitle("Your Week")
+           .navigationBarTitleDisplayMode(.inline)
+           .onAppear(perform: loadSchedule)
+       }
+
+    // MARK: Copy Button
+    private var copyButton: some View {
+        HStack {
+            Spacer()
+            Button("Copy from Previous Week") { showWeekCopyAlert = true }
+                .font(.headline)
+                .foregroundColor(accentColor)
+                .padding(.horizontal, 16)
+                .background(Color.black)
+                .cornerRadius(8)
+            Spacer()
         }
-        .onAppear {
-            let now = Date()
-            let lastActive = UserDefaults.standard.object(forKey: "LastActiveTime") as? Date ?? now
-            if now.timeIntervalSince(lastActive) > 1800 {
-                // More than 30 minutes inactivity: reset week to the current week.
-                weekViewState.currentWeekStart = WeekViewState.startOfCurrentWeek(now)
-            }
-            UserDefaults.standard.set(now, forKey: "LastActiveTime")
-            
-            if let userId = session.userModel?.id {
-                viewModel.loadWeeklySchedule(for: weekViewState.currentWeekStart, userId: userId)
-            }
+        .alert(isPresented: $showWeekCopyAlert) {
+            Alert(
+                title: Text("Confirm Copy"),
+                message: Text("Are you sure you want to copy the previous week's schedule?"),
+                primaryButton: .destructive(Text("Copy")) { copyFromPreviousWeek() },
+                secondaryButton: .cancel()
+            )
         }
     }
-    
-    // MARK: - Weekly Priorities Section
+
+    // MARK: Priorities Section
     private var prioritiesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -111,40 +107,29 @@ struct WeekView: View {
                     .font(.headline)
                     .foregroundColor(accentColor)
                 Spacer()
-                Button(action: {
-                    addNewPriority()
-                }) {
+                Button(action: addNewPriority) {
                     Image(systemName: "plus.circle")
                         .foregroundColor(accentColor)
                 }
             }
-            if let schedule = viewModel.schedule {
-                let bindingPriorities = Binding<[WeeklyPriority]>(
-                    get: { schedule.weeklyPriorities },
-                    set: { newVal in
-                        var temp = schedule
-                        temp.weeklyPriorities = newVal
-                        viewModel.schedule = temp
-                    }
-                )
-                ForEach(bindingPriorities, id: \.id) { $priority in
+
+            if let binding = bindingPriorities {
+                ForEach(binding, id: \.id) { $priority in
                     HStack {
                         TextEditor(text: $priority.title)
+                            .focused($focusedField, equals: .weeklyPriority(priority.id))
                             .padding(8)
                             .frame(minHeight: 50)
                             .background(Color.black)
                             .foregroundColor(.white)
                             .scrollContentBackground(.hidden)
                             .cornerRadius(8)
-                            .fixedSize(horizontal: false, vertical: true)
                             .onChange(of: priority.title) { _ in
                                 viewModel.updateWeeklySchedule()
                             }
-                        // Show the delete (minus) button only if there is more than one priority and removal mode is active.
-                        if bindingPriorities.wrappedValue.count > 1, isRemoveMode {
-                            Button(action: {
-                                weeklyPriorityToDelete = priority
-                            }) {
+
+                        if binding.wrappedValue.count > 1 && isRemoveMode {
+                            Button { weeklyPriorityToDelete = priority } label: {
                                 Image(systemName: "minus.circle")
                                     .foregroundColor(.red)
                             }
@@ -155,24 +140,16 @@ struct WeekView: View {
                     Alert(
                         title: Text("Delete Priority"),
                         message: Text("Are you sure you want to delete this weekly priority?"),
-                        primaryButton: .destructive(Text("Delete")) {
-                            if var schedule = viewModel.schedule,
-                               let index = schedule.weeklyPriorities.firstIndex(where: { $0.id == priority.id }) {
-                                schedule.weeklyPriorities.remove(at: index)
-                                viewModel.schedule = schedule
-                                viewModel.updateWeeklySchedule()
-                            }
-                        },
+                        primaryButton: .destructive(Text("Delete")) { deletePriority(priority) },
                         secondaryButton: .cancel()
                     )
                 }
-                // Buttons row below the list.
+
                 HStack {
-                    Button(action: {
+                    Button {
                         addNewPriority()
-                        // Reset removal mode when adding.
                         isRemoveMode = false
-                    }) {
+                    } label: {
                         Text("Add Priority")
                             .font(.headline)
                             .foregroundColor(accentColor)
@@ -182,24 +159,21 @@ struct WeekView: View {
                             .cornerRadius(8)
                     }
                     Spacer()
-                    if bindingPriorities.wrappedValue.count > 1 {
-                        Button(action: {
-                            // Toggle removal mode.
+                    if binding.wrappedValue.count > 1 {
+                        Button(isRemoveMode ? "Done" : "Remove Priority") {
                             isRemoveMode.toggle()
-                        }) {
-                            Text(isRemoveMode ? "Done" : "Remove Priority")
-                                .font(.headline)
-                                .foregroundColor(.red)
-                                .padding(.vertical, 8)
-                                .padding(.horizontal, 16)
-                                .background(Color.black)
-                                .cornerRadius(8)
                         }
+                        .font(.headline)
+                        .foregroundColor(.red)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 16)
+                        .background(Color.black)
+                        .cornerRadius(8)
                     }
                 }
                 .padding(.top, 8)
             } else {
-                Text("Loading weekly priorities...")
+                Text("Loading weekly priorities…")
                     .foregroundColor(.white)
             }
         }
@@ -207,160 +181,153 @@ struct WeekView: View {
         .background(Color.gray.opacity(0.3))
         .cornerRadius(8)
     }
-    
-    private func addNewPriority() {
-        guard var schedule = viewModel.schedule else { return }
-        let newPriority = WeeklyPriority(id: UUID(), title: "New Priority", progress: 0.0)
-        schedule.weeklyPriorities.append(newPriority)
-        viewModel.schedule = schedule
-        viewModel.updateWeeklySchedule()
-    }
-    
-    // MARK: - Helper Bindings for To-Do Items & Intentions
-    private func bindingForToDoItems(day: Date) -> Binding<[ToDoItem]> {
-        Binding(
-            get: {
-                if let schedule = viewModel.schedule {
-                    let dayKey = shortDayKey(from: day)
-                    return schedule.dailyToDoLists[dayKey] ?? []
-                } else {
-                    return []
-                }
-            },
-            set: { newValue in
-                guard var schedule = viewModel.schedule else { return }
-                let dayKey = shortDayKey(from: day)
-                schedule.dailyToDoLists[dayKey] = newValue
-                viewModel.schedule = schedule
-                viewModel.updateWeeklySchedule()
-            }
+
+    // MARK: Week Navigation
+    private var weekNavigation: some View {
+        WeekNavigationView(
+            currentWeekStart: $weekViewState.currentWeekStart,
+            accountCreationDate: session.userModel?.createdAt ?? Date()
         )
-    }
-    
-    private func bindingForIntention(day: Date) -> Binding<String> {
-        Binding(
-            get: {
-                if let schedule = viewModel.schedule {
-                    let dayKey = shortDayKey(from: day)
-                    return schedule.dailyIntentions[dayKey] ?? ""
-                } else {
-                    return ""
-                }
-            },
-            set: { newValue in
-                guard var schedule = viewModel.schedule else { return }
-                let dayKey = shortDayKey(from: day)
-                schedule.dailyIntentions[dayKey] = newValue
-                viewModel.schedule = schedule
-                viewModel.updateWeeklySchedule()
-            }
-        )
-    }
-    
-    private func weekDays(for start: Date) -> [Date] {
-        var days: [Date] = []
-        let calendar = Calendar.current
-        for offset in 0..<7 {
-            if let day = calendar.date(byAdding: .day, value: offset, to: start) {
-                days.append(day)
+        .onChange(of: weekViewState.currentWeekStart) { newStart in
+            if let uid = session.userModel?.id {
+                viewModel.loadWeeklySchedule(for: newStart, userId: uid)
             }
         }
-        return days
     }
-    
+
+    // MARK: Day Cards
+    private var dayCards: some View {
+        VStack(spacing: 16) {
+            ForEach(weekDays(for: weekViewState.currentWeekStart), id: \.self) { day in
+                DayCardView(
+                    accentColor: accentColor,
+                    day: day,
+                    toDoItems: bindingForToDoItems(day: day),
+                    intention: bindingForIntention(day: day),
+                    focusedField: $focusedField
+                )
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    // MARK: Helpers
+
+    private func loadSchedule() {
+        let now = Date()
+        let lastActive = UserDefaults.standard.object(forKey: "LastActiveTime") as? Date ?? now
+        if now.timeIntervalSince(lastActive) > 1800 {
+            weekViewState.currentWeekStart = WeekViewState.startOfCurrentWeek(now)
+        }
+        UserDefaults.standard.set(now, forKey: "LastActiveTime")
+        if let uid = session.userModel?.id {
+            viewModel.loadWeeklySchedule(for: weekViewState.currentWeekStart, userId: uid)
+        }
+    }
+
+    private func addNewPriority() {
+        guard var sched = schedule else { return }
+        sched.weeklyPriorities.append(WeeklyPriority(id: UUID(), title: "New Priority", progress: 0))
+        viewModel.schedule = sched
+        viewModel.updateWeeklySchedule()
+    }
+
+    private func deletePriority(_ p: WeeklyPriority) {
+        guard var sched = schedule,
+              let idx = sched.weeklyPriorities.firstIndex(where: { $0.id == p.id })
+        else { return }
+        sched.weeklyPriorities.remove(at: idx)
+        viewModel.schedule = sched
+        viewModel.updateWeeklySchedule()
+    }
+
+    private func weekDays(for start: Date) -> [Date] {
+        (0..<7).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: start) }
+    }
+
     private func shortDayKey(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "E"
-        return formatter.string(from: date)
+        let fmt = DateFormatter(); fmt.dateFormat = "E"; return fmt.string(from: date)
     }
-    
-    // MARK: - Copy Feature: Copy from Previous Week
+
+    private func bindingForToDoItems(day: Date) -> Binding<[ToDoItem]> {
+        Binding(get: {
+            schedule?.dailyToDoLists[shortDayKey(from: day)] ?? []
+        }, set: { new in
+            guard var sched = schedule else { return }
+            sched.dailyToDoLists[shortDayKey(from: day)] = new
+            viewModel.schedule = sched
+            viewModel.updateWeeklySchedule()
+        })
+    }
+
+    private func bindingForIntention(day: Date) -> Binding<String> {
+        Binding(get: {
+            schedule?.dailyIntentions[shortDayKey(from: day)] ?? ""
+        }, set: { new in
+            guard var sched = schedule else { return }
+            sched.dailyIntentions[shortDayKey(from: day)] = new
+            viewModel.schedule = sched
+            viewModel.updateWeeklySchedule()
+        })
+    }
+
     private func copyFromPreviousWeek() {
-        // Calculate the previous week's start date.
-        let calendar = Calendar.current
-        guard let previousWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: weekViewState.currentWeekStart) else { return }
-        
-        // Load the previous week's schedule from Firestore.
-        dbLoadPreviousWeekSchedule(previousWeekStart: previousWeekStart) { previousSchedule in
-            guard let previousSchedule = previousSchedule, var currentSchedule = viewModel.schedule else { return }
-            // Copy priorities, daily intentions, and to‑do lists.
-            currentSchedule.weeklyPriorities = previousSchedule.weeklyPriorities
-            currentSchedule.dailyIntentions = previousSchedule.dailyIntentions
-            currentSchedule.dailyToDoLists = previousSchedule.dailyToDoLists
-            viewModel.schedule = currentSchedule
+        let cal = Calendar.current
+        guard let prev = cal.date(byAdding: .weekOfYear, value: -1, to: weekViewState.currentWeekStart) else { return }
+        dbLoadPreviousWeekSchedule(previousWeekStart: prev) { prevSched in
+            guard let prevSched = prevSched, var sched = schedule else { return }
+            sched.weeklyPriorities = prevSched.weeklyPriorities
+            sched.dailyIntentions = prevSched.dailyIntentions
+            sched.dailyToDoLists = prevSched.dailyToDoLists
+            viewModel.schedule = sched
             viewModel.updateWeeklySchedule()
         }
     }
-    
-    // This helper function loads the previous week's schedule.
+
     private func dbLoadPreviousWeekSchedule(previousWeekStart: Date, completion: @escaping (WeeklySchedule?) -> Void) {
-        guard let userId = session.userModel?.id else { completion(nil); return }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let docId = formatter.string(from: previousWeekStart)
-        let db = Firestore.firestore()
-        db.collection("users")
-            .document(userId)
-            .collection("weekSchedules")
-            .document(docId)
-            .getDocument(source: .default) { snapshot, error in
-                if let error = error {
-                    print("Error copying previous week: \(error)")
-                    completion(nil)
-                    return
-                }
-                if let snapshot = snapshot, snapshot.exists {
-                    do {
-                        let previousSchedule = try snapshot.data(as: WeeklySchedule.self)
-                        completion(previousSchedule)
-                    } catch {
-                        print("Error decoding previous schedule: \(error)")
-                        completion(nil)
-                    }
-                } else {
-                    print("No previous week schedule found.")
-                    completion(nil)
-                }
+        guard let uid = session.userModel?.id else { completion(nil); return }
+        let docId = DateFormatter.localizedString(
+            from: previousWeekStart,
+            dateStyle: .short,
+            timeStyle: .none
+        )
+        Firestore.firestore()
+            .collection("users").document(uid)
+            .collection("weekSchedules").document(docId)
+            .getDocument { snap, _ in
+                guard let snap = snap, snap.exists,
+                      let sched = try? snap.data(as: WeeklySchedule.self)
+                else { completion(nil); return }
+                completion(sched)
             }
     }
 }
 
-// MARK: - Week Navigation View
+// MARK: - WeekNavigationView
 struct WeekNavigationView: View {
     @Binding var currentWeekStart: Date
     let accountCreationDate: Date
-    
+
     var body: some View {
-        // Week header with navigation
         HStack {
-            // ← back one week
             Button {
-                // attempt the move only if allowed
                 if canGoBack(),
-                   let prev = Calendar.current.date(byAdding: .weekOfYear,
-                                                    value: -1,
-                                                    to: currentWeekStart) {
+                   let prev = Calendar.current.date(byAdding: .weekOfYear, value: -1, to: currentWeekStart)
+                {
                     currentWeekStart = prev
                 }
             } label: {
                 Image(systemName: "chevron.left")
-                    .foregroundColor( canGoBack() ? .white : .gray )
+                    .foregroundColor(canGoBack() ? .white : .gray)
             }
-
             Spacer()
-
             Text(weekRangeString())
-                .foregroundColor(.white)
                 .font(.headline)
-
+                .foregroundColor(.white)
             Spacer()
-
-            // → forward one week (always enabled)
             Button {
-                if let next = Calendar.current.date(byAdding: .weekOfYear,
-                                                    value:  1,
-                                                    to: currentWeekStart) {
-                    currentWeekStart = next
+                if let nxt = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: currentWeekStart) {
+                    currentWeekStart = nxt
                 }
             } label: {
                 Image(systemName: "chevron.right")
@@ -370,40 +337,37 @@ struct WeekNavigationView: View {
         .padding()
         .background(Color.gray.opacity(0.3))
         .cornerRadius(8)
+    }
 
-    }
-    
     private func weekRangeString() -> String {
-        var calendar = Calendar.current
-        calendar.firstWeekday = 1
-        let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: currentWeekStart)
-        guard let weekStart = calendar.date(from: components) else { return "" }
-        let weekEnd = calendar.date(byAdding: .day, value: 6, to: weekStart) ?? weekStart
-        let formatter = DateFormatter()
-        formatter.dateFormat = "M/d"
-        return "Week of \(formatter.string(from: weekStart)) - \(formatter.string(from: weekEnd))"
+        let cal = Calendar.current
+        guard let start = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: currentWeekStart)) else { return "" }
+        let end = cal.date(byAdding: .day, value: 6, to: start) ?? start
+        let fmt = DateFormatter(); fmt.dateFormat = "M/d"
+        return "Week of \(fmt.string(from: start)) – \(fmt.string(from: end))"
     }
-    
+
     private func canGoBack() -> Bool {
-        guard let prevWeek = Calendar.current.date(byAdding: .weekOfYear, value: -1, to: currentWeekStart) else { return false }
-        return prevWeek >= startOfWeek(for: accountCreationDate)
+        guard let prev = Calendar.current.date(byAdding: .weekOfYear, value: -1, to: currentWeekStart) else { return false }
+        return prev >= startOfWeek(for: accountCreationDate)
     }
-    
+
     private func startOfWeek(for date: Date) -> Date {
-        var calendar = Calendar.current
-        calendar.firstWeekday = 1
-        let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
-        return calendar.date(from: components) ?? date
+        var cal = Calendar.current; cal.firstWeekday = 1
+        let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        return cal.date(from: comps) ?? date
     }
 }
 
-/////////////////////////////////////////////////////////////////
 // MARK: - DayCardView & ToDoListView
-struct DayCardView: View {
+
+fileprivate struct DayCardView: View {
+    let accentColor: Color
     let day: Date
     @Binding var toDoItems: [ToDoItem]
     @Binding var intention: String
-    
+    let focusedField: FocusState<Field?>.Binding
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading) {
@@ -415,118 +379,96 @@ struct DayCardView: View {
                     .foregroundColor(.white.opacity(0.7))
             }
             .padding(.bottom, 4)
-            
+
             TextEditor(text: $intention)
+                .focused(focusedField, equals: .intention(day))
                 .padding(8)
                 .frame(minHeight: 50)
                 .background(Color.black)
                 .foregroundColor(.white)
                 .cornerRadius(8)
-                .overlay(
-                    Group {
-                        if intention.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            Text("Main goal for the day...")
-                                .foregroundColor(.gray)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                        }
-                    },
-                    alignment: .topLeading
-                )
-                .scrollContentBackground(.hidden)
-            
-            ToDoListView(toDoItems: $toDoItems)
+
+            ToDoListView(
+                accentColor: accentColor,
+                toDoItems: $toDoItems,
+                focusedField: focusedField
+            )
         }
         .padding()
         .background(Color.gray.opacity(0.2))
         .cornerRadius(8)
     }
-    
+
     private func dayOfWeekString(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE"
-        return formatter.string(from: date)
+        let fmt = DateFormatter(); fmt.dateFormat = "EEEE"; return fmt.string(from: date)
     }
-    
     private func formattedDate(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "M/d"
-        return formatter.string(from: date)
+        let fmt = DateFormatter(); fmt.dateFormat = "M/d"; return fmt.string(from: date)
     }
 }
 
-struct ToDoListView: View {
+fileprivate struct ToDoListView: View {
+    let accentColor: Color
     @Binding var toDoItems: [ToDoItem]
-    
-    // New state variable to hold the task that is about to be deleted.
+    let focusedField: FocusState<Field?>.Binding
     @State private var taskToDelete: ToDoItem?
+    @State private var isRemoveMode = false
 
-    // New state variable to track removal mode.
-    @State private var isRemoveMode: Bool = false
-    let accentCyan      = Color(red: 0, green: 1, blue: 1)
-    
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            // Display each task
             ForEach($toDoItems) { $item in
                 HStack {
-                    Button(action: {
-                        item.isCompleted.toggle()
-                    }) {
+                    Button { item.isCompleted.toggle() } label: {
                         Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
                             .foregroundColor(item.isCompleted ? .green : .white)
                     }
+
                     TextEditor(text: $item.title)
+                        .focused(focusedField, equals: .todo(item.id))
                         .padding(8)
                         .frame(minHeight: 50)
                         .background(Color.black)
                         .foregroundColor(.white)
-                        .scrollContentBackground(.hidden)
                         .cornerRadius(8)
-                    
-                    // Show the delete button when removal mode is active and there's more than one task.
+
                     if isRemoveMode && toDoItems.count > 1 {
-                        Button(action: {
-                            // Instead of directly deleting, assign the task to the deletion variable.
-                            taskToDelete = item
-                        }) {
+                        Button { taskToDelete = item } label: {
                             Image(systemName: "minus.circle")
                                 .foregroundColor(.red)
                         }
                     }
                 }
             }
-            // Row with add and remove toggle buttons.
+
             HStack {
-                Button(action: {
-                    // Add a new task and reset removal mode.
+                Button {
                     toDoItems.append(ToDoItem(id: UUID(), title: "", isCompleted: false))
                     isRemoveMode = false
-                }) {
+                } label: {
                     HStack {
                         Image(systemName: "plus.circle")
                         Text("Add Task")
                     }
-                    .foregroundColor(accentCyan)
+                    .foregroundColor(accentColor)
                     .font(.headline)
                     .padding(.vertical, 8)
                     .padding(.horizontal, 16)
                     .background(Color.black)
                     .cornerRadius(8)
                 }
+
                 Spacer()
+
                 if toDoItems.count > 1 {
-                    Button(action: {
+                    Button(isRemoveMode ? "Done" : "Remove Task") {
                         isRemoveMode.toggle()
-                    }) {
-                        Text(isRemoveMode ? "Done" : "Remove Task")
-                            .font(.headline)
-                            .foregroundColor(.red)
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 8)
-                            .background(Color.black)
-                            .cornerRadius(8)
                     }
+                    .font(.headline)
+                    .foregroundColor(.red)
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 16)
+                    .background(Color.black)
+                    .cornerRadius(8)
                 }
             }
             .padding(.top, 4)
@@ -534,19 +476,15 @@ struct ToDoListView: View {
         .padding()
         .background(Color.black.opacity(0.2))
         .cornerRadius(8)
-        // Present an alert when taskToDelete is set.
         .alert(item: $taskToDelete) { task in
             Alert(
                 title: Text("Delete Task"),
                 message: Text("Are you sure you want to delete this task?"),
                 primaryButton: .destructive(Text("Delete")) {
-                    if let index = toDoItems.firstIndex(where: { $0.id == task.id }) {
-                        toDoItems.remove(at: index)
+                    if let idx = toDoItems.firstIndex(where: { $0.id == task.id }) {
+                        toDoItems.remove(at: idx)
                     }
-                    // Optionally exit removal mode if only one task remains.
-                    if toDoItems.count <= 1 {
-                        isRemoveMode = false
-                    }
+                    if toDoItems.count <= 1 { isRemoveMode = false }
                 },
                 secondaryButton: .cancel()
             )

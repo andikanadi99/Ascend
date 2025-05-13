@@ -17,6 +17,7 @@ struct ProfileInfo: View {
     @State private var updatedDisplayName = ""
     @State private var updatedEmail = ""
     @State private var showSaveProfileAlert = false
+    @FocusState private var isDisplayNameFocused: Bool
 
     // MARK: - Default wake/sleep times
     @State private var defaultWake: Date = {
@@ -46,6 +47,7 @@ struct ProfileInfo: View {
                     if isEditing {
                         VStack(spacing: 12) {
                             TextField("Display Name", text: $updatedDisplayName)
+                                .focused($isDisplayNameFocused)
                                 .padding(8)
                                 .background(Color.gray.opacity(0.2))
                                 .cornerRadius(8)
@@ -174,6 +176,14 @@ struct ProfileInfo: View {
             .padding()
         }
         .background(Color.black.edgesIgnoringSafeArea(.all))
+        .toolbar {                                             // ← this goes on your root
+          ToolbarItemGroup(placement: .keyboard) {
+            Spacer()
+            Button("Done") {
+              isDisplayNameFocused = false
+            }
+          }
+        }
     }
 
     // MARK: - Helpers

@@ -12,13 +12,15 @@ struct SupportSettingsView: View {
     @EnvironmentObject private var session: SessionStore
     private let db = Firestore.firestore()
     private let accentCyan = Color(red: 0, green: 1, blue: 1)
-    
-    /// The address your Send-Email extension is configured to deliver to.
     private let supportAddress = "andikanadi10@gmail.com"
     
     // MARK: – User input
     @State private var feedbackMessage: String = ""
     @State private var issueMessage: String = ""
+    
+    // MARK: – Focus states for keyboard
+    @FocusState private var isFeedbackFocused: Bool
+    @FocusState private var isIssueFocused: Bool
     
     // MARK: – Alert state
     @State private var showAlert      = false
@@ -39,6 +41,7 @@ struct SupportSettingsView: View {
                             .foregroundColor(.white)
                         
                         TextEditor(text: $feedbackMessage)
+                            .focused($isFeedbackFocused)                              // focus binding
                             .frame(minHeight: 150)
                             .padding(8)
                             .background(Color.gray.opacity(0.2))
@@ -55,6 +58,7 @@ struct SupportSettingsView: View {
                                 },
                                 alignment: .topLeading
                             )
+                           
                         
                         Button("Send Feedback") {
                             submit(type: "Feedback", message: feedbackMessage)
@@ -73,6 +77,7 @@ struct SupportSettingsView: View {
                             .foregroundColor(.white)
                         
                         TextEditor(text: $issueMessage)
+                            .focused($isIssueFocused)                                 // focus binding
                             .frame(minHeight: 150)
                             .padding(8)
                             .background(Color.gray.opacity(0.2))
@@ -89,6 +94,7 @@ struct SupportSettingsView: View {
                                 },
                                 alignment: .topLeading
                             )
+                            
                         
                         Button("Send Report") {
                             submit(type: "Issue Report", message: issueMessage)
@@ -105,6 +111,15 @@ struct SupportSettingsView: View {
                 .padding()
             }
         }
+        .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        isFeedbackFocused = false
+                        isIssueFocused = false
+                    }
+                }
+            }
         .navigationBarTitle("Support", displayMode: .inline)
         .preferredColorScheme(.dark)
         .alert(alertTitle, isPresented: $showAlert) {
@@ -125,8 +140,8 @@ struct SupportSettingsView: View {
         
         let emailDoc: [String: Any] = [
             "to":      [ supportAddress ],
-            "from":    user.email,            // send from the current user’s email
-            "replyTo": supportAddress,        // replies go to your support inbox
+            "from":    user.email,
+            "replyTo": supportAddress,
             "message": [
                 "subject": "\(type) from \(user.displayName.isEmpty ? user.email : user.displayName)",
                 "text":    message
@@ -143,7 +158,6 @@ struct SupportSettingsView: View {
                 alertMessage = (type == "Feedback")
                     ? "Your feedback has been sent."
                     : "Your problem report has been sent. We'll look into it."
-                // clear the appropriate box
                 if type == "Feedback" { feedbackMessage = "" }
                 else                  { issueMessage = "" }
             }
@@ -164,6 +178,7 @@ private struct CyanButtonStyle: ButtonStyle {
             .cornerRadius(8)
     }
 }
+
 
 // MARK: – Preview
 struct SupportSettingsView_Previews: PreviewProvider {

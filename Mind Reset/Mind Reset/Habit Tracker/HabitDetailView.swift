@@ -91,7 +91,11 @@ struct HabitDetailView: View {
     @State private var weekOffset: Int = 0
     @State private var monthOffset: Int = 0
     @State private var showDateRangeOverlay: Bool = false
-
+    //Variables to handle done fields
+    @FocusState private var isTitleFocused: Bool
+    @FocusState private var isDescriptionFocused: Bool
+    @FocusState private var isGoalFocused: Bool
+    @FocusState private var isNotesFocused: Bool
     // MARK: - Initialization
     init(habit: Binding<Habit>) {
         _habit = habit
@@ -170,23 +174,24 @@ struct HabitDetailView: View {
                     topBarSection
 
                     TextEditor(text: $editableDescription)
-                        .foregroundColor(.white.opacity(0.8))
-                        .font(.subheadline)
-                        .disableAutocorrection(true)
-                        .scrollContentBackground(.hidden)
-                        .background(Color.black.opacity(0.2))
-                        .cornerRadius(8)
-                        .frame(minHeight: 50)
-                        .overlay(
-                            Group {
-                                if editableDescription.isEmpty {
-                                    Text("Habit Description")
-                                        .foregroundColor(.white.opacity(0.5))
-                                        .padding(.horizontal, 15)
-                                        .padding(.vertical, 2)
-                                }
-                            }, alignment: .topLeading
-                        )
+                      .focused($isDescriptionFocused)                           // ①
+                      .foregroundColor(.white.opacity(0.8))
+                      .font(.subheadline)
+                      .disableAutocorrection(true)
+                      .scrollContentBackground(.hidden)
+                      .background(Color.black.opacity(0.2))
+                      .cornerRadius(8)
+                      .frame(minHeight: 50)
+                      .overlay(
+                        Group {
+                          if editableDescription.isEmpty {
+                            Text("Habit Description")
+                              .foregroundColor(.white.opacity(0.5))
+                              .padding(.horizontal, 15)
+                              .padding(.vertical, 2)
+                          }
+                        }, alignment: .topLeading
+                      )
 
                     goalSection
 
@@ -275,6 +280,17 @@ struct HabitDetailView: View {
 
                 }
                 .padding()
+            }
+            .toolbar {
+              ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                  isDescriptionFocused = false
+                  isGoalFocused       = false
+                  isNotesFocused      = false
+                  isTitleFocused      = false
+                }
+              }
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -756,6 +772,7 @@ struct CustomCalendarView: View {
 
 // MARK: - Subviews & Helpers (unchanged)
 extension HabitDetailView {
+    
     private var topBarSection: some View {
         HStack {
             Button {
@@ -767,6 +784,7 @@ extension HabitDetailView {
             }
             Spacer()
             TextField("Habit Title", text: $editableTitle)
+                .focused($isTitleFocused)
                 .multilineTextAlignment(.center)
                 .font(.title2.weight(.bold))
                 .foregroundColor(.white)
@@ -797,6 +815,7 @@ extension HabitDetailView {
                         .padding(.top, 8)
                 }
                 TextEditor(text: $goal)
+                    .focused($isGoalFocused)                  // ← focus binding
                     .foregroundColor(.white)
                     .accentColor(accentCyan)
                     .padding(8)
@@ -811,6 +830,7 @@ extension HabitDetailView {
             }
         }
     }
+
     
     // Custom circular button style.
     struct CircularButtonStyle: ButtonStyle {
@@ -1251,6 +1271,7 @@ extension HabitDetailView {
                 .font(.headline)
                 .foregroundColor(accentCyan)
             TextEditor(text: $sessionNotes)
+                .focused($isNotesFocused)
                 .foregroundColor(.white)
                 .background(textFieldBackground)
                 .cornerRadius(8)

@@ -14,6 +14,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		48291FFE2DD51CBF00CA5922 /* Ascento.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Ascento.entitlements; sourceTree = "<group>"; };
 		48D4B75D2CEFB63B0031EBA1 /* Ascend.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ascend.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -43,6 +44,7 @@
 		48D4B7542CEFB63B0031EBA1 = {
 			isa = PBXGroup;
 			children = (
+				48291FFE2DD51CBF00CA5922 /* Ascento.entitlements */,
 				48D4B75F2CEFB63B0031EBA1 /* Mind Reset */,
 				48D4B7A82CFCBA720031EBA1 /* Frameworks */,
 				48D4B75E2CEFB63B0031EBA1 /* Products */,
@@ -275,6 +277,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Ascento.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"Mind Reset/Preview Content\"";
@@ -294,6 +298,7 @@
 				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.andikayudhatrisna.Ascend;
 				PRODUCT_NAME = Ascend;
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -305,6 +310,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Ascento.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"Mind Reset/Preview Content\"";
@@ -324,6 +331,7 @@
 				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.andikayudhatrisna.Ascend;
 				PRODUCT_NAME = Ascend;
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;

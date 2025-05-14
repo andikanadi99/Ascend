@@ -204,6 +204,35 @@ class SessionStore: ObservableObject {
         }
     }
     
+    func signInWithApple(credential: AuthCredential) {
+        Auth.auth().signIn(with: credential) { [weak self] result, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+
+                // ── handle error ─────────────────────────────────────
+                if let error = error as NSError? {
+                    self.auth_error = self.mapAuthError(error)
+                    return
+                }
+
+                // ── success: create / fetch user doc ─────────────────
+                guard let user = result?.user else {
+                    self.auth_error = "Apple sign‑in: couldn't retrieve user."
+                    return
+                }
+
+                self.current_user = user
+
+                // Apple may return `nil` for email on subsequent log‑ins,
+                // so fall back to the Firebase `user.email` value.
+                let email = user.email ?? ""
+
+                self.createOrVerifyUserDocument(for: user, email: email) {
+                    self.fetchUserModel(userId: user.uid)
+                }
+            }
+        }
+    }
     // MARK: - Sign Out
     /// Signs out the current user.
     func signOut() {

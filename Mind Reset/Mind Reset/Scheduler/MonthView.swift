@@ -3,7 +3,7 @@
 //  Mind Reset
 //
 //  Created by Andika Yudhatrisna on 2/6/25.
-//
+
 
 import SwiftUI
 import Combine
@@ -11,139 +11,96 @@ import Firebase
 import FirebaseFirestore
 import UIKit
 
-// MARK: - Focus Field Identifier
+// MARK: – Focus Field Identifier
 private enum Field: Hashable {
     case monthlyPriority(UUID)
 }
 
-// MARK: - Month View ("Your Mindful Month")
+// MARK: – Month View  ▸  “Your Mindful Month”
 struct MonthView: View {
+    // ── injected ───────────────────────────────────────────────
     let accentColor: Color
     let accountCreationDate: Date
 
     @EnvironmentObject var monthViewState: MonthViewState
-    @EnvironmentObject var session: SessionStore
-    @EnvironmentObject var habitVM: HabitViewModel
+    @EnvironmentObject var session:      SessionStore
+    @EnvironmentObject var habitVM:      HabitViewModel
 
-    @State private var selectedDay: Date? = nil
-    @State private var showDaySummary: Bool = false
-
+    // ── vm & UI state ──────────────────────────────────────────
     @StateObject private var viewModel = MonthViewModel()
 
-    @State private var isRemoveMode: Bool = false
-    @State private var showMonthCopyAlert: Bool = false
-    @State private var monthlyPriorityToDelete: MonthlyPriority?
+    @State private var selectedDay: Date? = nil
+    @State private var showDaySummary   = false
+    @State private var isRemoveMode     = false
+    @State private var showCopyAlert    = false
+    @State private var priorityToDelete: MonthlyPriority?
 
     @FocusState private var focusedField: Field?
 
-    let accentCyan = Color(red: 0, green: 1, blue: 1)
-    let coolGray  = Color(red: 1.0, green: 0.45, blue: 0.45)
+    private let accentCyan = Color(red: 0, green: 1, blue: 1)
+    private let coolGray   = Color(red: 1.0, green: 0.45, blue: 0.45)
 
+    // ───────────────────────────────────────────────────────────
+    // MARK: ‑ Body
+    // ───────────────────────────────────────────────────────────
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // Copy Button Row
-                    HStack {
-                        Spacer()
-                        Button("Copy from Previous Month") {
-                            showMonthCopyAlert = true
-                        }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+
+                // Copy‑previous‑month
+                HStack {
+                    Spacer()
+                    Button("Copy from Previous Month") { showCopyAlert = true }
                         .font(.headline)
                         .foregroundColor(accentColor)
                         .padding(.vertical, 8)
                         .padding(.horizontal, 16)
                         .background(Color.black)
                         .cornerRadius(8)
-                        Spacer()
-                    }
-                    .alert(isPresented: $showMonthCopyAlert) {
-                        Alert(
-                            title: Text("Confirm Copy"),
-                            message: Text("Are you sure you want to copy the previous month's schedule?"),
-                            primaryButton: .destructive(Text("Copy")) { copyFromPreviousMonth() },
-                            secondaryButton: .cancel()
-                        )
-                    }
-
-                    // Monthly Priorities Section
-                    prioritiesSection
-
-                    // Calendar Section
-                    calendarSection
-                        .frame(height: 300)
-
                     Spacer()
                 }
-                .padding()
-                .padding(.top, -20)
-                .overlay(
-                    Group {
-                        if showDaySummary, let day = selectedDay {
-                            VStack {
-                                DaySummaryView(
-                                    day: day,
-                                    habits: $habitVM.habits,
-                                    onClose: { withAnimation { showDaySummary = false } }
-                                )
-                                .cornerRadius(12)
-                            }
-                            .frame(maxWidth: 300)
-                            .padding()
-                            .background(Color.black.opacity(0.7))
-                            .cornerRadius(12)
-                            .transition(.opacity)
-                        }
-                    }
-                )
-            }
-            // Keyboard accessory toolbar for monthly priorities
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done") {
-                        focusedField = nil
-                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                    }
+                .alert("Confirm Copy",
+                       isPresented: $showCopyAlert) {
+                    Button("Copy",  role: .destructive) { copyFromPreviousMonth() }
+                    Button("Cancel", role: .cancel)     { }
+                } message: {
+                    Text("Are you sure you want to copy the previous month's schedule?")
                 }
-            }
-            .onAppear {
-                let now = Date()
-                let lastActive = UserDefaults.standard.object(forKey: "LastActiveTime") as? Date ?? now
-                if now.timeIntervalSince(lastActive) > 1800 {
-                    monthViewState.currentMonth = MonthViewState.startOfMonth(for: Date())
-                }
-                UserDefaults.standard.set(now, forKey: "LastActiveTime")
 
-                if let userId = session.userModel?.id {
-                    viewModel.loadMonthSchedule(for: monthViewState.currentMonth, userId: userId)
-                    habitVM.fetchHabits(for: userId)
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-        }
-    }
+                prioritiesSection
+                calendarSection
+                    .frame(height: 300)
 
-    // MARK: - Monthly Priorities Section
-    private var prioritiesSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Monthly Priorities")
-                    .font(.headline)
-                    .foregroundColor(accentColor)
                 Spacer()
             }
-            if let schedule = viewModel.schedule {
-                let bindingPriorities = Binding<[MonthlyPriority]>(
-                    get: { schedule.monthlyPriorities },
-                    set: { newValue in
-                        var updated = schedule
-                        updated.monthlyPriorities = newValue
-                        viewModel.schedule = updated
+            .padding()
+            .padding(.top, -20)
+            .overlay(daySummaryOverlay)          // floating overlay
+        }
+        // no toolbar here – uses SchedulerView’s global one
+        .onAppear(perform: loadDataOnce)
+        .navigationTitle("Your Month")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: – Monthly Priorities
+    private var prioritiesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Monthly Priorities")
+                .font(.headline)
+                .foregroundColor(accentColor)
+
+            if let sched = viewModel.schedule {
+                let priorities = Binding<[MonthlyPriority]>(
+                    get: { sched.monthlyPriorities },
+                    set: { new in
+                        var tmp = sched; tmp.monthlyPriorities = new
+                        viewModel.schedule = tmp
                         viewModel.updateMonthSchedule()
                     }
                 )
-                ForEach(bindingPriorities) { $priority in
+
+                ForEach(priorities) { $priority in
                     HStack {
                         TextEditor(text: $priority.title)
                             .focused($focusedField, equals: .monthlyPriority(priority.id))
@@ -153,109 +110,150 @@ struct MonthView: View {
                             .foregroundColor(.white)
                             .scrollContentBackground(.hidden)
                             .cornerRadius(8)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .onChange(of: priority.title) { _ in viewModel.updateMonthSchedule() }
+                            .onChange(of: priority.title) { _ in
+                                viewModel.updateMonthSchedule()
+                            }
 
-                        if isRemoveMode && bindingPriorities.wrappedValue.count > 1 {
-                            Button(action: { monthlyPriorityToDelete = priority }) {
-                                Image(systemName: "minus.circle").foregroundColor(.red)
+                        if isRemoveMode && priorities.wrappedValue.count > 1 {
+                            Button { priorityToDelete = priority } label: {
+                                Image(systemName: "minus.circle")
+                                    .foregroundColor(.red)
                             }
                         }
                     }
                 }
-                .alert(item: $monthlyPriorityToDelete) { priority in
+                .alert(item: $priorityToDelete) { pr in
                     Alert(
                         title: Text("Delete Priority"),
-                        message: Text("Are you sure you want to delete “\(priority.title)”?"),
+                        message: Text("Are you sure you want to delete “\(pr.title)” ?"),
                         primaryButton: .destructive(Text("Delete")) {
-                            bindingPriorities.wrappedValue.removeAll { $0.id == priority.id }
-                            if bindingPriorities.wrappedValue.count <= 1 { isRemoveMode = false }
+                            priorities.wrappedValue.removeAll { $0.id == pr.id }
+                            if priorities.wrappedValue.count <= 1 { isRemoveMode = false }
                             viewModel.updateMonthSchedule()
                         },
                         secondaryButton: .cancel()
                     )
                 }
-            } else {
-                Text("Loading monthly priorities...")
-                    .foregroundColor(.white)
-            }
 
-            // Buttons row below priorities
-            HStack {
-                Button(action: {
-                    guard var schedule = viewModel.schedule else { return }
-                    let newPriority = MonthlyPriority(id: UUID(), title: "New Priority", progress: 0.0)
-                    schedule.monthlyPriorities.append(newPriority)
-                    viewModel.schedule = schedule
-                    viewModel.updateMonthSchedule()
-                    isRemoveMode = false
-                }) {
-                    Text("Add Priority")
+                HStack {
+                    Button("Add Priority") {
+                        var tmp = sched
+                        tmp.monthlyPriorities.append(
+                            MonthlyPriority(id: UUID(), title: "New Priority", progress: 0)
+                        )
+                        viewModel.schedule = tmp
+                        viewModel.updateMonthSchedule()
+                        isRemoveMode = false
+                    }
+                    .font(.headline)
+                    .foregroundColor(accentCyan)
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 16)
+                    .background(Color.black)
+                    .cornerRadius(8)
+
+                    Spacer()
+
+                    if priorities.wrappedValue.count > 1 {
+                        Button(isRemoveMode ? "Done" : "Remove Priority") {
+                            isRemoveMode.toggle()
+                        }
                         .font(.headline)
-                        .foregroundColor(accentCyan)
+                        .foregroundColor(.red)
                         .padding(.vertical, 8)
                         .padding(.horizontal, 16)
                         .background(Color.black)
                         .cornerRadius(8)
-                }
-                Spacer()
-                if let schedule = viewModel.schedule, schedule.monthlyPriorities.count > 1 {
-                    Button(action: { isRemoveMode.toggle() }) {
-                        Text(isRemoveMode ? "Done" : "Remove Priority")
-                            .font(.headline)
-                            .foregroundColor(.red)
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 16)
-                            .background(Color.black)
-                            .cornerRadius(8)
                     }
                 }
+                .padding(.top, 8)
+
+            } else {
+                Text("Loading monthly priorities…").foregroundColor(.white)
             }
-            .padding(.top, 8)
         }
         .padding()
         .background(Color.gray.opacity(0.3))
         .cornerRadius(8)
     }
 
-    // MARK: - Copy from Previous Month
-    private func copyFromPreviousMonth() {
-        guard let userId = session.userModel?.id, let current = viewModel.schedule else { return }
-        guard let prev = Calendar.current.date(byAdding: .month, value: -1, to: monthViewState.currentMonth) else { return }
-        let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM"
-        let prevDocId = formatter.string(from: prev)
-        Firestore.firestore()
-            .collection("users").document(userId)
-            .collection("monthSchedules").document(prevDocId)
-            .getDocument(source: .default) { snap, err in
-                guard let snap = snap, snap.exists, err == nil,
-                      let prevSched = try? snap.data(as: MonthSchedule.self) else { return }
-                DispatchQueue.main.async {
-                    var updated = current
-                    updated.monthlyPriorities = prevSched.monthlyPriorities
-                    viewModel.schedule = updated
-                    viewModel.updateMonthSchedule()
-                }
-            }
-    }
-
-    // MARK: - Calendar Section
+    // MARK: – Calendar
     private var calendarSection: some View {
         CalendarView(
             currentMonth: $monthViewState.currentMonth,
-            accountCreationDate: accountCreationDate,
-            onDaySelected: { day in
-                if day <= Date() {
-                    selectedDay = day
-                    showDaySummary = true
-                }
+            accountCreationDate: accountCreationDate
+        ) { day in
+            if day <= Date() {
+                selectedDay = day
+                withAnimation { showDaySummary = true }
             }
-        )
+        }
         .onChange(of: monthViewState.currentMonth) { newMonth in
             if let uid = session.userModel?.id {
                 viewModel.loadMonthSchedule(for: newMonth, userId: uid)
             }
         }
+    }
+
+    // MARK: – Floating Day‑summary overlay
+    @ViewBuilder
+    private var daySummaryOverlay: some View {
+        if showDaySummary, let day = selectedDay {
+            VStack {
+                DaySummaryView(
+                    day: day,
+                    habits: $habitVM.habits,
+                    onClose: { withAnimation { showDaySummary = false } }
+                )
+                .cornerRadius(12)
+            }
+            .frame(maxWidth: 300)
+            .padding()
+            .background(Color.black.opacity(0.7))
+            .cornerRadius(12)
+            .transition(.opacity)
+        }
+    }
+
+    // MARK: – Data loading
+    private func loadDataOnce() {
+        let now  = Date()
+        let last = UserDefaults.standard.object(forKey: "LastActiveTime") as? Date ?? now
+        if now.timeIntervalSince(last) > 1800 {
+            monthViewState.currentMonth = MonthViewState.startOfMonth(for: now)
+        }
+        UserDefaults.standard.set(now, forKey: "LastActiveTime")
+
+        if let uid = session.userModel?.id {
+            viewModel.loadMonthSchedule(for: monthViewState.currentMonth, userId: uid)
+            habitVM.fetchHabits(for: uid)
+        }
+    }
+
+    // MARK: – Copy previous month helper
+    private func copyFromPreviousMonth() {
+        guard let uid = session.userModel?.id,
+              let curr = viewModel.schedule,
+              let prev = Calendar.current.date(byAdding: .month, value: -1,
+                                               to: monthViewState.currentMonth)
+        else { return }
+
+        let fmt = DateFormatter(); fmt.dateFormat = "yyyy-MM"
+        let docId = fmt.string(from: prev)
+
+        Firestore.firestore()
+            .collection("users").document(uid)
+            .collection("monthSchedules").document(docId)
+            .getDocument { snap, err in
+                guard let snap = snap, snap.exists, err == nil,
+                      let prevSched = try? snap.data(as: MonthSchedule.self) else { return }
+                DispatchQueue.main.async {
+                    var updated = curr
+                    updated.monthlyPriorities = prevSched.monthlyPriorities
+                    viewModel.schedule = updated
+                    viewModel.updateMonthSchedule()
+                }
+            }
     }
 }
 

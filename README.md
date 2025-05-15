@@ -105,7 +105,7 @@ A: Press the trash icon next to the habit to remove it; this deletes all associa
 A: Go to **Settings → Reminders** to customize when and how often Ascento nudges you.
 
 ## Contact & Support
-If you need additional help, please email us at **support@Ascentoapp.app**. We aim to respond within 24 hours.
+If you need additional help, please email us at **support@ascendapp.app**. We aim to respond within 24 hours.
 
 © 2025 Andika Yudhatrisna, Inc. All rights reserved.
 

@@ -6,12 +6,14 @@
 //
 
 
+
 import SwiftUI
 import AuthenticationServices   // ← Apple Sign-in
 import CryptoKit               // ← nonce hashing
 import FirebaseAuth
 import GoogleSignIn
 import FirebaseCore
+
 @available(iOS 16.0, *)
 
 // MARK: - UIKit wrapper for the Apple Sign-in button
@@ -162,7 +164,11 @@ struct LoginView: View {
                     startGoogleSignIn()          // ← trigger the flow
                 } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: "globe")           // swap for a Google icon asset if you have one
+                        Image("GoogleLogo")
+                            .resizable()
+                            .renderingMode(.original)
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 24, height: 24)
                         Text("Sign in with Google")
                             .fontWeight(.medium)
                     }
@@ -195,16 +201,14 @@ struct LoginView: View {
                 .compactMap({ ($0 as? UIWindowScene)?.keyWindow })
                 .first?.rootViewController
         else {
-            print("❗️ Couldn’t find root view‑controller")
+            print("❗️ Couldn’t find root view-controller")
             return
         }
-
-        // If you’re relying on GoogleService‑Info.plist, no config param is needed.
         GIDSignIn.sharedInstance.signIn(withPresenting: rootVC) { signInResult, error in
             handleGoogleSignIn(signInResult: signInResult, error: error)
         }
     }
-    
+
     private func login() {
         guard !email.isEmpty, !password.isEmpty else {
             session.auth_error = "Please enter both email and password."
@@ -259,10 +263,7 @@ struct LoginView: View {
             session.auth_error = "Google sign-in failed (missing idToken)."
             return
         }
-
-        // accessToken.tokenString is non-optional, so just grab it directly
         let accessToken = result.user.accessToken.tokenString
-
         let credential = GoogleAuthProvider.credential(
             withIDToken: idToken,
             accessToken: accessToken
@@ -281,15 +282,11 @@ struct LoginView: View {
         let charset: [Character] = Array(
             "0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._"
         )
-        var result = ""
-        var remaining = length
-
+        var result = ""; var remaining = length
         while remaining > 0 {
-            let bytes = (0..<16).map { _ in UInt8.random(in: 0...255) }
-            for byte in bytes {
-                if remaining == 0 { break }
-                if byte < charset.count {
-                    result.append(charset[Int(byte)])
+            (0..<16).map { _ in UInt8.random(in: 0...255) }.forEach {
+                if remaining > 0 && $0 < charset.count {
+                    result.append(charset[Int($0)])
                     remaining -= 1
                 }
             }
@@ -302,7 +299,6 @@ struct LoginView: View {
         return hash.compactMap { String(format: "%02x", $0) }.joined()
     }
 }
-
 
 // MARK: - Primary Button Style
 

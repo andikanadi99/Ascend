@@ -16,297 +16,280 @@
 import SwiftUI
 import FirebaseAuth
 import FirebaseFirestore
+import FirebaseCore
+import GoogleSignIn
+import GoogleSignInSwift
 
 class SessionStore: ObservableObject {
-    // Holds currently authenticated Firebase user
-    @Published var current_user: User?
-    // Holds the user's Firestore data
-    @Published var userModel: UserModel?
-    // Potentially store error messages
-    @Published var auth_error: String?
+    // MARK: - Published State
+    @Published var current_user: User?          // Firebase Auth user
+    @Published var userModel: UserModel?        // Firestore user document
+    @Published var auth_error: String?          // Any auth-related error message
 
-    //Variables to handle chose sleep and wake time
     @Published var defaultWakeTime: Date?
     @Published var defaultSleepTime: Date?
-    
-    private var userDocListener: ListenerRegistration?
-    
-    private var isUpdatingSchedules = false
-    
-    // Firestore reference
+
+    // MARK: - Private Properties
     private var db: Firestore = {
         let f = Firestore.firestore()
-        let settings = f.settings
-        settings.isPersistenceEnabled = true
-        f.settings = settings
+        var s = f.settings
+        s.isPersistenceEnabled = true
+        f.settings = s
         return f
     }()
-    // For listening to auth state changes
+    private var userDocListener: ListenerRegistration?
     private var handle: AuthStateDidChangeListenerHandle?
-    
+    private var isUpdatingSchedules = false
+
     // MARK: - Init
     init() {
-        // Load from UserDefaults (or fallback to 7 am / 11 pm)
+        // Load default wake/sleep times
         let wake = UserDefaults.standard.object(forKey: "DefaultWakeUpTime") as? Date
             ?? Calendar.current.date(bySettingHour: 7, minute: 0, second: 0, of: Date())!
         let sleep = UserDefaults.standard.object(forKey: "DefaultSleepTime") as? Date
             ?? Calendar.current.date(bySettingHour: 23, minute: 0, second: 0, of: Date())!
         self.defaultWakeTime = wake
         self.defaultSleepTime = sleep
-        
+
         listen()
     }
 
-//MARK: - Functions Associated with default awake and sleep time
+    // MARK: - Default Times
     func setDefaultTimes(wake: Date, sleep: Date) {
-            // 1) update local state
-            defaultWakeTime = wake
-            defaultSleepTime = sleep
-            // 2) persist
-            UserDefaults.standard.set(wake, forKey: "DefaultWakeUpTime")
-            UserDefaults.standard.set(sleep, forKey: "DefaultSleepTime")
-            // 3) push to Firestore
-            updateFutureDaySchedules(wake: wake, sleep: sleep)
-        }
+        defaultWakeTime = wake
+        defaultSleepTime = sleep
+        UserDefaults.standard.set(wake, forKey: "DefaultWakeUpTime")
+        UserDefaults.standard.set(sleep, forKey: "DefaultSleepTime")
+        updateFutureDaySchedules(wake: wake, sleep: sleep)
+    }
 
-        /// ➌ Batch‑update every daySchedule doc dated today or later
-        private func updateFutureDaySchedules(wake: Date, sleep: Date) {
-            
-            guard !isUpdatingSchedules else { return }
-            isUpdatingSchedules = true
-            defer { isUpdatingSchedules = false }
-            
-            
-            guard let uid = current_user?.uid else { return }
-            let today = Calendar.current.startOfDay(for: Date())
-            let col = db.collection("users")
-                        .document(uid)
-                        .collection("daySchedules")
-            col.whereField("date", isGreaterThanOrEqualTo: Timestamp(date: today))
-               .getDocuments { snap, err in
-                guard let docs = snap?.documents else { return }
-                let batch = self.db.batch()
-                docs.forEach { doc in
-                    batch.updateData([
-                        "wakeUpTime": wake,
-                        "sleepTime": sleep
-                    ], forDocument: doc.reference)
-                }
-                batch.commit { error in
-                    if let err = error { print("Batch update failed:", err) }
-                    else { print("Future days updated.") }
-                }
+    private func updateFutureDaySchedules(wake: Date, sleep: Date) {
+        guard !isUpdatingSchedules else { return }
+        isUpdatingSchedules = true
+        defer { isUpdatingSchedules = false }
+
+        guard let uid = current_user?.uid else { return }
+        let today = Calendar.current.startOfDay(for: Date())
+        let col = db.collection("users")
+                    .document(uid)
+                    .collection("daySchedules")
+        col.whereField("date", isGreaterThanOrEqualTo: Timestamp(date: today))
+           .getDocuments { snap, _ in
+            guard let docs = snap?.documents else { return }
+            let batch = self.db.batch()
+            for doc in docs {
+                batch.updateData([
+                    "wakeUpTime": wake,
+                    "sleepTime": sleep
+                ], forDocument: doc.reference)
             }
+            batch.commit()
         }
-    
-    // MARK: - Listen to Auth State
-    /// Sets up a listener to monitor authentication state changes (login/logout).
+    }
+
+    // MARK: - Auth State Listener
     func listen() {
         handle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
-        guard let self = self else { return }
-        self.current_user = user
-        self.userModel    = nil
-        self.userDocListener?.remove()
-        guard let uid = user?.uid else { return }
-        // single, live listener—no more getDocument calls
-        self.userDocListener = self.db
-          .collection("users")
-          .document(uid)
-          .addSnapshotListener { snap, error in
-            if let error = error {
-              print("Profile listener error:", error)
-              return
-            }
-            if let model = try? snap?.data(as: UserModel.self) {
-              self.userModel = model
-            }
-          }
-        }
-    }
-    
-    // MARK: - Fetch UserModel
-    /// Fetches the user's Firestore document and decodes it into UserModel.
-    private func fetchUserModel(userId: String) {
-        let userRef = db.collection("users").document(userId)
-        
-        userRef.getDocument { [weak self] (document, error) in
-            if let error = error {
-                print("Error fetching user document: \(error)")
-                DispatchQueue.main.async {
-                    self?.auth_error = "Failed to fetch user data."
+            guard let self = self else { return }
+            self.current_user = user
+            self.userModel = nil
+            self.userDocListener?.remove()
+
+            guard let uid = user?.uid else { return }
+            self.userDocListener = self.db
+                .collection("users")
+                .document(uid)
+                .addSnapshotListener { snap, _ in
+                    if let model = try? snap?.data(as: UserModel.self) {
+                        self.userModel = model
+                    }
                 }
-                return
-            }
-            
-            // If no document exists, only set an error if the user is still logged in.
-            guard let document = document, document.exists else {
-                print("User document does not exist.")
-                DispatchQueue.main.async {
-                    // Only set the error if there is a currently authenticated user.
-                    self?.auth_error = Auth.auth().currentUser != nil ? "User data not found." : nil
-                }
-                return
-            }
-            
-            do {
-                let userData = try document.data(as: UserModel.self)
-                DispatchQueue.main.async {
-                    self?.userModel = userData
-                }
-            } catch {
-                print("Error decoding user data: \(error)")
-                DispatchQueue.main.async {
-                    self?.auth_error = "Failed to decode user data."
-                }
-            }
         }
     }
 
-    
-    // MARK: - Create Account
-    /// Creates a new account with email and password in Firebase Auth.
-    func createAccount(email: String, password: String, completion: @escaping (Bool) -> Void) {
-        Auth.auth().createUser(withEmail: email, password: password) { [weak self] result, error in
-            DispatchQueue.main.async {
-                if let error = error as NSError? {
-                    self?.auth_error = self?.mapAuthError(error)
-                    completion(false)
-                } else if let user = result?.user {
-                    print("Sign Up Success: \(user.email ?? "No Email")")
-                    self?.current_user = user
-                    // Create or verify user doc in Firestore
-                    self?.createOrVerifyUserDocument(for: user, email: email) {
-                        // After creating/verifying, fetch the user model
-                        self?.fetchUserModel(userId: user.uid)
-                        completion(true)
-                    }
-                }
+    // MARK: - Google Sign-In 🔹 Google Sign-in ADDITIONS
+    func startGoogleSignIn() {
+        guard let clientID = FirebaseApp.app()?.options.clientID else {
+            auth_error = "Missing Google clientID."
+            return
+        }
+        guard let rootVC = UIApplication.shared
+                .connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .flatMap({ $0.windows })
+                .first(where: { $0.isKeyWindow })?.rootViewController
+        else {
+            auth_error = "Could not find root view controller."
+            return
+        }
+
+        let config = GIDConfiguration(clientID: clientID)
+        GIDSignIn.sharedInstance.configuration = config
+
+        GIDSignIn.sharedInstance.signIn(withPresenting: rootVC) { [weak self] result, error in
+            if let error = error {
+                DispatchQueue.main.async { self?.auth_error = error.localizedDescription }
+                return
             }
+            guard
+                let idToken = result?.user.idToken?.tokenString,
+                let accessToken = result?.user.accessToken.tokenString
+            else {
+                DispatchQueue.main.async { self?.auth_error = "Google Sign-in: missing tokens." }
+                return
+            }
+
+            let credential = GoogleAuthProvider.credential(withIDToken: idToken,
+                                                           accessToken: accessToken)
+            let fallbackEmail = result?.user.profile?.email ?? ""
+            self?.firebaseLogin(with: credential, fallbackEmail: fallbackEmail)
         }
     }
-    
-    // MARK: - Sign In
-    /// Signs in a user with email and password.
-    func signIn(email: String, password: String) {
-        Auth.auth().signIn(withEmail: email, password: password) { [weak self] result, error in
-            DispatchQueue.main.async {
-                if let error = error as NSError? {
-                    self?.auth_error = self?.mapAuthError(error)
-                } else if let user = result?.user {
-                    print("Sign In Success: \(user.email ?? "No Email")")
-                    self?.current_user = user
-                    // Ensure user doc exists and fetch user model
-                    self?.createOrVerifyUserDocument(for: user, email: email) {
-                        self?.fetchUserModel(userId: user.uid)
-                    }
-                }
-            }
-        }
-    }
-    
-    func signInWithApple(credential: AuthCredential) {
+
+    // MARK: - Shared Firebase Hand-off
+    func firebaseLogin(with credential: AuthCredential, fallbackEmail: String) {
         Auth.auth().signIn(with: credential) { [weak self] result, error in
             DispatchQueue.main.async {
-                guard let self else { return }
-
-                // ── handle error ─────────────────────────────────────
-                if let error = error as NSError? {
-                    self.auth_error = self.mapAuthError(error)
+                guard let self = self else { return }
+                if let err = error as NSError? {
+                    self.auth_error = self.mapAuthError(err)
                     return
                 }
-
-                // ── success: create / fetch user doc ─────────────────
                 guard let user = result?.user else {
-                    self.auth_error = "Apple sign‑in: couldn't retrieve user."
+                    self.auth_error = "Login failed: no user."
                     return
                 }
-
                 self.current_user = user
-
-                // Apple may return `nil` for email on subsequent log‑ins,
-                // so fall back to the Firebase `user.email` value.
-                let email = user.email ?? ""
-
+                let email = user.email ?? fallbackEmail
                 self.createOrVerifyUserDocument(for: user, email: email) {
                     self.fetchUserModel(userId: user.uid)
                 }
             }
         }
     }
+
+    // MARK: - Apple Sign-In now routes through same flow
+    func signInWithApple(credential: AuthCredential) {
+        firebaseLogin(with: credential, fallbackEmail: "")
+    }
+    
+    /// Signs in (or up) a user with a Google OAuth credential
+    func signInWithGoogle(credential: AuthCredential) {
+        Auth.auth().signIn(with: credential) { [weak self] result, error in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if let error = error as NSError? {
+                    self.auth_error = self.mapAuthError(error)
+                    return
+                }
+                guard let user = result?.user else {
+                    self.auth_error = "Google sign-in: couldn't retrieve user."
+                    return
+                }
+                self.current_user = user
+                // Use the Firebase user.email fallback if Google doesn’t supply it.
+                let email = user.email ?? ""
+                self.createOrVerifyUserDocument(for: user, email: email) {
+                    self.fetchUserModel(userId: user.uid)
+                }
+            }
+        }
+    }
+
+
+    // MARK: - Email/Password
+    func signIn(email: String, password: String) {
+        Auth.auth().signIn(withEmail: email, password: password) { [weak self] result, error in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if let err = error as NSError? {
+                    self.auth_error = self.mapAuthError(err)
+                } else if let user = result?.user {
+                    self.current_user = user
+                    self.createOrVerifyUserDocument(for: user, email: email) {
+                        self.fetchUserModel(userId: user.uid)
+                    }
+                }
+            }
+        }
+    }
+
+    func createAccount(email: String, password: String, completion: @escaping (Bool) -> Void) {
+        Auth.auth().createUser(withEmail: email, password: password) { [weak self] res, error in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if let err = error as NSError? {
+                    self.auth_error = self.mapAuthError(err)
+                    completion(false)
+                } else if let user = res?.user {
+                    self.current_user = user
+                    self.createOrVerifyUserDocument(for: user, email: email) {
+                        self.fetchUserModel(userId: user.uid)
+                        completion(true)
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Sign Out
-    /// Signs out the current user.
     func signOut() {
         do {
             try Auth.auth().signOut()
             DispatchQueue.main.async {
-                print("Sign Out Success")
                 self.current_user = nil
                 self.userModel = nil
             }
-        } catch let signOutError as NSError {
+        } catch let err as NSError {
             DispatchQueue.main.async {
-                print("Sign Out Error: \(signOutError.localizedDescription)")
-                self.auth_error = "Failed to sign out. Please try again."
+                self.auth_error = "Sign out failed: \(err.localizedDescription)"
             }
         }
     }
-    
-    // MARK: - Reset Password
-    /// Sends a password reset email.
+
+    // MARK: - Password Reset
     func resetPassword(email: String, completion: @escaping (Bool) -> Void) {
         Auth.auth().sendPasswordReset(withEmail: email) { [weak self] error in
             DispatchQueue.main.async {
-                if let error = error as NSError? {
-                    self?.auth_error = self?.mapAuthError(error)
+                if let err = error as NSError? {
+                    self?.auth_error = self?.mapAuthError(err)
                     completion(false)
                 } else {
-                    print("Password reset email sent.")
                     completion(true)
                 }
             }
         }
     }
-    
-    // MARK: - Email Verification (optional)
-    /// Sends an email verification to the current user.
+
+    // MARK: - Email Verification
     func sendEmailVerification(completion: @escaping (Bool) -> Void) {
         guard let user = Auth.auth().currentUser else {
-            self.auth_error = "Unable to retrieve user information."
+            self.auth_error = "No user to verify."
             completion(false)
             return
         }
-
         user.sendEmailVerification { [weak self] error in
-            if let error = error as NSError? {
-                self?.auth_error = self?.mapAuthError(error)
+            if let err = error as NSError? {
+                self?.auth_error = self?.mapAuthError(err)
                 completion(false)
             } else {
-                print("Email verification sent.")
                 completion(true)
             }
         }
     }
-    
-    // MARK: - Create or Verify User Document
-    /// Creates a user doc if one doesn’t exist yet in Firestore at `users/{uid}`.
+
+    // MARK: - Firestore User Doc
     private func createOrVerifyUserDocument(for user: User, email: String, completion: @escaping () -> Void) {
-        let userRef = db.collection("users").document(user.uid)
-        
-        userRef.getDocument { [weak self] (document, error) in
-            if let error = error {
-                print("Error checking user doc: \(error)")
-                DispatchQueue.main.async {
-                    self?.auth_error = "Failed to verify user data."
-                }
-                completion()
-                return
+        let ref = db.collection("users").document(user.uid)
+        ref.getDocument { [weak self] doc, error in
+            if let _ = error {
+                self?.auth_error = "Failed to verify user data."
+                completion(); return
             }
-            // If it exists, do nothing
-            if document?.exists == true {
+            if doc?.exists == true {
                 completion()
             } else {
-                // Else create a new user doc with default data
-                let userData: [String: Any] = [
+                let data: [String:Any] = [
                     "email": email,
                     "displayName": "",
                     "totalPoints": 0,
@@ -315,78 +298,49 @@ class SessionStore: ObservableObject {
                     "deepWorkTime": 0,
                     "defaultHabitsCreated": false
                 ]
-                userRef.setData(userData) { error in
-                    if let error = error {
-                        print("Error creating user doc: \(error)")
-                        DispatchQueue.main.async {
-                            self?.auth_error = "Failed to create user data."
-                        }
-                    } else {
-                        print("User doc created successfully.")
+                ref.setData(data) { error in
+                    if error != nil {
+                        self?.auth_error = "Failed to create user data."
                     }
                     completion()
                 }
             }
         }
     }
-    
-    // MARK: - Example: Award Meditation Time
-    /// Adds to meditationTime in the user’s doc. Example of a Firestore transaction.
-    func awardMeditationTime(userId: String, additionalMinutes: Int) {
-        let userRef = db.collection("users").document(userId)
-        
-        db.runTransaction({ (transaction, errorPointer) -> Any? in
-            do {
-                let snapshot = try transaction.getDocument(userRef)
-                let currentTime = snapshot.data()?["meditationTime"] as? Int ?? 0
-                let newTime = currentTime + additionalMinutes
-                transaction.updateData(["meditationTime": newTime], forDocument: userRef)
-            } catch {
-                print("Transaction error awarding meditation time: \(error.localizedDescription)")
-                return nil
+
+    private func fetchUserModel(userId: String) {
+        let ref = db.collection("users").document(userId)
+        ref.getDocument { [weak self] doc, error in
+            if let _ = error {
+                self?.auth_error = "Failed to fetch user data."
+                return
             }
-            return nil
-        }) { (_, error) in
-            if let error = error {
-                print("Error updating meditation time: \(error.localizedDescription)")
-            } else {
-                print("Successfully added \(additionalMinutes) minutes to user's meditationTime.")
+            if let model = try? doc?.data(as: UserModel.self) {
+                self?.userModel = model
             }
-        }
-    }
-    
-    // MARK: - Error Mapping
-    /// Maps a Firebase Auth error code to a user-friendly message.
-    private func mapAuthError(_ error: NSError) -> String {
-        guard let errorCode = AuthErrorCode(rawValue: error.code) else {
-            return error.localizedDescription
-        }
-        
-        switch errorCode {
-        case .invalidEmail:
-            return "The email address is badly formatted."
-        case .emailAlreadyInUse:
-            return "The email address is already in use by another account."
-        case .weakPassword:
-            return "The password is too weak. Please choose a stronger password."
-        // Combine wrongPassword and invalidCredential (if applicable) for a unified message.
-        case .wrongPassword, .invalidCredential:
-            return "Wrong email or password."
-        case .userNotFound:
-            return "No account found with this email. Please sign up."
-        case .networkError:
-            return "Network error. Please check your internet connection and try again."
-        default:
-            return error.localizedDescription
         }
     }
 
-    
+    // MARK: - Error Mapping
+    private func mapAuthError(_ error: NSError) -> String {
+        guard let code = AuthErrorCode(rawValue: error.code) else {
+            return error.localizedDescription
+        }
+        switch code {
+        case .invalidEmail:         return "Badly formatted email."
+        case .emailAlreadyInUse:    return "Email already in use."
+        case .weakPassword:         return "Password too weak."
+        case .wrongPassword:        return "Wrong email or password."
+        case .userNotFound:         return "No account found with this email."
+        case .networkError:         return "Network error. Try again."
+        default:                    return error.localizedDescription
+        }
+    }
+
     // MARK: - Cleanup
     deinit {
-        if let handle = handle {
-            Auth.auth().removeStateDidChangeListener(handle)
-        }
+        if let h = handle { Auth.auth().removeStateDidChangeListener(h) }
+        userDocListener?.remove()
     }
 }
 

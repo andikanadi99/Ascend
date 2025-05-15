@@ -7,20 +7,20 @@
 
 
 import SwiftUI
-import AuthenticationServices
-import CryptoKit
+import AuthenticationServices   // ← Apple Sign-in
+import CryptoKit               // ← nonce hashing
 import FirebaseAuth
-
+import GoogleSignIn
+import FirebaseCore
 @available(iOS 16.0, *)
 
-// MARK: - UIKit wrapper for ASAuthorizationAppleIDButton
+// MARK: - UIKit wrapper for the Apple Sign-in button
 private struct AppleIDButtonWrapped: UIViewRepresentable {
     var cornerRadius: CGFloat = 8
     let onRequest:  (ASAuthorizationAppleIDRequest) -> Void
     let onComplete: (Result<ASAuthorization, Error>) -> Void
 
     func makeUIView(context: Context) -> ASAuthorizationAppleIDButton {
-        print("A-1  ▶️ makeUIView – UIKit button created")
         let btn = ASAuthorizationAppleIDButton(type: .signIn, style: .white)
         btn.cornerRadius = cornerRadius
         btn.addTarget(context.coordinator,
@@ -28,11 +28,7 @@ private struct AppleIDButtonWrapped: UIViewRepresentable {
                       for: .touchUpInside)
         return btn
     }
-
-    func updateUIView(_ view: ASAuthorizationAppleIDButton, context: Context) {
-        print("A-2  🔄 updateUIView – SwiftUI refreshed")
-    }
-
+    func updateUIView(_ view: ASAuthorizationAppleIDButton, context: Context) {}
     func makeCoordinator() -> Coordinator { Coordinator(onRequest, onComplete) }
 
     final class Coordinator: NSObject,
@@ -49,10 +45,8 @@ private struct AppleIDButtonWrapped: UIViewRepresentable {
         }
 
         @objc func didTap() {
-            print("B-1  👆 didTap – UIKit received touch")
             let request = ASAuthorizationAppleIDProvider().createRequest()
             onRequest(request)
-            print("C-1  📤 performing AppleID request")
             let ctrl = ASAuthorizationController(authorizationRequests: [request])
             ctrl.delegate = self
             ctrl.presentationContextProvider = self
@@ -61,16 +55,12 @@ private struct AppleIDButtonWrapped: UIViewRepresentable {
 
         func authorizationController(controller: ASAuthorizationController,
                                      didCompleteWithAuthorization authorization: ASAuthorization) {
-            print("D-1  ✅ delegate success")
             onComplete(.success(authorization))
         }
-
         func authorizationController(controller: ASAuthorizationController,
                                      didCompleteWithError error: Error) {
-            print("D-2  🛑 delegate error:", error.localizedDescription)
             onComplete(.failure(error))
         }
-
         func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
             UIApplication.shared.windows.first { $0.isKeyWindow } ?? ASPresentationAnchor()
         }
@@ -84,7 +74,6 @@ struct LoginView: View {
     @State private var email        = ""
     @State private var password     = ""
     @State private var showPassword = false
-
     @State private var currentNonce: String?
 
     private let backgroundBlack = Color.black
@@ -105,7 +94,7 @@ struct LoginView: View {
                     .frame(maxWidth: 260)
                     .padding(.top, 10)
 
-                // Email field
+                // Email
                 TextField("", text: $email, prompt: Text("Enter Your Email")
                     .foregroundColor(.white.opacity(0.8)))
                     .keyboardType(.emailAddress)
@@ -119,7 +108,7 @@ struct LoginView: View {
                     .padding(.horizontal)
                     .onChange(of: email) { _ in session.auth_error = nil }
 
-                // Password field
+                // Password
                 ZStack(alignment: .trailing) {
                     Group {
                         if showPassword {
@@ -153,35 +142,69 @@ struct LoginView: View {
                         .padding(.horizontal)
                 }
 
-                // Email/password login
+                // Email / Password Login
                 Button("Login", action: login)
                     .buttonStyle(PrimaryButton(neonCyan))
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal)
 
-                // Apple Sign-in button — now full-width
+                // Apple Sign-in
                 AppleIDButtonWrapped(
                     onRequest:  configureAppleRequest,
                     onComplete: handleAppleResult
                 )
                 .frame(height: 45)
-                .frame(maxWidth: .infinity)     // ← make it stretch
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal)
 
+                // Google Sign-in
+                Button {
+                    startGoogleSignIn()          // ← trigger the flow
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "globe")           // swap for a Google icon asset if you have one
+                        Text("Sign in with Google")
+                            .fontWeight(.medium)
+                    }
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity, minHeight: 45)
+                    .background(Color.white)
+                    .cornerRadius(8)
+                }
+                .padding(.horizontal)
 
-                // Forgot & Sign up links
+                // Navigation Links
                 NavigationLink("Forgot Password?", destination: ForgetPasswordView())
                     .foregroundColor(neonCyan)
-
-                NavigationLink("Don't have an account? Please sign up", destination: SignUpView())
+                NavigationLink("Don't have an account? Please sign up",
+                               destination: SignUpView())
                     .foregroundColor(neonCyan)
                     .offset(y: -10)
             }
-            .padding()
+            .padding(.vertical)
             .navigationBarHidden(true)
         }
         .onAppear { session.auth_error = nil }
     }
 
     // MARK: - Actions
+    private func startGoogleSignIn() {
+        guard
+            let rootVC = UIApplication.shared
+                .connectedScenes
+                .compactMap({ ($0 as? UIWindowScene)?.keyWindow })
+                .first?.rootViewController
+        else {
+            print("❗️ Couldn’t find root view‑controller")
+            return
+        }
 
+        // If you’re relying on GoogleService‑Info.plist, no config param is needed.
+        GIDSignIn.sharedInstance.signIn(withPresenting: rootVC) { signInResult, error in
+            handleGoogleSignIn(signInResult: signInResult, error: error)
+        }
+    }
+    
     private func login() {
         guard !email.isEmpty, !password.isEmpty else {
             session.auth_error = "Please enter both email and password."
@@ -195,7 +218,6 @@ struct LoginView: View {
     }
 
     private func configureAppleRequest(_ request: ASAuthorizationAppleIDRequest) {
-        print("B-2  ⚙️ configureAppleRequest – building nonce & scopes")
         let nonce = randomNonce()
         currentNonce = nonce
         request.requestedScopes = [.fullName, .email]
@@ -205,10 +227,8 @@ struct LoginView: View {
     private func handleAppleResult(_ result: Result<ASAuthorization, Error>) {
         switch result {
         case .failure(let error):
-            print("E-2  ❌ Apple flow failed:", error.localizedDescription)
             session.auth_error = error.localizedDescription
         case .success(let auth):
-            print("E-1  📨 Apple flow success – building Firebase credential")
             guard
               let cred = auth.credential as? ASAuthorizationAppleIDCredential,
               let tokenData = cred.identityToken,
@@ -223,9 +243,31 @@ struct LoginView: View {
                 idToken: token,
                 rawNonce: nonce
             )
-            print("F-1  🚀 hand-off to Firebase")
             session.signInWithApple(credential: credential)
         }
+    }
+
+    private func handleGoogleSignIn(signInResult: GIDSignInResult?, error: Error?) {
+        if let error = error {
+            session.auth_error = error.localizedDescription
+            return
+        }
+        guard
+            let result  = signInResult,
+            let idToken = result.user.idToken?.tokenString
+        else {
+            session.auth_error = "Google sign-in failed (missing idToken)."
+            return
+        }
+
+        // accessToken.tokenString is non-optional, so just grab it directly
+        let accessToken = result.user.accessToken.tokenString
+
+        let credential = GoogleAuthProvider.credential(
+            withIDToken: idToken,
+            accessToken: accessToken
+        )
+        session.signInWithGoogle(credential: credential)
     }
 
     // MARK: - Utilities
@@ -256,11 +298,11 @@ struct LoginView: View {
     }
 
     private func sha256(_ input: String) -> String {
-        let data = Data(input.utf8)
-        let hashed = SHA256.hash(data: data)
-        return hashed.compactMap { String(format: "%02x", $0) }.joined()
+        let hash = SHA256.hash(data: Data(input.utf8))
+        return hash.compactMap { String(format: "%02x", $0) }.joined()
     }
 }
+
 
 // MARK: - Primary Button Style
 

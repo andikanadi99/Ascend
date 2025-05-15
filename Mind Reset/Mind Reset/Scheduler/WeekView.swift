@@ -10,24 +10,24 @@ import SwiftUI
 import FirebaseFirestore
 import UIKit
 
-// Global accent used across sub‑views.
+// Global accent used across sub-views.
 extension Color {
     static let accentCyan = Color(red: 0, green: 1, blue: 1)
 }
 
 // ───────────────────────────────────────────────
-// MARK: ‑ Week View (“Your Mindful Week”)
+// MARK: - Week View (“Your Mindful Week”)
 // ───────────────────────────────────────────────
 struct WeekView: View {
     // injected
     let accentColor: Color
 
-    // environment / view‑models
+    // environment / view-models
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var weekViewState: WeekViewState
     @StateObject private var viewModel = WeekViewModel()
 
-    // three keyboard‑focus flags
+    // three keyboard-focus flags
     @FocusState private var isWeekPriorityFocused:     Bool
     @FocusState private var isDayCardIntentionFocused: Bool
     @FocusState private var isDayCardTaskFocused:      Bool
@@ -52,26 +52,25 @@ struct WeekView: View {
     }
 
     // ─────────────────────────────────────────
-    // MARK: ‑ Body
+    // MARK: - Body
     // ─────────────────────────────────────────
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 copyButton
+                weekNavigation          // ← navigation now above priorities
                 prioritiesSection
-                weekNavigation
                 dayCards
                 Spacer()
             }
             .padding()
             .padding(.top, -20)
         }
-        //  ‑ No `.toolbar` or `NavigationStack` here – SchedulerView handles both.
         .onAppear(perform: loadSchedule)
     }
 
     // ───────────────────────── sections ─────────────────────────
-    /// Copy‑previous‑week button
+    /// Copy-previous-week button
     private var copyButton: some View {
         HStack {
             Spacer()
@@ -93,6 +92,20 @@ struct WeekView: View {
         }
     }
 
+    /// Navigation row: “Week of …”
+    private var weekNavigation: some View {
+        WeekNavigationView(
+            currentWeekStart: $weekViewState.currentWeekStart,
+            accountCreationDate: session.userModel?.createdAt ?? Date(),
+            accentColor: accentColor
+        )
+        .onChange(of: weekViewState.currentWeekStart) { newStart in
+            if let uid = session.userModel?.id {
+                viewModel.loadWeeklySchedule(for: newStart, userId: uid)
+            }
+        }
+    }
+
     /// Weekly priorities list
     private var prioritiesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -111,12 +124,12 @@ struct WeekView: View {
                 ForEach(binding, id: \.id) { $priority in
                     HStack {
                         TextEditor(text: $priority.title)
+                            .scrollContentBackground(.hidden)
                             .focused($isWeekPriorityFocused)
                             .padding(8)
                             .frame(minHeight: 50)
                             .background(Color.black)
                             .foregroundColor(.white)
-                            .scrollContentBackground(.hidden)
                             .cornerRadius(8)
                             .onChange(of: priority.title) { _ in
                                 viewModel.updateWeeklySchedule()
@@ -176,20 +189,7 @@ struct WeekView: View {
         .cornerRadius(8)
     }
 
-    /// Navigation row: “Week of …”
-    private var weekNavigation: some View {
-        WeekNavigationView(
-            currentWeekStart: $weekViewState.currentWeekStart,
-            accountCreationDate: session.userModel?.createdAt ?? Date()
-        )
-        .onChange(of: weekViewState.currentWeekStart) { newStart in
-            if let uid = session.userModel?.id {
-                viewModel.loadWeeklySchedule(for: newStart, userId: uid)
-            }
-        }
-    }
-
-    /// Seven DayCardViews
+    /// Seven DayCardViews
     private var dayCards: some View {
         VStack(spacing: 16) {
             ForEach(weekDays(for: weekViewState.currentWeekStart), id: \.self) { day in
@@ -207,7 +207,7 @@ struct WeekView: View {
     }
 
     // ─────────────────────────────────────────
-    // MARK: ‑ Helper methods
+    // MARK: - Helper methods
     // ─────────────────────────────────────────
     private func loadSchedule() {
         let now  = Date()
@@ -269,7 +269,7 @@ struct WeekView: View {
         )
     }
 
-    // Firestore copy‑week helper
+    // Firestore copy-week helper
     private func copyFromPreviousWeek() {
         guard let prev = Calendar.current.date(byAdding: .weekOfYear,
                                                value: -1,
@@ -304,11 +304,12 @@ struct WeekView: View {
 }
 
 // ───────────────────────────────────────────
-// MARK: ‑ WeekNavigationView (unchanged)
+// MARK: - WeekNavigationView
 // ───────────────────────────────────────────
 struct WeekNavigationView: View {
     @Binding var currentWeekStart: Date
     let accountCreationDate: Date
+    let accentColor: Color
 
     var body: some View {
         HStack {
@@ -328,7 +329,7 @@ struct WeekNavigationView: View {
 
             Text(weekRangeString())
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundColor(isCurrentWeek ? accentColor: .white)
 
             Spacer()
 
@@ -348,11 +349,18 @@ struct WeekNavigationView: View {
         .cornerRadius(8)
     }
 
+    // MARK: – Helpers
+
+    /// Is the bound week the same as “this” calendar week?
+    private var isCurrentWeek: Bool {
+        Calendar.current.isDate(currentWeekStart, equalTo: Date(), toGranularity: .weekOfYear)
+    }
+
     private func weekRangeString() -> String {
         let cal = Calendar.current
         guard let start = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear],
                                                             from: currentWeekStart)) else { return "" }
-        let end = Calendar.current.date(byAdding: .day, value: 6, to: start) ?? start
+        let end = cal.date(byAdding: .day, value: 6, to: start) ?? start
         let fmt = DateFormatter(); fmt.dateFormat = "M/d"
         return "Week of \(fmt.string(from: start)) – \(fmt.string(from: end))"
     }
@@ -371,8 +379,9 @@ struct WeekNavigationView: View {
     }
 }
 
+
 // ───────────────────────────────────────────
-// MARK: ‑ DayCardView & ToDoListView
+// MARK: - DayCardView & ToDoListView
 // ───────────────────────────────────────────
 private struct DayCardView: View {
     let accentColor: Color
@@ -391,6 +400,7 @@ private struct DayCardView: View {
             .padding(.bottom, 4)
 
             TextEditor(text: $intention)
+                .scrollContentBackground(.hidden)
                 .focused(intentionFocus)
                 .padding(8)
                 .frame(minHeight: 50)
@@ -435,6 +445,7 @@ private struct ToDoListView: View {
                     }
 
                     TextEditor(text: $item.title)
+                        .scrollContentBackground(.hidden)
                         .focused(taskFocus)
                         .padding(8)
                         .frame(minHeight: 50)
@@ -496,3 +507,5 @@ private struct ToDoListView: View {
         }
     }
 }
+
+

@@ -17,6 +17,7 @@
 
 /* Begin PBXFileReference section */
 		48291FFE2DD51CBF00CA5922 /* Ascento.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Ascento.entitlements; sourceTree = "<group>"; };
+		482920082DD63B4100CA5922 /* Ascento-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Ascento-Info.plist"; sourceTree = "<group>"; };
 		48D4B75D2CEFB63B0031EBA1 /* Ascend.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ascend.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -48,6 +49,7 @@
 		48D4B7542CEFB63B0031EBA1 = {
 			isa = PBXGroup;
 			children = (
+				482920082DD63B4100CA5922 /* Ascento-Info.plist */,
 				48291FFE2DD51CBF00CA5922 /* Ascento.entitlements */,
 				48D4B75F2CEFB63B0031EBA1 /* Mind Reset */,
 				48D4B7A82CFCBA720031EBA1 /* Frameworks */,
@@ -292,6 +294,7 @@
 				DEVELOPMENT_TEAM = AXW5JHF47R;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Ascento-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Ascento;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -325,6 +328,7 @@
 				DEVELOPMENT_TEAM = AXW5JHF47R;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Ascento-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Ascento;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

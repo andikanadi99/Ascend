@@ -50,6 +50,10 @@ struct DayView: View {
         let f = DateFormatter(); f.dateStyle = .full
         return f.string(from: dayViewState.selectedDate)
     }
+    
+    private var isToday: Bool {
+            Calendar.current.isDateInToday(dayViewState.selectedDate)
+    }
 
     private var prioritiesBinding: Binding<[TodayPriority]>? {
         guard let sched = viewModel.schedule else { return nil }
@@ -70,8 +74,8 @@ struct DayView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 copyButton
-                prioritiesSection
                 dateNavigation
+                prioritiesSection
                 wakeSleepSection
                 timeBlocksSection
                 Spacer()
@@ -176,25 +180,30 @@ struct DayView: View {
 
     /// Date navigation (« Yesterday / Tomorrow »)
     private var dateNavigation: some View {
-        HStack {
-            Button { goBackOneDay() } label: {
-                Image(systemName: "chevron.left")
-                    .foregroundColor(canGoBack() ? .white : .gray)
-            }
-            Spacer()
-            Text(dateString)
-                .font(.headline)
-                .foregroundColor(.white)
-            Spacer()
-            Button { goForwardOneDay() } label: {
-                Image(systemName: "chevron.right").foregroundColor(.white)
-            }
-        }
-        .padding()
-        .background(Color.gray.opacity(0.3))
-        .cornerRadius(8)
-    }
-
+           HStack {
+               Button { goBackOneDay() } label: {
+                   Image(systemName: "chevron.left")
+                       .foregroundColor(canGoBack() ? .white : .gray)
+               }
+               
+               Spacer()
+               
+               Text(dateString)
+                   .font(.headline)
+                   .foregroundColor(isToday ? accentCyan : .white)   // ← highlight
+               
+               Spacer()
+               
+               Button { goForwardOneDay() } label: {
+                   Image(systemName: "chevron.right")
+                       .foregroundColor(.white)
+               }
+           }
+           .padding()
+           .background(Color.gray.opacity(0.3))
+           .cornerRadius(8)
+       }
+       
     /// Wake & Sleep pickers
     @ViewBuilder
     private var wakeSleepSection: some View {

@@ -15,10 +15,23 @@ import Combine
 
 @available(iOS 16.0, *)
 struct HabitTrackerView: View {
+    // MARK: - Appearance tweak
+    init() {
+        let black = UIColor.black
+        UITableView.appearance().backgroundColor     = black
+        UITableViewCell.appearance().backgroundColor = black
+        UITableViewCell.appearance().selectionStyle  = .none
+
+        // ensure both table and its cells use a white tint for reorder handles
+        UITableView.appearance().tintColor          = .white
+        UITableViewCell.appearance().tintColor      = .white    // ← add this
+    }
     // MARK: - Environment Objects
     @EnvironmentObject var viewModel: HabitViewModel
     @EnvironmentObject var session: SessionStore
-
+    
+    
+    @State private var listEditMode: EditMode = .inactive
     @State private var showingAddHabit = false
     @State private var habitsFinishedToday: Int = 0
     @State private var cancellables = Set<AnyCancellable>()
@@ -27,9 +40,7 @@ struct HabitTrackerView: View {
     
     // New state variable for controlling the loading state.
     @State private var isLoaded: Bool = false
-    
-    // New state variable to trigger the dedicated edit order screen.
-    @State private var showEditOrder: Bool = false
+
 
     // NEW: State variable to control the sort order.
     @State private var sortAscending: Bool = true
@@ -93,38 +104,44 @@ struct HabitTrackerView: View {
                             }
                             .padding(.vertical, 10)
                             
-                            ScrollView {
-                                LazyVStack(spacing: 12) {
-                                    ForEach(viewModel.habits.indices, id: \.self) { index in
-                                        let habit = viewModel.habits[index]
-                                        let completedToday = habit.dailyRecords.contains { record in
-                                            Calendar.current.isDate(record.date, inSameDayAs: Date()) &&
-                                            ((record.value ?? 0) > 0)
-                                        }
-                                        
-                                        NavigationLink(
-                                            destination: HabitDetailView(habit: $viewModel.habits[index])
-                                        ) {
-                                            HabitRow(
-                                                habit: habit,
-                                                completedToday: completedToday,
-                                                accentCyan: accentCyan,
-                                                onDelete: { deletedHabit in
-                                                    habitToDelete = deletedHabit
-                                                    showingDeleteAlert = true
-                                                },
-                                                onToggleCompletion: {
-                                                    toggleHabitCompletion(habit)
-                                                },
-                                                // We don’t display per‑row reordering controls on the main screen.
-                                                onMoveUp: nil,
-                                                onMoveDown: nil
+                            List {
+                                ForEach(Array(viewModel.habits.enumerated()), id: \.element.id) { (index, habit) in
+                                    // binding into the array without relying on the index for identity
+                                    NavigationLink {
+                                        HabitDetailView(
+                                            habit: Binding(
+                                                get: { viewModel.habits[index] },
+                                                set: { viewModel.habits[index] = $0 }
                                             )
-                                        }
+                                        )
+                                    } label: {
+                                        HabitRow(
+                                            habit: habit,
+                                            completedToday: habit.dailyRecords.contains { record in
+                                                Calendar.current.isDate(record.date, inSameDayAs: Date()) &&
+                                                ((record.value ?? 0) > 0)
+                                            },
+                                            accentCyan: accentCyan,
+                                            onDelete: { deleted in
+                                                habitToDelete = deleted
+                                                showingDeleteAlert = true
+                                            },
+                                            onToggleCompletion: { toggleHabitCompletion(habit) }
+                                        )
                                     }
+                                    .listRowBackground(Color.clear)
+                                    .listRowSeparator(.hidden)
                                 }
-                                .padding(.top, 10)
+
+                                // ⬇︎ Drag-to-reorder handler
+                                .onMove { indices, newOffset in
+                                    viewModel.moveHabits(indices: indices, to: newOffset)
+                                }
                             }
+                            .environment(\.editMode, $listEditMode)   // ← feed the state into the List
+                            .listStyle(.plain)
+                            .background(backgroundBlack)
+
                             
                             Spacer()
                         }
@@ -148,34 +165,30 @@ struct HabitTrackerView: View {
                 .id(isLoaded ? "loaded" : "loading")
                 
                 // Floating Add Button (always visible)
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        Button {
-                            showingAddHabit = true
-                        } label: {
-                            Image(systemName: "plus")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 20, height: 20)
-                                .foregroundColor(.black)
-                                .padding()
-                                .background(accentCyan)
-                                .clipShape(Circle())
-                                .shadow(color: accentCyan.opacity(0.6), radius: 5)
-                        }
-                        .padding()
-                    }
-                }
+//                VStack {
+//                    Spacer()
+//                    HStack {
+//                        Spacer()
+//                        Button {
+//                            showingAddHabit = true
+//                        } label: {
+//                            Image(systemName: "plus")
+//                                .resizable()
+//                                .scaledToFit()
+//                                .frame(width: 20, height: 20)
+//                                .foregroundColor(.black)
+//                                .padding()
+//                                .background(accentCyan)
+//                                .clipShape(Circle())
+//                                .shadow(color: accentCyan.opacity(0.6), radius: 5)
+//                        }
+//                        .padding()
+//                    }
+//                }
             }
             .sheet(isPresented: $showingAddHabit) {
                 AddHabitView(viewModel: viewModel)
                     .environmentObject(session)
-                    .environmentObject(viewModel)
-            }
-            .sheet(isPresented: $showEditOrder) {
-                EditHabitsOrderView()
                     .environmentObject(viewModel)
             }
             .alert(isPresented: $showingDeleteAlert) {
@@ -193,10 +206,29 @@ struct HabitTrackerView: View {
                     }
                 )
             }
-            // The "Edit Order" button in the navigation bar.
-            .navigationBarItems(trailing: Button("Edit Order") {
-                showEditOrder = true
-            })
+            .toolbar {
+                // ─── Custom Edit/Done toggle ───────────────────────────────
+                ToolbarItem(placement: .navigationBarLeading) {
+                        Button {
+                            withAnimation {
+                                listEditMode = (listEditMode == .active ? .inactive : .active)
+                            }
+                        } label: {
+                            Text(listEditMode == .active ? "Done" : "Edit Order")
+                                .foregroundColor(.white)
+                        }
+                    }
+
+                // Right-side “+” button (unchanged)
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showingAddHabit = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .foregroundColor(accentCyan)
+                    }
+                }
+            }
             //.navigationBarHidden(true)
             .onAppear {
                 guard let userId = session.current_user?.uid else {
@@ -270,12 +302,13 @@ struct HabitRow: View {
     let accentCyan: Color
     let onDelete: (Habit) -> Void
     let onToggleCompletion: () -> Void
-    // New closures for moving the habit up or down.
-    let onMoveUp: (() -> Void)?
-    let onMoveDown: (() -> Void)?
+
+    @Environment(\.editMode) private var editMode
 
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
+
+            // (1) Main title / goal
             VStack(alignment: .leading, spacing: 4) {
                 Text(habit.title)
                     .font(.headline)
@@ -283,46 +316,27 @@ struct HabitRow: View {
                 Text(habit.goal)
                     .font(.subheadline)
                     .foregroundColor(.white.opacity(0.7))
-                    .multilineTextAlignment(.leading)
             }
+
             Spacer()
-            // Up/Down controls
-            VStack(spacing: 4) {
-                if let onMoveUp = onMoveUp {
-                    Button(action: onMoveUp) {
-                        Image(systemName: "arrow.up")
-                            .font(.caption)
-                            .foregroundColor(.white)
-                    }
-                }
-                if let onMoveDown = onMoveDown {
-                    Button(action: onMoveDown) {
-                        Image(systemName: "arrow.down")
-                            .font(.caption)
-                            .foregroundColor(.white)
-                    }
-                }
-            }
-            // Toggle completion button.
+
+            // (2) Toggle-completion button
             Button(action: onToggleCompletion) {
-                if completedToday {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.headline)
-                        .foregroundColor(.green)
-                        .frame(width: 30, height: 30)
-                        .background(Color.green.opacity(0.2))
-                        .clipShape(Circle())
-                } else {
-                    Image(systemName: "circle")
-                        .font(.headline)
-                        .foregroundColor(accentCyan)
-                        .frame(width: 30, height: 30)
-                        .background(accentCyan.opacity(0.2))
-                        .clipShape(Circle())
-                }
+                Image(systemName: completedToday
+                        ? "checkmark.circle.fill"
+                        : "circle")
+                    .font(.headline)
+                    .foregroundColor(completedToday ? .green : accentCyan)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        (completedToday ? Color.green : accentCyan)
+                            .opacity(0.2)
+                    )
+                    .clipShape(Circle())
             }
             .buttonStyle(PlainButtonStyle())
-            // Delete button.
+
+            // (3) Delete button (optional – keep if you still use it)
             Button {
                 onDelete(habit)
             } label: {
@@ -342,6 +356,7 @@ struct HabitRow: View {
         .cornerRadius(8)
     }
 }
+
 
 struct StreakBadge: View {
     let text: String

@@ -11,6 +11,7 @@
 		4827BDC52DC00ED900FE752A /* FirebaseFunctionsCombine-Community in Frameworks */ = {isa = PBXBuildFile; productRef = 4827BDC42DC00ED900FE752A /* FirebaseFunctionsCombine-Community */; };
 		482920012DD629BC00CA5922 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 482920002DD629BC00CA5922 /* GoogleSignIn */; };
 		482920032DD629BC00CA5922 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 482920022DD629BC00CA5922 /* GoogleSignInSwift */; };
+		482920C82DDFB74800CA5922 /* timer_loop.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 482920C72DDFB74800CA5922 /* timer_loop.mp3 */; };
 		48D4B7932CEFC94A0031EBA1 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 48D4B7922CEFC94A0031EBA1 /* FirebaseAuth */; };
 		48D4B7952CEFC94A0031EBA1 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 48D4B7942CEFC94A0031EBA1 /* FirebaseFirestore */; };
 /* End PBXBuildFile section */
@@ -18,6 +19,7 @@
 /* Begin PBXFileReference section */
 		48291FFE2DD51CBF00CA5922 /* Ascento.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Ascento.entitlements; sourceTree = "<group>"; };
 		482920082DD63B4100CA5922 /* Ascento-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Ascento-Info.plist"; sourceTree = "<group>"; };
+		482920C72DDFB74800CA5922 /* timer_loop.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = timer_loop.mp3; sourceTree = "<group>"; };
 		48D4B75D2CEFB63B0031EBA1 /* Ascend.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ascend.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -54,6 +56,7 @@
 				48D4B75F2CEFB63B0031EBA1 /* Mind Reset */,
 				48D4B7A82CFCBA720031EBA1 /* Frameworks */,
 				48D4B75E2CEFB63B0031EBA1 /* Products */,
+				482920C72DDFB74800CA5922 /* timer_loop.mp3 */,
 			);
 			sourceTree = "<group>";
 		};
@@ -146,6 +149,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				482920C82DDFB74800CA5922 /* timer_loop.mp3 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

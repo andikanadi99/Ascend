@@ -165,26 +165,26 @@ struct HabitTrackerView: View {
                 .id(isLoaded ? "loaded" : "loading")
                 
                 // Floating Add Button (always visible)
-//                VStack {
-//                    Spacer()
-//                    HStack {
-//                        Spacer()
-//                        Button {
-//                            showingAddHabit = true
-//                        } label: {
-//                            Image(systemName: "plus")
-//                                .resizable()
-//                                .scaledToFit()
-//                                .frame(width: 20, height: 20)
-//                                .foregroundColor(.black)
-//                                .padding()
-//                                .background(accentCyan)
-//                                .clipShape(Circle())
-//                                .shadow(color: accentCyan.opacity(0.6), radius: 5)
-//                        }
-//                        .padding()
-//                    }
-//                }
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button {
+                            showingAddHabit = true
+                        } label: {
+                            Image(systemName: "plus")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 20, height: 20)
+                                .foregroundColor(.black)
+                                .padding()
+                                .background(accentCyan)
+                                .clipShape(Circle())
+                                .shadow(color: accentCyan.opacity(0.6), radius: 5)
+                        }
+                        .padding()
+                    }
+                }
             }
             .sheet(isPresented: $showingAddHabit) {
                 AddHabitView(viewModel: viewModel)
@@ -206,29 +206,29 @@ struct HabitTrackerView: View {
                     }
                 )
             }
-            .toolbar {
-                // ─── Custom Edit/Done toggle ───────────────────────────────
-                ToolbarItem(placement: .navigationBarLeading) {
-                        Button {
-                            withAnimation {
-                                listEditMode = (listEditMode == .active ? .inactive : .active)
-                            }
-                        } label: {
-                            Text(listEditMode == .active ? "Done" : "Edit Order")
-                                .foregroundColor(.white)
-                        }
-                    }
-
-                // Right-side “+” button (unchanged)
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingAddHabit = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .foregroundColor(accentCyan)
-                    }
-                }
-            }
+//            .toolbar {
+//                // ─── Custom Edit/Done toggle ───────────────────────────────
+//                ToolbarItem(placement: .navigationBarLeading) {
+//                        Button {
+//                            withAnimation {
+//                                listEditMode = (listEditMode == .active ? .inactive : .active)
+//                            }
+//                        } label: {
+//                            Text(listEditMode == .active ? "Done" : "Edit Order")
+//                                .foregroundColor(.white)
+//                        }
+//                    }
+//
+//                // Right-side “+” button (unchanged)
+//                ToolbarItem(placement: .navigationBarTrailing) {
+//                    Button {
+//                        showingAddHabit = true
+//                    } label: {
+//                        Image(systemName: "plus")
+//                            .foregroundColor(accentCyan)
+//                    }
+//                }
+//            }
             //.navigationBarHidden(true)
             .onAppear {
                 guard let userId = session.current_user?.uid else {

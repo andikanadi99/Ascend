@@ -16,6 +16,10 @@ import SwiftUI
 import Combine
 import FirebaseFirestore
 
+import AVFoundation
+import CoreHaptics
+import AudioToolbox
+
 struct HabitDetailView: View {
     // MARK: - The Habit Being Displayed
     @Binding var habit: Habit
@@ -96,6 +100,82 @@ struct HabitDetailView: View {
     @FocusState private var isDescriptionFocused: Bool
     @FocusState private var isGoalFocused: Bool
     @FocusState private var isNotesFocused: Bool
+    
+    // MARK: - Time functions and variables
+    @State private var audioPlayer: AVAudioPlayer?
+    private let hapticEngine = try? CHHapticEngine()
+    @State private var showRingerAlert = false          // drives the pop-up
+    @State private var ringerWorkItem: DispatchWorkItem? // lets us cancel the 30 s auto-stop
+
+    /// Start an endless loop of timer_loop.(mp3|wav)
+    private func startLoopingSound() {
+        // Look first for mp3, then wav (in case you later switch formats)
+        let url =
+            Bundle.main.url(forResource: "timer_loop", withExtension: "mp3") ??
+            Bundle.main.url(forResource: "timer_loop", withExtension: "wav")
+
+        guard let url else {           // double-check it’s in the bundle
+            print("⚠️ timer_loop sound not found in bundle")
+            return
+        }
+
+        do {
+            audioPlayer = try AVAudioPlayer(contentsOf: url)
+            audioPlayer?.numberOfLoops = -1      // -1 = loop forever
+            audioPlayer?.prepareToPlay()
+            audioPlayer?.play()
+        } catch {
+            print("⚠️ Could not start audio loop:", error.localizedDescription)
+        }
+    }
+
+    /// Stop the loop and release the player
+    private func stopLoopingSound() {
+        audioPlayer?.stop()
+        audioPlayer = nil
+    }
+    /// Plays a short “timer done” sound that you’ve dropped into the app bundle
+    /// Play the chime once or in an infinite loop.
+    private func playEndSound(loop: Bool = false) {
+        guard let url = Bundle.main.url(forResource: "timer_done", withExtension: "wav") else {
+            AudioServicesPlaySystemSound(1005)      // tri-tone fallback
+            return
+        }
+        audioPlayer = try? AVAudioPlayer(contentsOf: url)
+        audioPlayer?.numberOfLoops = loop ? -1 : 0   // -1 = forever
+        audioPlayer?.prepareToPlay()
+        audioPlayer?.play()
+    }
+
+    /// Stop (and deallocate) the audio player.
+    private func stopEndSound() {
+        audioPlayer?.stop()
+        audioPlayer = nil
+    }
+
+    /// Fires a success-style haptic. Falls back to the legacy vibration if no Core Haptics.
+    private func vibrate() {
+        guard let engine = hapticEngine else {
+            AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
+            return
+        }
+
+        let sharpTap = CHHapticEvent(eventType: .hapticTransient,
+                                     parameters: [],
+                                     relativeTime: 0)
+
+        do {
+            try engine.start()
+            let pattern = try CHHapticPattern(events: [sharpTap], parameters: [])
+            let player  = try engine.makePlayer(with: pattern)
+            try player.start(atTime: 0)
+        } catch {
+            print("⚠️ Haptic error:", error.localizedDescription)
+            AudioServicesPlaySystemSound(kSystemSoundID_Vibrate) // graceful fallback
+        }
+    }
+
+
     // MARK: - Initialization
     init(habit: Binding<Habit>) {
         _habit = habit
@@ -137,6 +217,18 @@ struct HabitDetailView: View {
         .alert(isPresented: $showAlert) {
             Alert(title: Text("Invalid Date Range"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
         }
+        .alert("Timer Done",
+               isPresented: $showRingerAlert,
+               actions: {
+                   // Single button that stops the sound and closes the alert
+                   Button("Stop Sound", role: .cancel) {   // role=.cancel so it’s bold on iOS
+                       stopLoopingSound()
+                       ringerWorkItem?.cancel()            // cancel the 30-s auto-stop
+                   }
+               },
+               message: {
+                   Text("The ring will silence automatically after 30 seconds if you do nothing.")
+               })
         .banner(message: "Note Saved!", isPresented: $showBanner)
         .onAppear {
             guard let userId = session.current_user?.uid else { return }
@@ -152,12 +244,12 @@ struct HabitDetailView: View {
         .onDisappear { saveEditsToHabit() }
         .onChange(of: selectedHours) { _ in
             if !isTimerRunning && !isTimerPaused {
-                countdownSeconds = selectedHours * 3600 + selectedMinutes * 60
+                countdownSeconds = selectedHours * 3600 + selectedMinutes * 60 + selectedSeconds
             }
         }
         .onChange(of: selectedMinutes) { _ in
             if !isTimerRunning && !isTimerPaused {
-                countdownSeconds = selectedHours * 3600 + selectedMinutes * 60
+                countdownSeconds = selectedHours * 3600 + selectedMinutes * 60 + selectedSeconds
             }
         }
         .sheet(isPresented: $showPreviousNotes) {
@@ -1354,19 +1446,44 @@ extension HabitDetailView {
 }
 
 // MARK: - Timer & Habit Edits
+
 extension HabitDetailView {
+    // Handles everything when the countdown reaches zero
+    private func timerCompleted() {
+        isTimerRunning  = false
+        isTimerPaused   = false
+        countdownSeconds = 0
+
+        vibrate()                    // haptic cue
+        startLoopingSound()          // 🔊 start endless ring
+
+        showRingerAlert = true       // pop-up to let user silence
+
+        // Auto-stop after 30 s
+        let task = DispatchWorkItem {
+            stopLoopingSound()
+            showRingerAlert = false
+        }
+        ringerWorkItem = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: task)
+    }
+
+    
     private func startTimer() {
+        // Stop if already running (unless we’re resuming from pause)
         guard !isTimerRunning || isTimerPaused else { return }
+
         isTimerRunning = true
-        isTimerPaused = false
+        isTimerPaused  = false
+
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             if countdownSeconds > 0 {
                 countdownSeconds -= 1
-                totalFocusTime += 1
+                totalFocusTime  += 1
             } else {
                 timer?.invalidate()
-                isTimerRunning = false
+                timerCompleted()
             }
         }
     }

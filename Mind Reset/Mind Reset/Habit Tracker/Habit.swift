@@ -155,6 +155,7 @@ struct Habit: Identifiable, Codable, Equatable {
     var goal: String
     var startDate: Date
     var ownerId: String
+    var order: Int = 0  
     
     // Removed: var isCompletedToday: Bool
     var lastReset: Date?
@@ -177,6 +178,7 @@ struct Habit: Identifiable, Codable, Equatable {
         goal: String,
         startDate: Date,
         ownerId: String,
+        order: Int = 0,
         // isCompletedToday is removed – use dailyRecords for per-day tracking
         currentStreak: Int = 0,
         longestStreak: Int = 0,
@@ -193,6 +195,7 @@ struct Habit: Identifiable, Codable, Equatable {
         self.goal = goal
         self.startDate = startDate
         self.ownerId = ownerId
+        self.order = order
         
         self.lastReset = lastReset
         self.points = 0
@@ -209,7 +212,7 @@ struct Habit: Identifiable, Codable, Equatable {
     
     // MARK: - Codable Conformance
     enum CodingKeys: String, CodingKey {
-        case id, title, description, goal, startDate, ownerId,
+        case id, title, description, goal, startDate, ownerId,order,
              // Removed isCompletedToday from the coding keys.
              lastReset, points, currentStreak, longestStreak, weeklyStreakBadge, monthlyStreakBadge, yearlyStreakBadge,
              metricCategory, metricType, dailyRecords

@@ -31,3 +31,5 @@ GoogleService-Info.plist
 # macOS metadata
 .DS_Store
 *.xcuserstate
+*.xcuserstate
+*.xcuserdata

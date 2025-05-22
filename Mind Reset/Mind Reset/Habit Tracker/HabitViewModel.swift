@@ -19,7 +19,7 @@ class HabitViewModel: ObservableObject {
     @Published var localStreaks: [String: Int] = [:]
     @Published var localLongestStreaks: [String: Int] = [:]
     
-    @Published var defaultsLoaded: Bool = false  // Loading flag
+    @Published var defaultsLoaded: Bool = false
     
     private let db = Firestore.firestore() 
     
@@ -44,87 +44,122 @@ class HabitViewModel: ObservableObject {
         listenerRegistration?.remove()
     }
     
+    /// Persists the current (or supplied) `habits` array’s order values.
+    @MainActor
+    func persistOrder(_ source: [Habit]? = nil) async {
+        let list = source ?? habits
+        guard !list.isEmpty else { return }
+
+        let batch = db.batch()
+        for (idx, habit) in list.enumerated() where habit.order != idx {
+            var updated = habit
+            updated.order = idx
+
+            if let id = updated.id {
+                let ref = db.collection("habits").document(id)
+                try? batch.setData(from: updated, forDocument: ref, merge: true)
+            }
+            // Keep local cache in sync if we’re using self.habits
+            if source == nil, let ix = habits.firstIndex(where: { $0.id == habit.id }) {
+                habits[ix].order = idx
+            }
+        }
+        try? await batch.commit()
+    }
+
+    //New function
     func fetchHabits(for userId: String) {
-        // Tear down any previous listener
+        // Remove any previous listener
         listenerRegistration?.remove()
 
-        // Use a background queue for decoding to keep the main thread free
         let workerQ = DispatchQueue(label: "habit-decoder", qos: .userInitiated)
 
         listenerRegistration = db.collection("habits")
             .whereField("ownerId", isEqualTo: userId)
-            .order(by: "startDate", descending: true)
-            .addSnapshotListener(includeMetadataChanges: false) { [weak self] (snap, error) in
+            .order(by: "order")                     // composite index required
+            .addSnapshotListener(includeMetadataChanges: false) { [weak self] snap, error in
                 guard let self = self else { return }
 
-                // --- Error path --------------------------------------------------
+                // ---- Error path ------------------------------------------------------
                 if let error = error {
-                    print("Error fetching habits:", error.localizedDescription)
-                    DispatchQueue.main.async {
-                        self.errorMessage = "Failed to fetch habits."
-                    }
+                    print("🔥 Firestore error:", error.localizedDescription)
+                    DispatchQueue.main.async { self.errorMessage = "Failed to fetch habits." }
                     return
                 }
 
-                // --- Decode path -------------------------------------------------
-                guard let docs = snap?.documents, !docs.isEmpty else {
-                    DispatchQueue.main.async {
-                        self.habits = []
-                    }
+                // ---- Empty snapshot guard -------------------------------------------
+                guard let docs = snap?.documents else {
+                    DispatchQueue.main.async { self.habits = [] }
                     return
                 }
 
-                // Decode on the worker queue
-                var fresh = [Habit]()
-                fresh.reserveCapacity(docs.count)
+                #if DEBUG
+                print("📥 Snapshot received. docCount =", docs.count)
+                #endif
 
-                for d in docs {
-                    if let h = try? d.data(as: Habit.self) {
-                        fresh.append(h)
-                        // Keep local streak caches in sync
-                        if let id = h.id {
-                            if h.currentStreak > (self.localStreaks[id] ?? 0) {
-                                self.localStreaks[id] = h.currentStreak
-                            }
-                            if h.longestStreak > (self.localLongestStreaks[id] ?? 0) {
-                                self.localLongestStreaks[id] = h.longestStreak
-                            }
+                // ---- Decode off the main queue --------------------------------------
+                workerQ.async {
+                    var decoded: [Habit] = []
+                    decoded.reserveCapacity(docs.count)
+
+                    for d in docs {
+                        do {
+                            var habit = try d.data(as: Habit.self)
+                            decoded.append(habit)
+                        } catch {
+                            #if DEBUG
+                            print("⚠️  Decode failed for \(d.documentID):", error)
+                            #endif
                         }
                     }
-                }
 
-                // Publish only if changed
-                DispatchQueue.main.async {
-                    if fresh != self.habits {  // Habit: Equatable
-                        self.habits = fresh
+                    // ---- Legacy-order repair ----------------------------------------
+                    decoded.sort {
+                        if $0.order == $1.order { return $0.startDate < $1.startDate }
+                        return $0.order < $1.order
+                    }
+
+                    var needsFix = false
+                    for i in decoded.indices where decoded[i].order != i {
+                        decoded[i].order = i
+                        needsFix = true
+                    }
+                    if needsFix { Task { await self.persistOrder(decoded) } }
+
+                    // ---- Publish to UI ----------------------------------------------
+                    DispatchQueue.main.async {
+                        if decoded != self.habits { self.habits = decoded }
                     }
                 }
             }
     }
 
-
+    // Call this from EditHabitsOrderView’s `.onMove`
+    func moveHabits(indices: IndexSet, to destination: Int) {
+        var newList = habits
+        newList.move(fromOffsets: indices, toOffset: destination)
+        habits = newList                                     // UI update
+        Task { await persistOrder() }                        // save to Firestore
+    }
 
     
     func addHabit(_ habit: Habit, completion: @escaping (Bool) -> Void) {
-        guard let authenticatedUserId = Auth.auth().currentUser?.uid, authenticatedUserId == habit.ownerId else {
-            print("User authentication error.")
-            completion(false)
-            return
+        guard let uid = Auth.auth().currentUser?.uid, uid == habit.ownerId else {
+            completion(false); return
         }
+
+        var newHabit = habit
+        newHabit.order = habits.count                       // 👈 bottom of list
+
         do {
-            try db.collection("habits").addDocument(from: habit) { error in
-                if let error = error {
-                    print("Error adding habit: \(error.localizedDescription)")
-                    completion(false)
-                } else {
-                    completion(true)
-                }
+            try db.collection("habits").addDocument(from: newHabit) { error in
+                completion(error == nil)
             }
         } catch {
-            print("Error encoding habit: \(error.localizedDescription)")
             completion(false)
         }
     }
+
     
     func updateHabit(_ habit: Habit) {
         guard let id = habit.id else { return }
@@ -138,25 +173,21 @@ class HabitViewModel: ObservableObject {
     }
     
     func deleteHabit(_ habit: Habit) {
-        guard let id = habit.id else {
-            print("Cannot delete: Habit has no ID.")
-            DispatchQueue.main.async { self.errorMessage = "Failed to delete habit (no ID)." }
-            return
-        }
+        guard let id = habit.id else { return }
+
         db.collection("habits").document(id).delete { [weak self] err in
-            if let e = err {
-                print("Error deleting habit: \(e)")
-                DispatchQueue.main.async { self?.errorMessage = "Failed to delete habit." }
+            guard let self = self else { return }
+            if err != nil {
+                DispatchQueue.main.async { self.errorMessage = "Failed to delete habit." }
             } else {
-                print("Habit (ID: \(id)) deleted successfully.")
                 DispatchQueue.main.async {
-                    self?.habits.removeAll { $0.id == id }
-                    self?.localStreaks.removeValue(forKey: id)
-                    self?.localLongestStreaks.removeValue(forKey: id)
+                    self.habits.removeAll { $0.id == id }
+                    Task { await self.persistOrder() }       // 👈 close the gap
                 }
             }
         }
     }
+
     
     func awardPointsToUser(userId: String, points: Int) {
         let userRef = db.collection("users").document(userId)

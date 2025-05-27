@@ -152,16 +152,30 @@ class DayViewModel: ObservableObject {
     // MARK: — Helpers
     private func generateTimeBlocks(from start: Date, to end: Date) -> [TimeBlock] {
         var blocks: [TimeBlock] = []
-        var current = start
         let cal = Calendar.current
-        while current <= end {
+
+        // Determine actual end‐of‐schedule date:
+        // If `end` is <= `start`, assume it’s on the next calendar day.
+        let correctedEnd: Date = {
+            if end <= start {
+                // add 1 day to the original end
+                return cal.date(byAdding: .day, value: 1, to: end)!
+            } else {
+                return end
+            }
+        }()
+        
+        var current = start
+        while current <= correctedEnd {
             let label = DayViewModel.timeFormatter.string(from: current)
             blocks.append(TimeBlock(id: UUID(), time: label, task: ""))
+            // advance one hour
             guard let next = cal.date(byAdding: .hour, value: 1, to: current) else { break }
             current = next
         }
         return blocks
     }
+
 
     func copyPreviousDaySchedule(
       to targetDate: Date,

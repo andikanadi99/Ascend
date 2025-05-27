@@ -9,67 +9,64 @@ import SwiftUI
 import Combine
 import UIKit
 
+
 // ───────────────────────────────────────────────
-// MARK: ‑ Alerts
+// MARK: - Alerts
 // ───────────────────────────────────────────────
 enum DayViewAlert: Identifiable {
-    case copy
-    case delete(TodayPriority)
-
+    case copy, delete(TodayPriority)
     var id: String {
         switch self {
-        case .copy:                       return "copy"
-        case .delete(let priority):       return "delete‑\(priority.id)"
+        case .copy:              return "copy"
+        case .delete(let p):     return "delete-\(p.id)"
         }
     }
 }
 
 // ───────────────────────────────────────────────
-// MARK: ‑ Day View (“Your Mindful Day”)
+// MARK: - Day View (“Your Mindful Day”)
 // ───────────────────────────────────────────────
 struct DayView: View {
-    // ⚙️ Environment & view‑models
+    // ⚙️ Environment & view-models
     @EnvironmentObject var session: SessionStore
     @EnvironmentObject var dayViewState: DayViewState
     @StateObject private var viewModel = DayViewModel()
 
-    // 🗂 Local UI state
+    // 🗂 Local UI state
     @State private var activeAlert: DayViewAlert?
     @State private var isRemoveMode = false
 
-    // 🔎 Keyboard‑focus flags
+    // 🔎 Focus flags
     @FocusState private var isDayPriorityFocused: Bool
     @FocusState private var isDayTimeFocused:     Bool
     @FocusState private var isDayTaskFocused:     Bool
+    
+    @State private var editMode: EditMode = .inactive
 
     // Accent colour
     private let accentCyan = Color(red: 0, green: 1, blue: 1)
 
-    // ───── helpers ─────
-    private var dateString: String {
-        let f = DateFormatter(); f.dateStyle = .full
-        return f.string(from: dayViewState.selectedDate)
-    }
-    
-    private var isToday: Bool {
-            Calendar.current.isDateInToday(dayViewState.selectedDate)
-    }
-
+    // Helper binding
     private var prioritiesBinding: Binding<[TodayPriority]>? {
         guard let sched = viewModel.schedule else { return nil }
         return Binding(
-            get: { sched.priorities },
+            get:  { sched.priorities },
             set: { new in
-                var tmp = sched
-                tmp.priorities = new
+                var tmp = sched; tmp.priorities = new
                 viewModel.schedule = tmp
             }
         )
     }
 
-    // ─────────────────────────────────────────
-    // MARK: ‑ Body
-    // ─────────────────────────────────────────
+    // Date formatting
+    private var dateString: String {
+        let f = DateFormatter(); f.dateStyle = .full
+        return f.string(from: dayViewState.selectedDate)
+    }
+    private var isToday: Bool {
+        Calendar.current.isDateInToday(dayViewState.selectedDate)
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -83,22 +80,24 @@ struct DayView: View {
             .padding()
             .padding(.top, -20)
         }
-        //  ‑ No `.toolbar` here – SchedulerView supplies the global keyboard toolbar
-        //  ‑ All logic below unchanged
         .onAppear(perform: loadInitialSchedule)
         .onReceive(session.$defaultWakeTime.combineLatest(session.$defaultSleepTime)) { w, s in
             applyDefaultTimes(wakeOpt: w, sleepOpt: s)
         }
-        .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
-            if viewModel.schedule == nil, let uid = session.userModel?.id {
-                viewModel.loadDaySchedule(for: dayViewState.selectedDate, userId: uid)
+        .onReceive(Timer.publish(every: 0.5, on: .main, in: .common)
+            .autoconnect()) { _ in
+            if viewModel.schedule == nil,
+               let uid = session.userModel?.id {
+                viewModel.loadDaySchedule(for: dayViewState.selectedDate,
+                                          userId: uid)
             }
         }
         .alert(item: $activeAlert, content: buildAlert)
     }
 
-    // ───────────────────────── sections ─────────────────────────
-    /// Copy‑previous‑day button row
+    // ─────────────────────────────────────────
+    // MARK: – Copy Button
+    // ─────────────────────────────────────────
     private var copyButton: some View {
         HStack {
             Spacer()
@@ -112,41 +111,64 @@ struct DayView: View {
         }
     }
 
-    /// “Today’s Top Priority” section
+    // ─────────────────────────────────────────
+    // MARK: – Priorities Section
+    // ─────────────────────────────────────────
     private var prioritiesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Today's Top Priority")
-                    .font(.headline)
-                    .foregroundColor(accentCyan)
-                Spacer()
-            }
+            Text("Today's Top Priority")
+                .font(.headline)
+                .foregroundColor(accentCyan)
 
             if let binding = prioritiesBinding {
-                ForEach(binding) { $priority in
-                    HStack {
-                        TextEditor(text: $priority.title)
-                            .focused($isDayPriorityFocused)
-                            .padding(8)
-                            .frame(minHeight: 50)
-                            .background(Color.black)
-                            .cornerRadius(8)
-                            .foregroundColor(.white)
-                            .scrollContentBackground(.hidden)
-                            .onChange(of: priority.title) { _ in
-                                viewModel.updateDaySchedule()
+                if binding.wrappedValue.isEmpty {
+                    // Placeholder when there are no priorities
+                    Text("Please list your priorities for today")
+                        .foregroundColor(.white.opacity(0.7))
+                        .italic()
+                        .padding(.vertical, 20)
+                        .frame(maxWidth: .infinity)
+                        .background(Color(.sRGB, white: 0.1, opacity: 1))
+                        .cornerRadius(8)
+                } else {
+                    // Reorderable list with inline checkmarks and deletions
+                    List {
+                        Section {
+                            ForEach(binding) { $priority in
+                                PriorityRowView(
+                                    title:       $priority.title,
+                                    isFocused:   _isDayPriorityFocused,
+                                    isCompleted: $priority.isCompleted,
+                                    onToggle:    { viewModel.togglePriorityCompletion(priority.id) },
+                                    showDelete:  isRemoveMode,
+                                    onDelete:    { activeAlert = .delete(priority) },
+                                    accentCyan:  accentCyan,
+                                    onCommit:    { viewModel.updateDaySchedule() }
+                                )
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(.init(top: 4, leading: 0, bottom: 4, trailing: 0))
+                                .listRowSeparator(.hidden)
                             }
-
-                        if isRemoveMode && binding.wrappedValue.count > 1 {
-                            Button { activeAlert = .delete(priority) } label: {
-                                Image(systemName: "minus.circle").foregroundColor(.red)
+                            .onMove { indices, newOffset in
+                                binding.wrappedValue.move(fromOffsets: indices, toOffset: newOffset)
+                                viewModel.updateDaySchedule()
                             }
                         }
                     }
+                    .listStyle(.plain)
+                    .scrollDisabled(true)
+                    .scrollContentBackground(.hidden)
+                    .listRowSeparator(.hidden)
+                    .listSectionSeparator(.hidden)
+                    .background(Color.clear)
+                    .frame(minHeight: CGFloat(binding.wrappedValue.count) * 90)
+                    .environment(\.editMode, $editMode)
+                    .padding(.bottom, 20)
                 }
 
+                // Add / Remove buttons
                 HStack {
-                    Button("Add Priority") { addPriority() }
+                    Button("Add Priority", action: addPriority)
                         .font(.headline)
                         .foregroundColor(accentCyan)
                         .padding(.vertical, 8)
@@ -156,7 +178,8 @@ struct DayView: View {
 
                     Spacer()
 
-                    if binding.wrappedValue.count > 1 {
+                    // Show Remove only if there's at least one priority
+                    if binding.wrappedValue.count > 0 {
                         Button(isRemoveMode ? "Done" : "Remove Priority") {
                             isRemoveMode.toggle()
                         }
@@ -169,6 +192,7 @@ struct DayView: View {
                     }
                 }
                 .padding(.top, 8)
+
             } else {
                 Text("Loading priorities…").foregroundColor(.white)
             }
@@ -178,33 +202,34 @@ struct DayView: View {
         .cornerRadius(8)
     }
 
-    /// Date navigation (« Yesterday / Tomorrow »)
+
+    // ─────────────────────────────────────────
+    // MARK: – Date Navigation
+    // ─────────────────────────────────────────
     private var dateNavigation: some View {
-           HStack {
-               Button { goBackOneDay() } label: {
-                   Image(systemName: "chevron.left")
-                       .foregroundColor(canGoBack() ? .white : .gray)
-               }
-               
-               Spacer()
-               
-               Text(dateString)
-                   .font(.headline)
-                   .foregroundColor(isToday ? accentCyan : .white)   // ← highlight
-               
-               Spacer()
-               
-               Button { goForwardOneDay() } label: {
-                   Image(systemName: "chevron.right")
-                       .foregroundColor(.white)
-               }
-           }
-           .padding()
-           .background(Color.gray.opacity(0.3))
-           .cornerRadius(8)
-       }
-       
-    /// Wake & Sleep pickers
+        HStack {
+            Button { goBackOneDay() } label: {
+                Image(systemName: "chevron.left")
+                    .foregroundColor(canGoBack() ? .white : .gray)
+            }
+            Spacer()
+            Text(dateString)
+                .font(.headline)
+                .foregroundColor(isToday ? accentCyan : .white)
+            Spacer()
+            Button { goForwardOneDay() } label: {
+                Image(systemName: "chevron.right")
+                    .foregroundColor(.white)
+            }
+        }
+        .padding()
+        .background(Color.gray.opacity(0.3))
+        .cornerRadius(8)
+    }
+
+    // ─────────────────────────────────────────
+    // MARK: – Wake/Sleep Section
+    // ─────────────────────────────────────────
     @ViewBuilder
     private var wakeSleepSection: some View {
         if let sched = viewModel.schedule {
@@ -216,8 +241,10 @@ struct DayView: View {
                             get: { sched.wakeUpTime },
                             set: { new in
                                 var t = sched; t.wakeUpTime = new
-                                viewModel.schedule = t; viewModel.regenerateBlocks()
-                            }), displayedComponents: .hourAndMinute)
+                                viewModel.schedule = t
+                                viewModel.regenerateBlocks()
+                            }),
+                                   displayedComponents: .hourAndMinute)
                         .focused($isDayTimeFocused)
                         .labelsHidden()
                         .environment(\.colorScheme, .dark)
@@ -232,8 +259,10 @@ struct DayView: View {
                             get: { sched.sleepTime },
                             set: { new in
                                 var t = sched; t.sleepTime = new
-                                viewModel.schedule = t; viewModel.regenerateBlocks()
-                            }), displayedComponents: .hourAndMinute)
+                                viewModel.schedule = t
+                                viewModel.regenerateBlocks()
+                            }),
+                                   displayedComponents: .hourAndMinute)
                         .focused($isDayTimeFocused)
                         .labelsHidden()
                         .environment(\.colorScheme, .dark)
@@ -251,7 +280,9 @@ struct DayView: View {
         }
     }
 
-    /// Time‑blocks list
+    // ─────────────────────────────────────────
+    // MARK: – Time Blocks
+    // ─────────────────────────────────────────
     @ViewBuilder
     private var timeBlocksSection: some View {
         if let sched = viewModel.schedule {
@@ -265,31 +296,30 @@ struct DayView: View {
         }
     }
 
-    /// One row (Time + Task)
     private func blockRow(_ block: TimeBlock) -> some View {
         HStack(alignment: .top, spacing: 8) {
             TextField("Time", text: Binding(
                 get: { block.time },
                 set: { new in updateBlock(block, time: new) }))
-            .focused($isDayTimeFocused)
-            .font(.caption)
-            .foregroundColor(.white)
-            .frame(width: 80)
-            .padding(8)
-            .background(Color.black.opacity(0.5))
-            .cornerRadius(8)
+                .focused($isDayTimeFocused)
+                .font(.caption)
+                .foregroundColor(.white)
+                .frame(width: 80)
+                .padding(8)
+                .background(Color.black.opacity(0.5))
+                .cornerRadius(8)
 
             TextEditor(text: Binding(
                 get: { block.task },
                 set: { new in updateBlock(block, task: new) }))
-            .focused($isDayTaskFocused)
-            .font(.caption)
-            .foregroundColor(.white)
-            .scrollContentBackground(.hidden)
-            .padding(8)
-            .background(Color.black.opacity(0.5))
-            .cornerRadius(8)
-            .frame(minHeight: 50, maxHeight: 80)
+                .focused($isDayTaskFocused)
+                .font(.caption)
+                .foregroundColor(.white)
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                .background(Color.black.opacity(0.5))
+                .cornerRadius(8)
+                .frame(minHeight: 50, maxHeight: 80)
 
             Spacer()
         }
@@ -299,7 +329,7 @@ struct DayView: View {
     }
 
     // ─────────────────────────────────────────
-    // MARK: ‑ Alerts
+    // MARK: – Alerts & Helpers
     // ─────────────────────────────────────────
     private func buildAlert(for alert: DayViewAlert) -> Alert {
         switch alert {
@@ -403,6 +433,97 @@ struct DayView: View {
     }
 }
 
+private struct TextHeightPreferenceKey: PreferenceKey {
+  static var defaultValue: CGFloat = 50
+  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+    // keep the largest measured height
+    value = max(value, nextValue())
+  }
+}
+
+// ───────────────────────────────────────────────
+// MARK: - Updated PriorityRowView
+// ───────────────────────────────────────────────
+private struct PriorityRowView: View {
+    @Binding var title: String
+    @FocusState var isFocused: Bool
+    @Binding var isCompleted: Bool
+    let onToggle: () -> Void
+    let showDelete: Bool
+    let onDelete: () -> Void
+    let accentCyan: Color
+    let onCommit: () -> Void
+
+    @State private var measuredTextHeight: CGFloat = 0
+
+    var body: some View {
+        let minHeight: CGFloat = 50
+        let totalVPad: CGFloat = 24
+        let paddedH = measuredTextHeight + totalVPad
+        let finalH  = max(paddedH, minHeight)
+        let halfV   = totalVPad / 2
+
+        HStack(spacing: 8) {
+            ZStack(alignment: .trailing) {
+                // 1) Invisible Text to measure height
+                Text(title)
+                    .font(.body)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear
+                                .preference(
+                                  key: TextHeightPreferenceKey.self,
+                                  value: geo.size.height
+                                )
+                        }
+                    )
+                    .opacity(0)
+
+                // 2) The editable TextEditor
+                TextEditor(text: $title)
+                    .font(.body)
+                    .padding(.vertical, halfV)
+                    .padding(.leading, 4)
+                    .padding(.trailing, 40)      // space for check
+                    .frame(height: finalH)
+                    .background(Color.black)
+                    .cornerRadius(8)
+                    .onChange(of: title) { _ in onCommit() }
+                    .focused($isFocused)
+
+                // 3) Vertically-centered checkmark
+                Button {
+                    onToggle()
+                } label: {
+                    Image(systemName: isCompleted
+                          ? "checkmark.circle.fill"
+                          : "circle")
+                        .font(.title2)
+                        .foregroundColor(isCompleted ? accentCyan : .gray)
+                }
+                .padding(.trailing, 8)          // inset from right edge
+            }
+            .onPreferenceChange(TextHeightPreferenceKey.self) {
+                measuredTextHeight = $0
+            }
+
+            if showDelete {
+                Button(role: .destructive, action: onDelete) {
+                    Image(systemName: "minus.circle")
+                        .font(.title2)
+                        .foregroundColor(.red)
+                }
+            }
+        }
+        .padding(4)
+        .background(Color(.sRGB, red: 0.15,
+                          green: 0.15,
+                          blue: 0.15,
+                          opacity: 1))
+        .cornerRadius(8)
+    }
+}
+
 
 // MARK: - Default Time View
 //struct ChangeDefaultTimeView: View {
@@ -464,6 +585,3 @@ struct DayView: View {
 //        .background(Color.black.edgesIgnoringSafeArea(.all))
 //    }
 //}
-
-
-

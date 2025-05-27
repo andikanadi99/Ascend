@@ -137,8 +137,8 @@ struct DayView: View {
                             ForEach(binding) { $priority in
                                 PriorityRowView(
                                     title:       $priority.title,
-                                    isFocused:   _isDayPriorityFocused,
                                     isCompleted: $priority.isCompleted,
+                                    isFocused:   _isDayPriorityFocused,
                                     onToggle:    { viewModel.togglePriorityCompletion(priority.id) },
                                     showDelete:  isRemoveMode,
                                     onDelete:    { activeAlert = .delete(priority) },
@@ -297,7 +297,7 @@ struct DayView: View {
     }
 
     private func blockRow(_ block: TimeBlock) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .center, spacing: 8) {
             TextField("Time", text: Binding(
                 get: { block.time },
                 set: { new in updateBlock(block, time: new) }))
@@ -444,10 +444,12 @@ private struct TextHeightPreferenceKey: PreferenceKey {
 // ───────────────────────────────────────────────
 // MARK: - Updated PriorityRowView
 // ───────────────────────────────────────────────
+
+
 private struct PriorityRowView: View {
     @Binding var title: String
-    @FocusState var isFocused: Bool
     @Binding var isCompleted: Bool
+    @FocusState var isFocused: Bool
     let onToggle: () -> Void
     let showDelete: Bool
     let onDelete: () -> Void
@@ -457,51 +459,48 @@ private struct PriorityRowView: View {
     @State private var measuredTextHeight: CGFloat = 0
 
     var body: some View {
-        let minHeight: CGFloat = 50
-        let totalVPad: CGFloat = 24
-        let paddedH = measuredTextHeight + totalVPad
-        let finalH  = max(paddedH, minHeight)
-        let halfV   = totalVPad / 2
+        // Base measurements matching DayView’s style
+        let minTextHeight: CGFloat = 50
+        let totalVerticalPadding: CGFloat = 24
+        let paddedHeight = measuredTextHeight + totalVerticalPadding
+        let finalHeight = max(paddedHeight, minTextHeight)
+        let halfPadding = totalVerticalPadding / 2
 
-        HStack(spacing: 8) {
+        HStack(alignment: .center, spacing: 8) {
             ZStack(alignment: .trailing) {
-                // 1) Invisible Text to measure height
+                // 1) Invisible Text for measurement
                 Text(title)
                     .font(.body)
                     .background(
                         GeometryReader { geo in
                             Color.clear
                                 .preference(
-                                  key: TextHeightPreferenceKey.self,
-                                  value: geo.size.height
+                                    key: TextHeightPreferenceKey.self,
+                                    value: geo.size.height
                                 )
                         }
                     )
                     .opacity(0)
 
-                // 2) The editable TextEditor
+                // 2) Editable TextEditor
                 TextEditor(text: $title)
                     .font(.body)
-                    .padding(.vertical, halfV)
+                    .padding(.vertical, halfPadding)   // 12pt top & bottom
                     .padding(.leading, 4)
-                    .padding(.trailing, 40)      // space for check
-                    .frame(height: finalH)
+                    .padding(.trailing, 40)            // leave space for the checkmark
+                    .frame(height: finalHeight)
                     .background(Color.black)
                     .cornerRadius(8)
-                    .onChange(of: title) { _ in onCommit() }
                     .focused($isFocused)
+                    .onChange(of: title) { _ in onCommit() }
 
-                // 3) Vertically-centered checkmark
-                Button {
-                    onToggle()
-                } label: {
-                    Image(systemName: isCompleted
-                          ? "checkmark.circle.fill"
-                          : "circle")
+                // 3) Vertically-centered checkmark on the right edge
+                Button(action: onToggle) {
+                    Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
                         .font(.title2)
                         .foregroundColor(isCompleted ? accentCyan : .gray)
                 }
-                .padding(.trailing, 8)          // inset from right edge
+                .padding(.trailing, 8)
             }
             .onPreferenceChange(TextHeightPreferenceKey.self) {
                 measuredTextHeight = $0
@@ -516,11 +515,9 @@ private struct PriorityRowView: View {
             }
         }
         .padding(4)
-        .background(Color(.sRGB, red: 0.15,
-                          green: 0.15,
-                          blue: 0.15,
-                          opacity: 1))
+        .background(Color(.sRGB, red: 0.15, green: 0.15, blue: 0.15, opacity: 1))
         .cornerRadius(8)
+        .shadow(color: .clear, radius: 0)  // explicitly remove any default shadow
     }
 }
 

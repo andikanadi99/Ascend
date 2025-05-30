@@ -11,11 +11,12 @@ import Foundation
 import FirebaseFirestore
 
 struct MonthSchedule: Identifiable, Codable {
-    @DocumentID var id: String?            = nil
-    var userId:        String
-    var yearMonth:     String              // “2025-05”
+    @DocumentID var id: String? = nil
+    var userId: String
+    var yearMonth: String
     var monthlyPriorities: [MonthlyPriority]
-    var dayCompletions:   [String: Double]
+    var dayCompletions: [String: Double]
+    var dailyPrioritiesByDay: [String: [TodayPriority]] = [:]
 }
 
 // -----------------------------------------------

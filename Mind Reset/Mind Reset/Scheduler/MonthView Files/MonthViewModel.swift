@@ -4,122 +4,127 @@
 // Optimised: background-queue decoding, shared Firestore, static formatters.
 // Created by Andika Yudhatrisna on 3/27/25.
 
-import SwiftUI
+import Foundation
 import FirebaseFirestore
+import Combine
+import FirebaseAuth
 
-final class MonthViewModel: ObservableObject {
-
+class MonthViewModel: ObservableObject {
     @Published var schedule: MonthSchedule?
-    @Published var errorMessage: String?
+    
+    /// Holds each day’s array of TodayPriorities
+    @Published var dayPriorityStorage: [Date:[TodayPriority]] = [:]
+    /// Quick lookup of done/total for colouring the calendar
+    @Published var dayPriorityStatus: [Date:(done: Int, total: Int)] = [:]
 
-    private static let cachedDB: Firestore = {
-        Firestore.firestore()
-    }()
-    private let db = MonthViewModel.cachedDB
-
-    private var listener: ListenerRegistration?
-    private let decodeQ = DispatchQueue(label: "month-decoder", qos: .userInitiated)
-
-    private static let monthFmt: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM"
-        return f
-    }()
-    private static let dayFmt: DateFormatter = {
+    private var cancellables = Set<AnyCancellable>()
+    private let db = Firestore.firestore()
+    private let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         return f
     }()
 
-    deinit { listener?.remove() }
-
+    /// Call this when you load the month schedule
     func loadMonthSchedule(for month: Date, userId: String) {
-        listener?.remove()
-        let docID  = Self.monthFmt.string(from: month)
-        let docRef = db.collection("users")
-                       .document(userId)
-                       .collection("monthSchedules")
-                       .document(docID)
+        // ← your existing month‐schedule loading…
+        // then for each day in that month, fetch the DaySchedule document:
 
-        listener = docRef.addSnapshotListener(includeMetadataChanges: false) { [weak self] snap, err in
-            guard let self = self else { return }
-            if let err = err {
-                print("Error loading month schedule:", err)
-                DispatchQueue.main.async { self.errorMessage = "Failed to fetch month schedule." }
-                return
-            }
-            guard let snap = snap, snap.exists else {
-                DispatchQueue.main.async {
-                    self.createDefaultMonthSchedule(month: month, userId: userId)
-                }
-                return
-            }
-            // decode on background queue
-            self.decodeQ.async {
-                if let sched = try? snap.data(as: MonthSchedule.self) {
-                    DispatchQueue.main.async { self.schedule = sched }
-                } else {
-                    print("❗️Couldn’t decode MonthSchedule \(docID)")
-                }
-            }
+        let days = generateDays(in: month)
+        for day in days {
+            let key = Calendar.current.startOfDay(for: day)
+            let docId = dateFormatter.string(from: key)
+            db.collection("users")
+              .document(userId)
+              .collection("daySchedules")
+              .document(docId)
+              .getDocument(as: DaySchedule.self) { result in
+                  DispatchQueue.main.async {
+                    switch result {
+                    case .success(let daySched):
+                      self.dayPriorityStorage[key] = daySched.priorities
+                      let done = daySched.priorities.filter { $0.isCompleted }.count
+                      self.dayPriorityStatus[key] = (done: done, total: daySched.priorities.count)
+
+                    case .failure:
+                      // no doc ⇒ no priorities
+                      self.dayPriorityStorage[key] = []
+                      self.dayPriorityStatus[key] = (done: 0, total: 0)
+                    }
+                  }
+              }
         }
     }
 
+    /// Call this from your popup’s “Save” closure
+    func saveDayPriorities(for date: Date, newPriorities: [TodayPriority]) {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        let key = Calendar.current.startOfDay(for: date)
+        let docId = dateFormatter.string(from: key)
+
+        // Persist to Firestore
+        try? db.collection("users")
+            .document(uid)
+            .collection("daySchedules")
+            .document(docId)
+            .setData(from: DaySchedule(
+                id: docId,
+                userId: uid,
+                date: key,
+                wakeUpTime: Date(),     // you’ll override only priorities
+                sleepTime: Date(),
+                priorities: newPriorities,
+                timeBlocks: []
+            ), merge: true)
+
+        // Update local storage and status
+        DispatchQueue.main.async {
+            self.dayPriorityStorage[key] = newPriorities
+            let done = newPriorities.filter { $0.isCompleted }.count
+            self.dayPriorityStatus[key] = (done: done, total: newPriorities.count)
+        }
+    }
+    
+    //  Add this inside your MonthViewModel class
+    //-----------------------------------------------------------------
+    /// Persists the entire month document and refreshes the per-day status cache.
     func updateMonthSchedule() {
-        guard let sched = schedule, let id = sched.id else { return }
+        guard let sched = schedule else { return }
+
         do {
             try db.collection("users")
                   .document(sched.userId)
                   .collection("monthSchedules")
-                  .document(id)
-                  .setData(from: sched)
+                  .document(sched.yearMonth)
+                  .setData(from: sched, merge: true)
         } catch {
-            print("Error updating month schedule:", error)
-            errorMessage = "Failed to save month data."
-        }
-    }
-
-    private func createDefaultMonthSchedule(month: Date, userId: String) {
-        let docID = Self.monthFmt.string(from: month)
-
-        var dayCompletions = [String: Double]()
-        for date in generateDates(in: month) {
-            dayCompletions[ Self.dayFmt.string(from: date) ] = 0.0
+            print("🔥 MonthSchedule save failed:", error)
         }
 
-        let newSchedule = MonthSchedule(
-            id: docID,
-            userId: userId,
-            yearMonth: docID,
-            monthlyPriorities: []        // ←■■ start empty, not with a placeholder
-            ,
-            dayCompletions: dayCompletions
-        )
-
-        do {
-            try db.collection("users")
-                  .document(userId)
-                  .collection("monthSchedules")
-                  .document(docID)
-                  .setData(from: newSchedule)
-            schedule = newSchedule
-        } catch {
-            print("Error creating default MonthSchedule:", error)
-            errorMessage = "Failed to create month schedule."
-        }
-    }
-
-
-    private func generateDates(in month: Date) -> [Date] {
-        var dates: [Date] = []
+        // Recompute the coloured-calendar dictionary
+        var dict: [Date:(done:Int,total:Int)] = [:]
         let cal = Calendar.current
-        guard let interval = cal.dateInterval(of: .month, for: month) else { return [] }
-        var cursor = cal.startOfDay(for: interval.start)
-        while cursor < interval.end {
-            dates.append(cursor)
-            guard let next = cal.date(byAdding: .day, value: 1, to: cursor) else { break }
-            cursor = next
+        for (key, list) in sched.dailyPrioritiesByDay {          // <- adjust if your field is named differently
+            if let date = dateFormatter.date(from: key) {
+                let done  = list.filter(\.isCompleted).count
+                dict[cal.startOfDay(for: date)] = (done, list.count)
+            }
         }
-        return dates
+        dayPriorityStatus = dict
+    }
+
+
+    // MARK: – Helpers
+
+    private func generateDays(in month: Date) -> [Date] {
+        var days: [Date] = []
+        let cal = Calendar.current
+        guard let interval = cal.dateInterval(of: .month, for: month) else { return days }
+        var cursor = interval.start
+        while cursor < interval.end {
+            days.append(cursor)
+            cursor = cal.date(byAdding: .day, value: 1, to: cursor)!
+        }
+        return days
     }
 }

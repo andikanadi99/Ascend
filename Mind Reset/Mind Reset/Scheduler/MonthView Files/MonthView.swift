@@ -1,7 +1,8 @@
-// MonthView.swift
-// Mind Reset
 //
-// Created by Andika Yudhatrisna on 2/6/25.
+//  MonthView.swift
+//  Mind Reset
+//
+//  Created by Andika Yudhatrisna on 2/6/25.
 //
 
 import SwiftUI
@@ -9,182 +10,190 @@ import Combine
 import FirebaseFirestore
 import UIKit
 
-// MARK: – Focus Field Identifier
-private enum Field: Hashable {
-    case monthlyPriority(UUID)
-}
+
+private enum Field: Hashable { case monthlyPriority(UUID) }
 
 struct MonthView: View {
-    // ── injected ───────────────────────────────────────────────
-    let accentColor: Color
+    // ───── injected ─────────────────────────────────────────────
+    let accentColor:       Color
     let accountCreationDate: Date
 
     @EnvironmentObject var monthViewState: MonthViewState
-    @EnvironmentObject var session:      SessionStore
-    @EnvironmentObject var habitVM:      HabitViewModel
+    @EnvironmentObject var session:        SessionStore
+    @EnvironmentObject var habitVM:        HabitViewModel
 
-    // ── local view-models & UI state ────────────────────────────────
-    @StateObject private var viewModel = MonthViewModel()
-    @State private var selectedDay: Date?
-    @State private var showDaySummary   = false
-    @State private var isRemoveMode     = false
-    @State private var showCopyAlert    = false
-    @State private var priorityToDelete: MonthlyPriority?
-    @State private var editMode:        EditMode = .inactive
+    // ───── local state & models ─────────────────────────────────
+    @StateObject private var monthVM = MonthViewModel()
+    @StateObject private var dayVM   = DayViewModel()      // popup-only
+
+    @State private var selectedDay:  Date?
+    @State private var showDayPopup  = false
+    @State private var showCopyAlert = false
+
+    @State private var editMode     = EditMode.inactive
+    @State private var isRemoveMode = false
 
     @FocusState private var focusedField: Field?
 
-    private let accentCyan = Color(red: 0, green: 1, blue: 1)
-    private let coolGray   = Color(red: 1.0, green: 0.45, blue: 0.45)
+    // palette
+    private let accentCyan = Color(red: 0, green: 1,  blue: 1)
+    private let coolRed    = Color(red: 1, green: 0.45, blue: 0.45)
 
+    // ────────────────────────────────────────────────────────────
+    // MARK: – Body
+    // ────────────────────────────────────────────────────────────
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
 
-                // Copy-previous-month button
-                HStack {
-                    Spacer()
-                    Button("Copy from Previous Month") { showCopyAlert = true }
-                        .font(.headline)
-                        .foregroundColor(accentColor)
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 16)
-                        .background(Color.black)
-                        .cornerRadius(8)
-                    Spacer()
-                }
-                .alert("Confirm Copy",
-                       isPresented: $showCopyAlert) {
-                    Button("Copy", role: .destructive) { copyFromPreviousMonth() }
-                    Button("Cancel", role: .cancel)     { }
-                } message: {
-                    Text("Are you sure you want to copy the previous month's schedule?")
-                }
-
-                // Month navigation (arrows + title)
-                MonthNavigationView(
-                    currentMonth: $monthViewState.currentMonth,
-                    accountCreationDate: accountCreationDate,
-                    accentColor: accentColor
-                )
-                .onChange(of: monthViewState.currentMonth) { newMonth in
-                    if let uid = session.userModel?.id {
-                        viewModel.loadMonthSchedule(for: newMonth, userId: uid)
-                    }
-                }
-
-                // ── Monthly Priorities Section ─────────────────────────────────
-                MonthlyPrioritiesSection(
-                    priorities: Binding(
-                        get: {
-                            viewModel.schedule?.monthlyPriorities ?? []
-                        },
-                        set: { new in
-                            guard var sched = viewModel.schedule else { return }
-                            sched.monthlyPriorities = new
-                            viewModel.schedule = sched
-                            viewModel.updateMonthSchedule()
-                        }
-                    ),
-                    editMode:           $editMode,
-                    accentColor:        accentCyan,
-                    isRemoveMode:       isRemoveMode,
-                    onToggleRemoveMode: { isRemoveMode.toggle() },
-                    onToggle: { id in
-                        guard var sched = viewModel.schedule,
-                              let idx = sched.monthlyPriorities.firstIndex(where: { $0.id == id })
-                        else { return }
-                        sched.monthlyPriorities[idx].isCompleted.toggle()
-                        viewModel.schedule = sched
-                        viewModel.updateMonthSchedule()
-                    },
-                    onMove: { offsets, newOffset in
-                        guard var sched = viewModel.schedule else { return }
-                        sched.monthlyPriorities.move(fromOffsets: offsets, toOffset: newOffset)
-                        viewModel.schedule = sched
-                        viewModel.updateMonthSchedule()
-                    },
-                    onCommit: {
-                        viewModel.updateMonthSchedule()
-                    },
-                    onDelete: { pr in
-                        guard var sched = viewModel.schedule else { return }
-                        sched.monthlyPriorities.removeAll { $0.id == pr.id }
-                        viewModel.schedule = sched
-                        viewModel.updateMonthSchedule()
-                        if sched.monthlyPriorities.count <= 1 {
-                            isRemoveMode = false
-                        }
-                    },
-                    addAction: {
-                        guard var sched = viewModel.schedule else { return }
-                        sched.monthlyPriorities.append(
-                            MonthlyPriority(
-                                id: UUID(),
-                                title: "New Priority",
-                                progress: 0,
-                                isCompleted: false
-                            )
-                        )
-                        viewModel.schedule = sched
-                        viewModel.updateMonthSchedule()
-                        isRemoveMode = false
-                    }
-                )
-                .padding()
-                .background(Color.gray.opacity(0.3))
-                .cornerRadius(8)
-
-                // ── Calendar Section ───────────────────────────────────────────
+                copyPreviousMonthButton
+                monthNavigationHeader
+                monthlyPrioritiesSection
                 calendarSection
                     .frame(height: 300)
-
-                Spacer()
+                    .environmentObject(monthVM)
             }
             .padding()
             .padding(.top, -20)
-            .overlay(daySummaryOverlay)
+            .overlay(dayPopupOverlay)
         }
         .onAppear(perform: loadDataOnce)
         .navigationTitle("Your Month")
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    // MARK: – Calendar Section
-    private var calendarSection: some View {
-        CalendarView(
+    // ───── UI blocks ────────────────────────────────────────────
+    private var copyPreviousMonthButton: some View {
+        HStack {
+            Spacer()
+            Button("Copy from Previous Month") { showCopyAlert = true }
+                .font(.headline)
+                .foregroundColor(accentColor)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 16)
+                .background(Color.black)
+                .cornerRadius(8)
+            Spacer()
+        }
+        .alert("Confirm Copy", isPresented: $showCopyAlert) {
+            Button("Copy",  role: .destructive) { copyFromPreviousMonth() }
+            Button("Cancel", role: .cancel) { }
+        }
+    }
+
+    private var monthNavigationHeader: some View {
+        MonthNavigationView(
             currentMonth: $monthViewState.currentMonth,
             accountCreationDate: accountCreationDate,
-            onDaySelected: { day in
-                if day <= Date() {
-                    selectedDay = day
-                    withAnimation { showDaySummary = true }
+            accentColor: accentColor
+        )
+        .onChange(of: monthViewState.currentMonth) { _ in loadMonth() }
+    }
+
+    private var monthlyPrioritiesSection: some View {
+        MonthlyPrioritiesSection(
+            // binding into monthVM
+            priorities: Binding(
+                get: { self.monthVM.schedule?.monthlyPriorities ?? [] },
+                set: { new in
+                    guard var sched = self.monthVM.schedule else { return }
+                    sched.monthlyPriorities = new
+                    self.monthVM.schedule = sched
+                    self.monthVM.updateMonthSchedule()
                 }
+            ),
+
+            editMode:           $editMode,
+            accentColor:        accentCyan,
+            isRemoveMode:       isRemoveMode,
+            onToggleRemoveMode: { isRemoveMode.toggle() },
+
+            onToggle: { id in
+                guard var sched = self.monthVM.schedule,
+                      let idx = sched.monthlyPriorities.firstIndex(where: { $0.id == id })
+                else { return }
+                sched.monthlyPriorities[idx].isCompleted.toggle()
+                self.monthVM.schedule = sched
+                self.monthVM.updateMonthSchedule()
+            },
+
+            onMove: { offsets, newOffset in
+                guard var sched = self.monthVM.schedule else { return }
+                sched.monthlyPriorities.move(fromOffsets: offsets, toOffset: newOffset)
+                self.monthVM.schedule = sched
+                self.monthVM.updateMonthSchedule()
+            },
+
+            onCommit: { self.monthVM.updateMonthSchedule() },
+
+            onDelete: { pr in
+                guard var sched = self.monthVM.schedule else { return }
+                sched.monthlyPriorities.removeAll { $0.id == pr.id }
+                self.monthVM.schedule = sched
+                self.monthVM.updateMonthSchedule()
+                if sched.monthlyPriorities.isEmpty { isRemoveMode = false }
+            },
+
+            addAction: {
+                guard var sched = self.monthVM.schedule else { return }
+                sched.monthlyPriorities.append(
+                    MonthlyPriority(id: UUID(),
+                                    title: "New Priority",
+                                    progress: 0,
+                                    isCompleted: false)
+                )
+                self.monthVM.schedule = sched
+                self.monthVM.updateMonthSchedule()
+                isRemoveMode = false
             }
         )
     }
 
-    // MARK: – Day Summary Overlay
-    @ViewBuilder
-    private var daySummaryOverlay: some View {
-        if showDaySummary, let day = selectedDay {
-            VStack {
-                DaySummaryView(
-                    day: day,
-                    habits: $habitVM.habits,
-                    onClose: { withAnimation { showDaySummary = false } }
-                )
-                .cornerRadius(12)
-            }
-            .frame(maxWidth: 300)
-            .padding()
-            .background(Color.black.opacity(0.7))
-            .cornerRadius(12)
-            .transition(.opacity)
+    private var calendarSection: some View {
+        CalendarView(
+            currentMonth: $monthViewState.currentMonth,
+            accountCreationDate: accountCreationDate
+        ) { day in
+            guard let uid = session.userModel?.id, day <= Date() else { return }
+            selectedDay = day
+            self.dayVM.loadDaySchedule(for: day, userId: uid)
+            withAnimation { showDayPopup = true }
         }
     }
 
-    // MARK: – Data Loading & Helpers
+    // ───── Overlay popup ────────────────────────────────────────
+    @ViewBuilder
+    private var dayPopupOverlay: some View {
+        if showDayPopup, let day = selectedDay {
+            let key = Calendar.current.startOfDay(for: day)
+
+            if monthVM.dayPriorityStorage[key] != nil {
+                DayPriorityPopup(
+                    priorities: Binding(
+                        get: { self.monthVM.dayPriorityStorage[key]! },
+                        set: { self.monthVM.dayPriorityStorage[key] = $0 }
+                    ),
+                    date: day,
+                    onSave: { new in
+                        self.monthVM.saveDayPriorities(for: day, newPriorities: new)
+                    },
+                    onClose: { withAnimation { showDayPopup = false } }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.black.opacity(0.7).ignoresSafeArea())
+                .transition(.opacity)
+            }
+        }
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // MARK: – Data helpers
+    // ────────────────────────────────────────────────────────────
+    private func loadMonth() {
+        guard let uid = session.userModel?.id else { return }
+        self.monthVM.loadMonthSchedule(for: monthViewState.currentMonth, userId: uid)
+    }
+
     private func loadDataOnce() {
         let now  = Date()
         let last = UserDefaults.standard.object(forKey: "LastActiveTime") as? Date ?? now
@@ -192,20 +201,19 @@ struct MonthView: View {
             monthViewState.currentMonth = MonthViewState.startOfMonth(for: now)
         }
         UserDefaults.standard.set(now, forKey: "LastActiveTime")
-        if let uid = session.userModel?.id {
-            viewModel.loadMonthSchedule(for: monthViewState.currentMonth, userId: uid)
-            habitVM.fetchHabits(for: uid)
-        }
+        loadMonth()
     }
 
     private func copyFromPreviousMonth() {
         guard let uid = session.userModel?.id,
-              let curr = viewModel.schedule,
-              let prev = Calendar.current.date(byAdding: .month, value: -1, to: monthViewState.currentMonth)
+              let curr = self.monthVM.schedule,
+              let prev = Calendar.current.date(byAdding: .month,
+                                               value: -1,
+                                               to: monthViewState.currentMonth)
         else { return }
 
-        let fmt = DateFormatter(); fmt.dateFormat = "yyyy-MM"
-        let docId = fmt.string(from: prev)
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM"
+        let docId = f.string(from: prev)
 
         Firestore.firestore()
             .collection("users").document(uid)
@@ -216,14 +224,17 @@ struct MonthView: View {
                 DispatchQueue.main.async {
                     var updated = curr
                     updated.monthlyPriorities = prevSched.monthlyPriorities
-                    viewModel.schedule = updated
-                    viewModel.updateMonthSchedule()
+                    self.monthVM.schedule = updated
+                    self.monthVM.updateMonthSchedule()
                 }
             }
     }
 }
 
-// MARK: – Month Navigation View
+
+// ──────────────────────────────────────────────────────────────────
+// MARK: – Month navigation view (arrows + label)
+// ──────────────────────────────────────────────────────────────────
 private struct MonthNavigationView: View {
     @Binding var currentMonth: Date
     let accountCreationDate: Date
@@ -231,29 +242,16 @@ private struct MonthNavigationView: View {
 
     var body: some View {
         HStack {
-            Button {
-                if canGoBack(),
-                   let prev = Calendar.current.date(byAdding: .month, value: -1, to: currentMonth) {
-                    currentMonth = prev
-                }
-            } label: {
+            Button { prevMonth() } label: {
                 Image(systemName: "chevron.left")
-                    .foregroundColor(canGoBack() ? .white : .gray)
+                    .foregroundColor(canGoBack ? .white : .gray)
             }
-
             Spacer()
-
             Text(monthYearString(from: currentMonth))
                 .font(.headline)
                 .foregroundColor(isCurrentMonth ? accentColor : .white)
-
             Spacer()
-
-            Button {
-                if let next = Calendar.current.date(byAdding: .month, value: 1, to: currentMonth) {
-                    currentMonth = next
-                }
-            } label: {
+            Button { nextMonth() } label: {
                 Image(systemName: "chevron.right")
                     .foregroundColor(.white)
             }
@@ -263,36 +261,52 @@ private struct MonthNavigationView: View {
         .cornerRadius(8)
     }
 
+    private func prevMonth() {
+        if let prev = Calendar.current.date(byAdding: .month,
+                                            value: -1,
+                                            to: currentMonth),
+           prev >= MonthViewState.startOfMonth(for: accountCreationDate) {
+            currentMonth = prev
+        }
+    }
+    private func nextMonth() {
+        if let next = Calendar.current.date(byAdding: .month,
+                                            value: 1,
+                                            to: currentMonth) {
+            currentMonth = next
+        }
+    }
     private var isCurrentMonth: Bool {
         Calendar.current.isDate(currentMonth, equalTo: Date(), toGranularity: .month)
     }
-
-    private func canGoBack() -> Bool {
-        guard let prev = Calendar.current.date(byAdding: .month, value: -1, to: currentMonth) else { return false }
+    private var canGoBack: Bool {
+        guard let prev = Calendar.current.date(byAdding: .month,
+                                               value: -1,
+                                               to: currentMonth)
+        else { return false }
         return prev >= MonthViewState.startOfMonth(for: accountCreationDate)
     }
-
-    private func monthYearString(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "LLLL yyyy"
-        return formatter.string(from: date)
+    private func monthYearString(from d: Date) -> String {
+        let f = DateFormatter(); f.dateFormat = "LLLL yyyy"; return f.string(from: d)
     }
 }
 
-// MARK: – Calendar View
-struct CalendarView: View {
+// ──────────────────────────────────────────────────────────────────
+// MARK: – Calendar grid
+// ──────────────────────────────────────────────────────────────────
+private struct CalendarView: View {
     @Binding var currentMonth: Date
     let accountCreationDate: Date
-    var onDaySelected: (Date) -> Void = { _ in }
+    var onDaySelected: (Date) -> Void
 
-    @EnvironmentObject var habitVM: HabitViewModel
+    @EnvironmentObject var monthVM: MonthViewModel
 
     private let columns = Array(repeating: GridItem(.flexible()), count: 7)
-    let coolGray = Color(red: 1.0, green: 0.45, blue: 0.45)
+    private let coolRed  = Color(red: 1.0, green: 0.45, blue: 0.45)
 
     var body: some View {
         VStack {
-            // Weekday headers
+            // weekday headers
             HStack {
                 ForEach(["Sun","Mon","Tue","Wed","Thu","Fri","Sat"], id: \.self) { day in
                     Text(day)
@@ -301,87 +315,85 @@ struct CalendarView: View {
                         .frame(maxWidth: .infinity)
                 }
             }
-            // Calendar grid
+
+            // grid of days
             LazyVGrid(columns: columns, spacing: 8) {
                 ForEach(generateDays(), id: \.self) { maybeDate in
-                    if let date = maybeDate {
-                        activeDayCell(for: date)
-                    } else {
-                        Text("")
-                            .frame(maxWidth: .infinity, minHeight: 30)
-                    }
+                    if let date = maybeDate { cell(for: date) }
+                    else { Color.clear.frame(height: 30) }
                 }
             }
             .padding(.horizontal)
         }
     }
 
+    // MARK: day cell
     @ViewBuilder
-    private func activeDayCell(for date: Date) -> some View {
-        let dayNorm      = Calendar.current.startOfDay(for: date)
-        let creationNorm = Calendar.current.startOfDay(for: accountCreationDate)
-        if dayNorm < creationNorm {
-            Text(dayString(from: date))
+    private func cell(for date: Date) -> some View {
+        let dayStart    = Calendar.current.startOfDay(for: date)
+        let creationDay = Calendar.current.startOfDay(for: accountCreationDate)
+
+        if dayStart < creationDay {                    // before account creation
+            Text(dayString(date))
                 .font(.caption2)
                 .frame(maxWidth: .infinity, minHeight: 30)
                 .foregroundColor(.gray)
                 .background(Color.black.opacity(0.1))
                 .cornerRadius(4)
-        } else if date > Date() {
-            Text(dayString(from: date))
+
+        } else if date > Date() {                      // future day
+            Text(dayString(date))
                 .font(.caption2)
                 .frame(maxWidth: .infinity, minHeight: 30)
                 .foregroundColor(.white)
                 .background(Color.gray)
                 .cornerRadius(4)
-        } else {
-            let completion = completionForDay(dayNorm)
-            let bgColor: Color = {
-                if completion == 1.0 { return .green.opacity(0.6) }
-                else if completion > 0 { return .yellow.opacity(0.6) }
-                else { return coolGray.opacity(0.6) }
+
+        } else {                                       // current/past day
+            let ratio      = completionRatio(for: dayStart)
+            let background: Color = {
+                switch ratio {
+                case 1.0:                      return .green.opacity(0.6)
+                case 0..<1 where ratio > 0:    return .yellow.opacity(0.6)
+                default:                       return coolRed.opacity(0.6)
+                }
             }()
-            Text(dayString(from: date))
+            Text(dayString(date))
                 .font(.caption2)
                 .frame(maxWidth: .infinity, minHeight: 30)
                 .foregroundColor(.white)
-                .background(bgColor)
+                .background(background)
                 .cornerRadius(4)
                 .onTapGesture { onDaySelected(date) }
         }
     }
 
-    private func completionForDay(_ day: Date) -> Double {
-        let cal       = Calendar.current
-        let relevant  = habitVM.habits.filter {
-            cal.compare($0.startDate, to: day, toGranularity: .day) != .orderedDescending
+    // MARK: helpers
+    private func completionRatio(for day: Date) -> Double {
+        let key = Calendar.current.startOfDay(for: day)
+        if let status = monthVM.dayPriorityStatus[key], status.total > 0 {
+            return Double(status.done) / Double(status.total)
         }
-        let doneCount = relevant.filter {
-            $0.dailyRecords.contains { rec in
-                cal.isDate(rec.date, inSameDayAs: day) && ((rec.value ?? 0) > 0)
-            }
-        }.count
-        return relevant.isEmpty ? 0 : Double(doneCount) / Double(relevant.count)
+        return 0
+    }
+
+    private func dayString(_ d: Date) -> String {
+        let f = DateFormatter(); f.dateFormat = "d"; return f.string(from: d)
     }
 
     private func generateDays() -> [Date?] {
         var days: [Date?] = []
-        let cal      = Calendar.current
+        let cal = Calendar.current
         guard let interval = cal.dateInterval(of: .month, for: currentMonth) else { return days }
-        let first    = cal.startOfDay(for: interval.start)
-        let weekday  = cal.component(.weekday, from: first)
-        for _ in 1..<weekday { days.append(nil) }
+        let first  = cal.startOfDay(for: interval.start)
+        let offset = cal.component(.weekday, from: first) - 1      // sunday = 1
+        days.append(contentsOf: Array(repeating: nil, count: offset))
         var cursor = first
         while cursor < interval.end {
             days.append(cursor)
-            guard let next = cal.date(byAdding: .day, value: 1, to: cursor) else { break }
-            cursor = next
+            cursor = cal.date(byAdding: .day, value: 1, to: cursor)!
         }
         return days
-    }
-
-    private func dayString(from date: Date) -> String {
-        let f = DateFormatter(); f.dateFormat = "d"; return f.string(from: date)
     }
 }
 

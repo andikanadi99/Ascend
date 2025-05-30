@@ -1,10 +1,9 @@
 //
-//  MonthViewState.swift
-//  Mind Reset
+// MonthViewState.swift
+// Mind Reset
 //
-//  Created by Andika Yudhatrisna on 4/11/25.
+// Created by Andika Yudhatrisna on 4/11/25.
 //
-
 
 import SwiftUI
 
@@ -12,7 +11,6 @@ class MonthViewState: ObservableObject {
     @Published var currentMonth: Date
     
     init() {
-        // By default, start at today's month:
         self.currentMonth = MonthViewState.startOfMonth(for: Date())
     }
     

@@ -442,70 +442,79 @@ private struct TextHeightPreferenceKey: PreferenceKey {
 }
 
 // ───────────────────────────────────────────────
-// MARK: - Updated PriorityRowView
+// MARK: - PriorityRowView  (DayView)
 // ───────────────────────────────────────────────
-
 
 private struct PriorityRowView: View {
     @Binding var title: String
     @Binding var isCompleted: Bool
     @FocusState var isFocused: Bool
-    let onToggle: () -> Void
+
+    let onToggle:   () -> Void
     let showDelete: Bool
-    let onDelete: () -> Void
+    let onDelete:   () -> Void
     let accentCyan: Color
-    let onCommit: () -> Void
+    let onCommit:   () -> Void
 
     @State private var measuredTextHeight: CGFloat = 0
 
     var body: some View {
-        // Base measurements matching DayView’s style
+        // Match DayView’s original sizing rules
         let minTextHeight: CGFloat = 50
-        let totalVerticalPadding: CGFloat = 24
-        let paddedHeight = measuredTextHeight + totalVerticalPadding
-        let finalHeight = max(paddedHeight, minTextHeight)
-        let halfPadding = totalVerticalPadding / 2
+        let totalVerticalPadding: CGFloat = 24   // 12 pt top & bottom
+        let padded = measuredTextHeight + totalVerticalPadding
+        let finalHeight = max(padded, minTextHeight)
+        let halfPad = totalVerticalPadding / 2
 
-        HStack(alignment: .center, spacing: 8) {
+        HStack(spacing: 8) {
             ZStack(alignment: .trailing) {
-                // 1) Invisible Text for measurement
+                // Invisible probe to determine dynamic height
                 Text(title)
                     .font(.body)
                     .background(
                         GeometryReader { geo in
-                            Color.clear
-                                .preference(
-                                    key: TextHeightPreferenceKey.self,
-                                    value: geo.size.height
-                                )
+                            Color.clear.preference(
+                                key: TextHeightPreferenceKey.self,
+                                value: geo.size.height
+                            )
                         }
                     )
                     .opacity(0)
 
-                // 2) Editable TextEditor
+                // Editable field
                 TextEditor(text: $title)
                     .font(.body)
-                    .padding(.vertical, halfPadding)   // 12pt top & bottom
+                    .padding(.vertical, halfPad)
                     .padding(.leading, 4)
-                    .padding(.trailing, 40)            // leave space for the checkmark
+                    .padding(.trailing, 40)       // space for ✓ or its spacer
                     .frame(height: finalHeight)
                     .background(Color.black)
                     .cornerRadius(8)
                     .focused($isFocused)
                     .onChange(of: title) { _ in onCommit() }
 
-                // 3) Vertically-centered checkmark on the right edge
-                Button(action: onToggle) {
-                    Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
-                        .font(.title2)
-                        .foregroundColor(isCompleted ? accentCyan : .gray)
+                // ✓ Check-mark  — hidden in remove-mode
+                if !showDelete {
+                    Button(action: onToggle) {
+                        Image(systemName: isCompleted
+                              ? "checkmark.circle.fill"
+                              : "circle")
+                            .font(.title2)
+                            .foregroundColor(isCompleted ? accentCyan : .gray)
+                    }
+                    .padding(.trailing, 8)
+                } else {
+                    // Invisible spacer keeps row width identical
+                    Color.clear
+                        .frame(width: 32, height: 1)
+                        .padding(.trailing, 8)
                 }
-                .padding(.trailing, 8)
             }
             .onPreferenceChange(TextHeightPreferenceKey.self) {
                 measuredTextHeight = $0
             }
 
+            // Red “−” button shown only in remove-mode
             if showDelete {
                 Button(role: .destructive, action: onDelete) {
                     Image(systemName: "minus.circle")
@@ -515,11 +524,14 @@ private struct PriorityRowView: View {
             }
         }
         .padding(4)
-        .background(Color(.sRGB, red: 0.15, green: 0.15, blue: 0.15, opacity: 1))
+        .background(Color(.sRGB,
+                          red: 0.15, green: 0.15, blue: 0.15,
+                          opacity: 1))
         .cornerRadius(8)
-        .shadow(color: .clear, radius: 0)  // explicitly remove any default shadow
+        .shadow(radius: 0)     // explicitly no shadow
     }
 }
+
 
 
 // MARK: - Default Time View

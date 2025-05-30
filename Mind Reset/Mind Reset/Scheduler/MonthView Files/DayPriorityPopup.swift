@@ -22,26 +22,26 @@ struct DayPriorityPopup: View {
 
     // MARK: – Body -------------------------------------------------------------
     var body: some View {
-        VStack(spacing: 16) {
-            header
+            VStack(spacing: 8) {              // ↓ was 16
+                header
 
-            // The list itself (scrolls if long)
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    ForEach($priorities) { $pr in
-                        row(for: $pr)
-                            .transition(.opacity)
+                // MARK: – priorities list
+                ScrollView {
+                    LazyVStack(spacing: 8) { // ↓ was 12
+                        ForEach($priorities) { $pr in
+                            row(for: $pr)
+                                .transition(.opacity)
+                        }
                     }
+                    .padding(.vertical, 2)   // ↓ was 4
                 }
-                .padding(.vertical, 4)
-            }
-            .frame(maxHeight: min(listHeight, 360))   // <- auto-sized, but capped
+                .frame(maxHeight: min(listHeight, 300)) // ↓ was 360
 
-            controls
-        }
-        .padding()
-        .background(Color.gray.opacity(0.3))          // popup bg
-        .cornerRadius(12)
+                controls
+            }
+            .padding(12)                     // tweak outer padding if you like
+            .background(Color.gray.opacity(0.3))
+            .cornerRadius(12)
         .alert(item: $toDelete) { pr in
             Alert(
                 title: Text("Delete Priority"),

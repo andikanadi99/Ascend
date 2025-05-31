@@ -26,12 +26,13 @@ struct MonthlyPrioritiesSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // header
+
+            // ── header ───────────────────────────────────────
             Text("Monthly Priorities")
                 .font(.headline)
                 .foregroundColor(accentColor)
 
-            // list (only if not empty)
+            // ── list / placeholder ───────────────────────────
             if priorities.isEmpty {
                 Text("Please list your priorities for the month")
                     .foregroundColor(.white.opacity(0.7))
@@ -49,10 +50,7 @@ struct MonthlyPrioritiesSection: View {
                             isCompleted: bindings.isCompleted,
                             onToggle:    { onToggle(pr.id) },
                             showDelete:  isRemoveMode,
-                            onDelete:    {
-                                print("[Section] will confirm – \(pr.title)")
-                                priorityToDelete = pr          // ✦ trigger alert
-                            },
+                            onDelete:    { priorityToDelete = pr },
                             accentCyan:  accentColor,
                             onCommit:    onCommit
                         )
@@ -72,7 +70,7 @@ struct MonthlyPrioritiesSection: View {
                 .padding(.bottom, 20)
             }
 
-            // buttons
+            // ── buttons ──────────────────────────────────────
             HStack {
                 Button("Add Priority", action: addAction)
                     .font(.headline)
@@ -84,7 +82,7 @@ struct MonthlyPrioritiesSection: View {
 
                 Spacer()
 
-                if priorities.count >= 1 {
+                if !priorities.isEmpty {
                     Button(isRemoveMode ? "Done" : "Remove Priority") {
                         onToggleRemoveMode()
                     }
@@ -98,21 +96,22 @@ struct MonthlyPrioritiesSection: View {
             }
             .padding(.top, 8)
         }
+        .padding()                                     // card padding
+        .background(Color.gray.opacity(0.3))           // <-- grey card bg
+        .cornerRadius(12)
         .alert(item: $priorityToDelete) { pr in
-            print("[Alert] presenting – \(pr.title)")
-            return Alert(
+            Alert(
                 title: Text("Delete Priority"),
                 message: Text("Are you sure you want to delete “\(pr.title)”?"),
                 primaryButton: .destructive(Text("Delete")) {
-                    print("[Alert] confirmed – \(pr.title)")
-                    onDelete(pr)                    // ⬅︎ bubble to MonthView
+                    onDelete(pr)
                 },
                 secondaryButton: .cancel()
             )
         }
     }
 
-    // helper to bind into array
+    // helper for array bindings
     private func binding(for pr: MonthlyPriority)
       -> (title: Binding<String>, isCompleted: Binding<Bool>) {
         guard let idx = priorities.firstIndex(where: { $0.id == pr.id }) else {
@@ -130,3 +129,4 @@ struct MonthlyPrioritiesSection: View {
         )
     }
 }
+

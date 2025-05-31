@@ -14,9 +14,14 @@ struct MonthSchedule: Identifiable, Codable {
     @DocumentID var id: String? = nil
     var userId: String
     var yearMonth: String
-    var monthlyPriorities: [MonthlyPriority]
-    var dayCompletions: [String: Double]
-    var dailyPrioritiesByDay: [String: [TodayPriority]] = [:]
+
+    var monthlyPriorities:     [MonthlyPriority]
+
+    // ✅ make this tolerant of older docs
+    var dayCompletions:        [String: Double] = [:]
+
+    // already had a default, so it was fine:
+    var dailyPrioritiesByDay:  [String:[TodayPriority]] = [:]
 }
 
 // -----------------------------------------------

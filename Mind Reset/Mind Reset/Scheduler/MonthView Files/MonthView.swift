@@ -6,42 +6,39 @@
 //
 
 import SwiftUI
-import Combine
 import FirebaseFirestore
-import UIKit
 
-
+// ───────────────────────────────────────────────────────────────
 private enum Field: Hashable { case monthlyPriority(UUID) }
 
 struct MonthView: View {
-    // ───── injected ─────────────────────────────────────────────
+
+    // — injected —
     let accentColor:       Color
     let accountCreationDate: Date
 
-    @EnvironmentObject var monthViewState: MonthViewState
-    @EnvironmentObject var session:        SessionStore
-    @EnvironmentObject var habitVM:        HabitViewModel
+    @EnvironmentObject private var monthViewState: MonthViewState
+    @EnvironmentObject private var session:        SessionStore
 
-    // ───── local state & models ─────────────────────────────────
-    @StateObject private var monthVM = MonthViewModel()
-    @StateObject private var dayVM   = DayViewModel()      // popup-only
+    // — models —
+    @StateObject private var monthVM = MonthViewModel()      // month doc + per-day cache
+    @StateObject private var dayVM   = DayViewModel()        // popup loader
 
+    // — ui state —
     @State private var selectedDay:  Date?
     @State private var showDayPopup  = false
     @State private var showCopyAlert = false
-
-    @State private var editMode     = EditMode.inactive
-    @State private var isRemoveMode = false
-
+    @State private var editMode      = EditMode.inactive
+    @State private var isRemoveMode  = false
     @FocusState private var focusedField: Field?
 
     // palette
     private let accentCyan = Color(red: 0, green: 1,  blue: 1)
     private let coolRed    = Color(red: 1, green: 0.45, blue: 0.45)
 
-    // ────────────────────────────────────────────────────────────
+    // ───────────────────────────────────────────────────────────────
     // MARK: – Body
-    // ────────────────────────────────────────────────────────────
+    // ───────────────────────────────────────────────────────────────
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -49,6 +46,7 @@ struct MonthView: View {
                 copyPreviousMonthButton
                 monthNavigationHeader
                 monthlyPrioritiesSection
+
                 calendarSection
                     .frame(height: 300)
                     .environmentObject(monthVM)
@@ -57,12 +55,14 @@ struct MonthView: View {
             .padding(.top, -20)
             .overlay(dayPopupOverlay)
         }
-        .onAppear(perform: loadDataOnce)
+        .onAppear(perform: loadAllMonthDataOnce)
         .navigationTitle("Your Month")
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    // ───── UI blocks ────────────────────────────────────────────
+    // ───────────────────────────────────────────────────────────────
+    // MARK: – Top controls
+    // ───────────────────────────────────────────────────────────────
     private var copyPreviousMonthButton: some View {
         HStack {
             Spacer()
@@ -90,16 +90,19 @@ struct MonthView: View {
         .onChange(of: monthViewState.currentMonth) { _ in loadMonth() }
     }
 
+    // ───────────────────────────────────────────────────────────────
+    // MARK: – Monthly priorities
+    // ───────────────────────────────────────────────────────────────
     private var monthlyPrioritiesSection: some View {
         MonthlyPrioritiesSection(
-            // binding into monthVM
+
             priorities: Binding(
-                get: { self.monthVM.schedule?.monthlyPriorities ?? [] },
+                get: { monthVM.schedule?.monthlyPriorities ?? [] },
                 set: { new in
-                    guard var sched = self.monthVM.schedule else { return }
-                    sched.monthlyPriorities = new
-                    self.monthVM.schedule = sched
-                    self.monthVM.updateMonthSchedule()
+                    guard var s = monthVM.schedule else { return }
+                    s.monthlyPriorities = new
+                    monthVM.schedule    = s
+                    monthVM.updateMonthSchedule()
                 }
             ),
 
@@ -109,46 +112,46 @@ struct MonthView: View {
             onToggleRemoveMode: { isRemoveMode.toggle() },
 
             onToggle: { id in
-                guard var sched = self.monthVM.schedule,
-                      let idx = sched.monthlyPriorities.firstIndex(where: { $0.id == id })
+                guard var s = monthVM.schedule,
+                      let idx = s.monthlyPriorities.firstIndex(where: { $0.id == id })
                 else { return }
-                sched.monthlyPriorities[idx].isCompleted.toggle()
-                self.monthVM.schedule = sched
-                self.monthVM.updateMonthSchedule()
+                s.monthlyPriorities[idx].isCompleted.toggle()
+                monthVM.schedule = s
+                monthVM.updateMonthSchedule()
             },
 
             onMove: { offsets, newOffset in
-                guard var sched = self.monthVM.schedule else { return }
-                sched.monthlyPriorities.move(fromOffsets: offsets, toOffset: newOffset)
-                self.monthVM.schedule = sched
-                self.monthVM.updateMonthSchedule()
+                guard var s = monthVM.schedule else { return }
+                s.monthlyPriorities.move(fromOffsets: offsets, toOffset: newOffset)
+                monthVM.schedule = s
+                monthVM.updateMonthSchedule()
             },
 
-            onCommit: { self.monthVM.updateMonthSchedule() },
+            onCommit: { monthVM.updateMonthSchedule() },
 
-            onDelete: { pr in
-                guard var sched = self.monthVM.schedule else { return }
-                sched.monthlyPriorities.removeAll { $0.id == pr.id }
-                self.monthVM.schedule = sched
-                self.monthVM.updateMonthSchedule()
-                if sched.monthlyPriorities.isEmpty { isRemoveMode = false }
+            onDelete: { p in
+                guard var s = monthVM.schedule else { return }
+                s.monthlyPriorities.removeAll { $0.id == p.id }
+                monthVM.schedule = s
+                monthVM.updateMonthSchedule()
+                if s.monthlyPriorities.isEmpty { isRemoveMode = false }
             },
 
             addAction: {
-                guard var sched = self.monthVM.schedule else { return }
-                sched.monthlyPriorities.append(
-                    MonthlyPriority(id: UUID(),
-                                    title: "New Priority",
-                                    progress: 0,
-                                    isCompleted: false)
-                )
-                self.monthVM.schedule = sched
-                self.monthVM.updateMonthSchedule()
+                guard var s = monthVM.schedule else { return }
+                s.monthlyPriorities.append(
+                    MonthlyPriority(id: UUID(), title: "New Priority",
+                                    progress: 0, isCompleted: false))
+                monthVM.schedule = s
+                monthVM.updateMonthSchedule()
                 isRemoveMode = false
             }
         )
     }
 
+    // ───────────────────────────────────────────────────────────────
+    // MARK: – Calendar grid
+    // ───────────────────────────────────────────────────────────────
     private var calendarSection: some View {
         CalendarView(
             currentMonth: $monthViewState.currentMonth,
@@ -156,27 +159,26 @@ struct MonthView: View {
         ) { day in
             guard let uid = session.userModel?.id, day <= Date() else { return }
             selectedDay = day
-            self.dayVM.loadDaySchedule(for: day, userId: uid)
+            dayVM.loadDaySchedule(for: day, userId: uid)
             withAnimation { showDayPopup = true }
         }
     }
 
-    // ───── Overlay popup ────────────────────────────────────────
+    // ───────────────────────────────────────────────────────────────
+    // MARK: – Popup overlay
+    // ───────────────────────────────────────────────────────────────
     @ViewBuilder
     private var dayPopupOverlay: some View {
         if showDayPopup, let day = selectedDay {
             let key = Calendar.current.startOfDay(for: day)
-
             if monthVM.dayPriorityStorage[key] != nil {
                 DayPriorityPopup(
                     priorities: Binding(
-                        get: { self.monthVM.dayPriorityStorage[key]! },
-                        set: { self.monthVM.dayPriorityStorage[key] = $0 }
+                        get: { monthVM.dayPriorityStorage[key]! },
+                        set: { monthVM.dayPriorityStorage[key] = $0 }
                     ),
                     date: day,
-                    onSave: { new in
-                        self.monthVM.saveDayPriorities(for: day, newPriorities: new)
-                    },
+                    onSave: { new in monthVM.saveDayPriorities(for: day, newPriorities: new) },
                     onClose: { withAnimation { showDayPopup = false } }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -186,15 +188,38 @@ struct MonthView: View {
         }
     }
 
-    // ────────────────────────────────────────────────────────────
+    // ───────────────────────────────────────────────────────────────
     // MARK: – Data helpers
-    // ────────────────────────────────────────────────────────────
+    // ───────────────────────────────────────────────────────────────
+    /// fetches MonthSchedule *and* the 30-odd DaySchedule docs
     private func loadMonth() {
-        guard let uid = session.userModel?.id else { return }
-        self.monthVM.loadMonthSchedule(for: monthViewState.currentMonth, userId: uid)
-    }
+            guard let uid = session.userModel?.id else { return }
 
-    private func loadDataOnce() {
+            // FIX here ↓↓↓
+            let monthID = MonthViewModel.isoMonth.string(from: monthViewState.currentMonth)
+            monthVM.loadMonthSchedule(for: monthViewState.currentMonth, userId: uid)
+
+            // Ensures the MonthSchedule doc exists
+            let ref = Firestore.firestore()
+                .collection("users").document(uid)
+                .collection("monthSchedules").document(monthID)
+            ref.getDocument { snap, _ in
+                if !(snap?.exists ?? false) {
+                    let fresh = MonthSchedule(
+                        id:                 monthID,
+                        userId:             uid,
+                        yearMonth:          monthID,
+                        monthlyPriorities:  [],
+                        dayCompletions:     [:],
+                        dailyPrioritiesByDay: [:]
+                    )
+                    try? ref.setData(from: fresh)
+                    monthVM.schedule = fresh
+                }
+            }
+        }
+
+    private func loadAllMonthDataOnce() {
         let now  = Date()
         let last = UserDefaults.standard.object(forKey: "LastActiveTime") as? Date ?? now
         if now.timeIntervalSince(last) > 1800 {
@@ -205,30 +230,25 @@ struct MonthView: View {
     }
 
     private func copyFromPreviousMonth() {
-        guard let uid = session.userModel?.id,
-              let curr = self.monthVM.schedule,
-              let prev = Calendar.current.date(byAdding: .month,
-                                               value: -1,
-                                               to: monthViewState.currentMonth)
-        else { return }
+            guard let uid  = session.userModel?.id,
+                  let curr = monthVM.schedule,
+                  let prev = Calendar.current.date(byAdding: .month, value: -1,
+                                                   to: monthViewState.currentMonth) else { return }
 
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM"
-        let docId = f.string(from: prev)
-
-        Firestore.firestore()
-            .collection("users").document(uid)
-            .collection("monthSchedules").document(docId)
-            .getDocument { snap, err in
-                guard let snap = snap, snap.exists, err == nil,
-                      let prevSched = try? snap.data(as: MonthSchedule.self) else { return }
-                DispatchQueue.main.async {
+            // FIX here ↓↓↓
+            let idPrev = MonthViewModel.isoMonth.string(from: prev)
+            Firestore.firestore()
+                .collection("users").document(uid)
+                .collection("monthSchedules").document(idPrev)
+                .getDocument { snap, _ in
+                    guard let snap, snap.exists,
+                          let prevSched = try? snap.data(as: MonthSchedule.self) else { return }
                     var updated = curr
                     updated.monthlyPriorities = prevSched.monthlyPriorities
-                    self.monthVM.schedule = updated
-                    self.monthVM.updateMonthSchedule()
+                    monthVM.schedule = updated
+                    monthVM.updateMonthSchedule()
                 }
-            }
-    }
+        }
 }
 
 

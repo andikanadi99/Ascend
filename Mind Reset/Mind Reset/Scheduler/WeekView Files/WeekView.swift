@@ -1,7 +1,9 @@
-// WeekView.swift
-// Mind Reset
 //
-// Created by Andika Yudhatrisna on 2/6/25.
+//  WeekView.swift
+//  Mind Reset
+//
+//
+
 
 import SwiftUI
 import FirebaseFirestore
@@ -9,15 +11,16 @@ import FirebaseFirestore
 struct WeekView: View {
     let accentColor: Color
 
-    @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var session:      SessionStore
     @EnvironmentObject private var weekViewState: WeekViewState
     @StateObject private var viewModel = WeekViewModel()
 
-    @FocusState private var isDayCardIntentionFocused: Bool
-    @FocusState private var isDayCardTaskFocused: Bool
+    // Single focus state for all DayCardView priority TextEditors
+    @FocusState private var isDayCardPriorityFocused: Bool
 
+    // Local UI state
     @State private var isRemoveMode       = false
-    @State private var showWeekCopyAlert = false
+    @State private var showWeekCopyAlert  = false
     @State private var editMode: EditMode = .inactive
 
     var body: some View {
@@ -36,17 +39,18 @@ struct WeekView: View {
                     }
                 }
 
+                // Weekly priorities at top
                 if viewModel.schedule != nil {
                     WeeklyPrioritiesSection(
-                      priorities:         viewModel.weeklyPrioritiesBinding,
-                      editMode:           $editMode,
-                      accentColor:        accentColor,
-                      isRemoveMode:       isRemoveMode,
-                      onToggleRemoveMode: { isRemoveMode.toggle() },
-                      onMove:             viewModel.moveWeeklyPriorities(indices:to:),
-                      onCommit:           viewModel.updateWeeklySchedule,
-                      onDelete:           viewModel.deletePriority(_:),
-                      addAction:          viewModel.addNewPriority
+                        priorities:         viewModel.weeklyPrioritiesBinding,
+                        editMode:           $editMode,
+                        accentColor:        accentColor,
+                        isRemoveMode:       isRemoveMode,
+                        onToggleRemoveMode: { isRemoveMode.toggle() },
+                        onMove:             viewModel.moveWeeklyPriorities(indices:to:),
+                        onCommit:           viewModel.updateWeeklySchedule,
+                        onDelete:           viewModel.deletePriority(_:),
+                        addAction:          viewModel.addNewPriority
                     )
                 } else {
                     Text("Loading priorities…")
@@ -54,20 +58,23 @@ struct WeekView: View {
                         .frame(maxWidth: .infinity, minHeight: 90)
                 }
 
+                // Day cards for each of the seven days
                 VStack(spacing: 16) {
-                    ForEach(0..<7) { offset in
-                        let day = Calendar.current.date(
+                    // Build array of Date objects for this week
+                    let days: [Date] = (0..<7).compactMap { offset in
+                        Calendar.current.date(
                             byAdding: .day,
                             value: offset,
                             to: weekViewState.currentWeekStart
-                        )!
+                        )
+                    }
+
+                    ForEach(days, id: \.self) { day in
                         DayCardView(
-                            accentColor: accentColor,
-                            day: day,
-                            toDoItems: viewModel.toDoItemsBinding(for: day),
-                            intention: viewModel.intentionBinding(for: day),
-                            intentionFocus: $isDayCardIntentionFocused,
-                            taskFocus:      $isDayCardTaskFocused
+                            accentColor:    accentColor,
+                            day:            day,
+                            priorities:     viewModel.prioritiesBinding(for: day),
+                            priorityFocus:  $isDayCardPriorityFocused
                         )
                         .frame(maxWidth: .infinity)
                     }
@@ -81,6 +88,7 @@ struct WeekView: View {
         .onAppear(perform: loadSchedule)
     }
 
+    // “Copy from Previous Week” button
     private var copyButton: some View {
         HStack {
             Spacer()
@@ -106,6 +114,7 @@ struct WeekView: View {
         }
     }
 
+    // Load or refresh this week’s schedule
     private func loadSchedule() {
         let now  = Date()
         let last = UserDefaults.standard.object(forKey: "LastActiveTime") as? Date ?? now
@@ -118,3 +127,6 @@ struct WeekView: View {
         }
     }
 }
+
+
+

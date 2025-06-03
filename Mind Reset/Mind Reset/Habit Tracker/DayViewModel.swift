@@ -78,17 +78,15 @@ class DayViewModel: ObservableObject {
             )
         ]
 
-        // in DayViewModel.createDefaultDaySchedule(...)
         let defaultSchedule = DaySchedule(
             id: DayViewModel.isoFormatter.string(from: date),
             userId: userId,
             date: date,
             wakeUpTime: storedWake,
             sleepTime: storedSleep,
-            priorities: [],                        // ← no default priorities
+            priorities: [],                        // ← leave empty by default
             timeBlocks: generateTimeBlocks(from: storedWake, to: storedSleep)
         )
-
 
         do {
             try db
@@ -154,11 +152,9 @@ class DayViewModel: ObservableObject {
         var blocks: [TimeBlock] = []
         let cal = Calendar.current
 
-        // Determine actual end‐of‐schedule date:
-        // If `end` is <= `start`, assume it’s on the next calendar day.
+        // If end ≤ start, assume next day
         let correctedEnd: Date = {
             if end <= start {
-                // add 1 day to the original end
                 return cal.date(byAdding: .day, value: 1, to: end)!
             } else {
                 return end
@@ -169,7 +165,6 @@ class DayViewModel: ObservableObject {
         while current <= correctedEnd {
             let label = DayViewModel.timeFormatter.string(from: current)
             blocks.append(TimeBlock(id: UUID(), time: label, task: ""))
-            // advance one hour
             guard let next = cal.date(byAdding: .hour, value: 1, to: current) else { break }
             current = next
         }
@@ -221,6 +216,61 @@ class DayViewModel: ObservableObject {
             } catch {
                 print("Error saving target schedule:", error)
                 completion(false)
+            }
+        }
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // MARK: – NEW: Fetch yesterday’s unfinished priorities only
+    // ────────────────────────────────────────────────────────────
+
+    /// Retrieves the DaySchedule document for the given date, decodes it,
+    /// filters out any TodayPriority where `isCompleted == false`, and
+    /// returns that array via the completion handler.
+    func fetchUnfinishedPriorities(
+        for date: Date,
+        userId: String,
+        completion: @escaping ([TodayPriority]) -> Void
+    ) {
+        let calendar = Calendar.current
+        let startOfThatDay = calendar.startOfDay(for: date)
+        let docId = DayViewModel.isoFormatter.string(from: startOfThatDay)
+
+        let docRef = db
+            .collection("users")
+            .document(userId)
+            .collection("daySchedules")
+            .document(docId)
+
+        // Firestore read for that document
+        docRef.getDocument { snapshot, error in
+            if let error = error {
+                print("Error fetching priorities for \(docId):", error.localizedDescription)
+                completion([])
+                return
+            }
+
+            guard let snap = snapshot, snap.exists else {
+                // No document means no schedule => no unfinished priorities
+                completion([])
+                return
+            }
+
+            // Decode on our decodeQueue to avoid blocking the main thread
+            self.decodeQueue.async {
+                do {
+                    let daySched = try snap.data(as: DaySchedule.self)
+                    // Filter only unfinished (isCompleted == false)
+                    let unfinished = daySched.priorities.filter { !$0.isCompleted }
+                    DispatchQueue.main.async {
+                        completion(unfinished)
+                    }
+                } catch {
+                    print("Decoding error in fetchUnfinishedPriorities:", error.localizedDescription)
+                    DispatchQueue.main.async {
+                        completion([])
+                    }
+                }
             }
         }
     }

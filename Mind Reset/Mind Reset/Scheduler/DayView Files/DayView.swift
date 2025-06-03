@@ -13,11 +13,21 @@ import UIKit
 // MARK: - Alerts
 // ───────────────────────────────────────────────
 enum DayViewAlert: Identifiable {
-    case copy, delete(TodayPriority)
+    case copy
+    case delete(TodayPriority)
+    case confirmModifyPast(TodayPriority)   // for toggling a past‐day status
+    case confirmDeletePast(TodayPriority)   // new: for deleting a past‐day priority
+
     var id: String {
         switch self {
-        case .copy:              return "copy"
-        case .delete(let p):     return "delete-\(p.id)"
+        case .copy:
+            return "copy"
+        case .delete(let p):
+            return "delete-\(p.id)"
+        case .confirmModifyPast(let p):
+            return "confirmPast-\(p.id)"
+        case .confirmDeletePast(let p):
+            return "confirmDeletePast-\(p.id)"
         }
     }
 }
@@ -105,6 +115,7 @@ struct DayView: View {
     @FocusState private var isDayPriorityFocused: Bool
     @FocusState private var isDayTimeFocused:     Bool
     @FocusState private var isDayTaskFocused:     Bool
+    @State private var hasYesterdayUnfinished = false
     
     @State private var editMode: EditMode = .inactive
 
@@ -131,64 +142,85 @@ struct DayView: View {
     private var isToday: Bool {
         Calendar.current.isDateInToday(dayViewState.selectedDate)
     }
+    private var isPast: Bool {
+        let todayStart = Calendar.current.startOfDay(for: Date())
+        return dayViewState.selectedDate < todayStart
+    }
 
     var body: some View {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    copyButton
-                    dateNavigation
-                    prioritiesSection
-                    wakeSleepSection
-                    timeBlocksSection
-                    Spacer()
-                }
-                .padding()
-                .padding(.top, -20)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                copyButton
+                dateNavigation
+                prioritiesSection
+                wakeSleepSection
+                timeBlocksSection
+                Spacer()
             }
-            // Whenever viewModel.schedule is set or changed, force-regeneration if it's a future date with no blocks:
-            .onReceive(viewModel.$schedule) { optionalSched in
-                guard let sched = optionalSched else { return }
-                let today = Calendar.current.startOfDay(for: Date())
-                if sched.date > today && sched.timeBlocks.isEmpty {
-                    viewModel.regenerateBlocks()
-                    viewModel.updateDaySchedule()
-                    // Re-assign to fire the @Published publisher again:
-                    viewModel.schedule = viewModel.schedule
-                }
-            }
-            .onAppear(perform: loadInitialSchedule)
-            .onReceive(
-                session.$defaultWakeTime.combineLatest(session.$defaultSleepTime)
-            ) { wake, sleep in
-                guard let uid = session.userModel?.id else { return }
-                let selected = dayViewState.selectedDate
-                let today = Calendar.current.startOfDay(for: Date())
-
-                // Only touch future dates
-                guard selected > today else { return }
-
-                if viewModel.schedule != nil {
-                    // If a schedule is already loaded for that date, apply new defaults immediately
-                    applyDefaultTimes(wakeOpt: wake, sleepOpt: sleep)
-                } else {
-                    // Otherwise load the schedule so that applyDefaultTimes (and regeneration) can run
-                    viewModel.loadDaySchedule(for: selected, userId: uid)
-                }
-            }
-            .onReceive(
-                Timer.publish(every: 0.5, on: .main, in: .common)
-                    .autoconnect()
-            ) { _ in
-                if viewModel.schedule == nil,
-                   let uid = session.userModel?.id {
-                    viewModel.loadDaySchedule(
-                        for: dayViewState.selectedDate,
-                        userId: uid
-                    )
-                }
-            }
-            .alert(item: $activeAlert, content: buildAlert)
+            .padding()
+            .padding(.top, -20)
         }
+        // Whenever viewModel.schedule is set or changed, force-regeneration if it's a future date with no blocks:
+        .onReceive(viewModel.$schedule) { optionalSched in
+            guard let sched = optionalSched else { return }
+            let today = Calendar.current.startOfDay(for: Date())
+            if sched.date > today && sched.timeBlocks.isEmpty {
+                viewModel.regenerateBlocks()
+                viewModel.updateDaySchedule()
+                // Re-assign to fire the @Published publisher again:
+                viewModel.schedule = viewModel.schedule
+            }
+        }
+        .onAppear {
+            loadInitialSchedule()
+            // DEFER the initial check so that `dayViewState.selectedDate` is already “today.”
+            DispatchQueue.main.async {
+                updateYesterdayUnfinishedFlag()
+            }
+        }
+        .onChange(of: dayViewState.selectedDate) { _ in
+            updateYesterdayUnfinishedFlag()
+            if viewModel.schedule == nil,
+               let uid = session.userModel?.id {
+                viewModel.loadDaySchedule(
+                    for: dayViewState.selectedDate,
+                    userId: uid
+                )
+            }
+        }
+
+        .onReceive(
+            session.$defaultWakeTime.combineLatest(session.$defaultSleepTime)
+        ) { wake, sleep in
+            guard let uid = session.userModel?.id else { return }
+            let selected = dayViewState.selectedDate
+            let today = Calendar.current.startOfDay(for: Date())
+
+            // Only touch future dates
+            guard selected > today else { return }
+
+            if viewModel.schedule != nil {
+                // If a schedule is already loaded for that date, apply new defaults immediately
+                applyDefaultTimes(wakeOpt: wake, sleepOpt: sleep)
+            } else {
+                // Otherwise load the schedule so that applyDefaultTimes (and regeneration) can run
+                viewModel.loadDaySchedule(for: selected, userId: uid)
+            }
+        }
+        .onReceive(
+            Timer.publish(every: 0.5, on: .main, in: .common)
+                .autoconnect()
+        ) { _ in
+            if viewModel.schedule == nil,
+               let uid = session.userModel?.id {
+                viewModel.loadDaySchedule(
+                    for: dayViewState.selectedDate,
+                    userId: uid
+                )
+            }
+        }
+        .alert(item: $activeAlert, content: buildAlert)
+    }
 
     // ─────────────────────────────────────────
     // MARK: – Copy Button
@@ -230,16 +262,36 @@ struct DayView: View {
                     List {
                         Section {
                             ForEach(binding) { $priority in
-                                // Use buffered PriorityRowView
+                                let past = isPast
+
                                 BufferedPriorityRow(
                                     title: $priority.title,
                                     isCompleted: $priority.isCompleted,
                                     isFocused: _isDayPriorityFocused,
-                                    onToggle: { viewModel.togglePriorityCompletion(priority.id) },
+                                    onToggle: {
+                                        if past {
+                                            activeAlert = .confirmModifyPast(priority)
+                                        } else {
+                                            viewModel.togglePriorityCompletion(priority.id)
+                                        }
+                                    },
                                     showDelete: isRemoveMode,
-                                    onDelete: { activeAlert = .delete(priority) },
+                                    onDelete: {
+                                        if past {
+                                            activeAlert = .confirmDeletePast(priority)
+                                        } else {
+                                            activeAlert = .delete(priority)
+                                        }
+                                    },
                                     accentCyan: accentCyan,
-                                    onCommit: { viewModel.updateDaySchedule() }
+                                    onCommit: {
+                                        if past {
+                                            activeAlert = .confirmModifyPast(priority)
+                                        } else {
+                                            viewModel.updateDaySchedule()
+                                        }
+                                    },
+                                    isPast: past
                                 )
                                 .listRowBackground(Color.clear)
                                 .listRowInsets(.init(top: 4, leading: 0, bottom: 4, trailing: 0))
@@ -274,7 +326,6 @@ struct DayView: View {
 
                     Spacer()
 
-                    // Show Remove only if there's at least one priority
                     if binding.wrappedValue.count > 0 {
                         Button(isRemoveMode ? "Done" : "Remove Priority") {
                             isRemoveMode.toggle()
@@ -289,6 +340,26 @@ struct DayView: View {
                 }
                 .padding(.top, 8)
 
+                // ─────────────────────────────────────────────
+                // Only show “Import Unfinished” when on today AND there are items
+                if isToday && hasYesterdayUnfinished {
+                    HStack {
+                        Button(action: {
+                            importUnfinishedFromYesterday()
+                        }) {
+                            Text("Import Unfinished from Yesterday")
+                                .font(.headline)
+                                .foregroundColor(.orange)
+                                .underline()
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 16)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .padding(.top, 8)
+                }
+                // ─────────────────────────────────────────────
+
             } else {
                 Text("Loading priorities…").foregroundColor(.white)
             }
@@ -297,6 +368,8 @@ struct DayView: View {
         .background(Color.gray.opacity(0.3))
         .cornerRadius(8)
     }
+
+
 
     // ─────────────────────────────────────────
     // MARK: – Date Navigation
@@ -394,7 +467,7 @@ struct DayView: View {
             VStack(spacing: 16) {
                 ForEach(sched.timeBlocks) { block in
                     TimeBlockRow(block: block) { changedBlock, newTime, newTask in
-                        // When either newTime or newTask is nonnil, update your model:
+                        // When either newTime or newTask is non-nil, update your model:
                         updateBlock(changedBlock,
                                     time: newTime,
                                     task: newTask)
@@ -407,10 +480,6 @@ struct DayView: View {
         }
     }
 
-    // Auxiliary helper, no longer needed:
-    // private func blockRow(_ block: TimeBlock) -> some View { … }
-
-    
     // ─────────────────────────────────────────
     // MARK: – Alerts & Helpers
     // ─────────────────────────────────────────
@@ -423,11 +492,37 @@ struct DayView: View {
                 primaryButton: .destructive(Text("Copy")) { copyPreviousDay() },
                 secondaryButton: .cancel()
             )
+
         case .delete(let p):
             return Alert(
                 title: Text("Delete Priority"),
                 message: Text("Delete this priority?"),
                 primaryButton: .destructive(Text("Delete")) { deletePriority(p) },
+                secondaryButton: .cancel()
+            )
+
+        case .confirmModifyPast(let p):
+            return Alert(
+                title: Text("Editing Past Day"),
+                message: Text("You’re about to change the status of a priority from a previous day. Continue?"),
+                primaryButton: .destructive(Text("Yes")) {
+                    if var sched = viewModel.schedule,
+                       let idx = sched.priorities.firstIndex(where: { $0.id == p.id }) {
+                        sched.priorities[idx].isCompleted.toggle()
+                        viewModel.schedule = sched
+                        viewModel.updateDaySchedule()
+                    }
+                },
+                secondaryButton: .cancel()
+            )
+
+        case .confirmDeletePast(let p):
+            return Alert(
+                title: Text("Delete From Past Day"),
+                message: Text("You’re about to permanently delete a priority from a previous day. Continue?"),
+                primaryButton: .destructive(Text("Delete")) {
+                    deletePriority(p)
+                },
                 secondaryButton: .cancel()
             )
         }
@@ -445,6 +540,34 @@ struct DayView: View {
             viewModel.loadDaySchedule(for: dayViewState.selectedDate, userId: uid)
         }
     }
+    
+    // ─────────────────────────────────────────────────
+    // Whenever today is active, fetch yesterday’s unfinished list and set the flag.
+    private func updateYesterdayUnfinishedFlag() {
+        guard let uid = session.userModel?.id else {
+            hasYesterdayUnfinished = false
+            return
+        }
+        // Only check if selectedDate is today
+        if Calendar.current.isDateInToday(dayViewState.selectedDate) {
+            let yesterday = Calendar.current.date(
+                byAdding: .day,
+                value: -1,
+                to: dayViewState.selectedDate
+            )!
+            let yesterdayStart = Calendar.current.startOfDay(for: yesterday)
+            viewModel.fetchUnfinishedPriorities(
+                for: yesterdayStart,
+                userId: uid
+            ) { unfinished in
+                hasYesterdayUnfinished = !unfinished.isEmpty
+            }
+        } else {
+            hasYesterdayUnfinished = false
+        }
+    }
+    // ─────────────────────────────────────────────────
+
 
     private func applyDefaultTimes(wakeOpt: Date?, sleepOpt: Date?) {
         guard
@@ -494,8 +617,6 @@ struct DayView: View {
         viewModel.schedule = sched
         viewModel.updateDaySchedule()
     }
-
-
 
     private func copyPreviousDay() {
         guard let uid = session.userModel?.id else { return }
@@ -550,7 +671,46 @@ struct DayView: View {
         if let tx = task { sched.timeBlocks[idx].task = tx }
         viewModel.schedule = sched
     }
+
+    // ─────────────────────────────────────────
+    // MARK: – NEW: Import Helper
+    // ─────────────────────────────────────────
+    private func importUnfinishedFromYesterday() {
+        guard let uid = session.userModel?.id else { return }
+
+        let calendar = Calendar.current
+        // Compute “yesterday” relative to currently selected date
+        guard let yesterday = calendar.date(byAdding: .day, value: -1, to: dayViewState.selectedDate) else { return }
+        let yesterdayStart = calendar.startOfDay(for: yesterday)
+
+        // Ask ViewModel to fetch unfinished priorities for “yesterdayStart”
+        viewModel.fetchUnfinishedPriorities(for: yesterdayStart, userId: uid) { unfinished in
+            guard var sched = viewModel.schedule else { return }
+
+            // Avoid duplicates by title
+            let existingTitles = Set(sched.priorities.map { $0.title })
+
+            for old in unfinished {
+                if !existingTitles.contains(old.title) {
+                    let newPriority = TodayPriority(
+                        id: UUID(),
+                        title: old.title,
+                        progress: 0.0,
+                        isCompleted: false
+                    )
+                    sched.priorities.append(newPriority)
+                }
+            }
+
+            // Publish updated schedule and persist
+            viewModel.schedule = sched
+            viewModel.updateDaySchedule()
+        }
+    }
 }
+
+// ... (rest of file unchanged) ...
+
 
 
 private struct TextHeightPreferenceKey: PreferenceKey {
@@ -565,7 +725,6 @@ private struct TextHeightPreferenceKey: PreferenceKey {
 // ───────────────────────────────────────────────
 // MARK: - BufferedPriorityRow (DayView)
 // ───────────────────────────────────────────────
-
 private struct BufferedPriorityRow: View {
     @Binding var title: String
     @Binding var isCompleted: Bool
@@ -577,17 +736,23 @@ private struct BufferedPriorityRow: View {
     let accentCyan: Color
     let onCommit:   () -> Void
 
+    // Indicates this row belongs to a past date
+    let isPast: Bool
+
     @State private var localTitle: String
     @State private var measuredTextHeight: CGFloat = 0
 
-    init(title: Binding<String>,
-         isCompleted: Binding<Bool>,
-         isFocused: FocusState<Bool>,
-         onToggle: @escaping () -> Void,
-         showDelete: Bool,
-         onDelete: @escaping () -> Void,
-         accentCyan: Color,
-         onCommit: @escaping () -> Void) {
+    init(
+        title: Binding<String>,
+        isCompleted: Binding<Bool>,
+        isFocused: FocusState<Bool>,
+        onToggle: @escaping () -> Void,
+        showDelete: Bool,
+        onDelete: @escaping () -> Void,
+        accentCyan: Color,
+        onCommit: @escaping () -> Void,
+        isPast: Bool = false         // default: today
+    ) {
         self._title = title
         self._isCompleted = isCompleted
         self._isFocused = isFocused
@@ -596,6 +761,7 @@ private struct BufferedPriorityRow: View {
         self.onDelete = onDelete
         self.accentCyan = accentCyan
         self.onCommit = onCommit
+        self.isPast = isPast
         _localTitle = State(initialValue: title.wrappedValue)
     }
 
@@ -607,6 +773,7 @@ private struct BufferedPriorityRow: View {
         let halfPad = totalVerticalPadding / 2
 
         HStack(spacing: 8) {
+            // — TextEditor for “title” (unchanged)
             ZStack(alignment: .trailing) {
                 Text(localTitle)
                     .font(.body)
@@ -618,7 +785,7 @@ private struct BufferedPriorityRow: View {
                             )
                         }
                     )
-                    .opacity(0)
+                    .opacity(0) // invisible, used to measure height
 
                 TextEditor(text: $localTitle)
                     .font(.body)
@@ -635,26 +802,36 @@ private struct BufferedPriorityRow: View {
                             onCommit()
                         }
                     }
-
-                if !showDelete {
-                    Button(action: onToggle) {
-                        Image(systemName: isCompleted
-                              ? "checkmark.circle.fill"
-                              : "circle")
-                            .font(.title2)
-                            .foregroundColor(isCompleted ? accentCyan : .gray)
-                    }
-                    .padding(.trailing, 8)
-                } else {
-                    Color.clear
-                        .frame(width: 32, height: 1)
-                        .padding(.trailing, 8)
-                }
             }
             .onPreferenceChange(TextHeightPreferenceKey.self) {
                 measuredTextHeight = $0
             }
 
+            // — If not in delete mode, show the checklist icon on the right
+            if !showDelete {
+                Button(action: {
+                    onToggle()
+                }) {
+                    Group {
+                        if isCompleted {
+                            Image(systemName: "checkmark.circle.fill")
+                        } else if isPast {
+                            Image(systemName: "xmark.circle.fill")
+                        } else {
+                            Image(systemName: "circle")
+                        }
+                    }
+                    .font(.title2)
+                    .foregroundColor(
+                        isCompleted
+                        ? accentCyan
+                        : (isPast ? .red : .gray)
+                    )
+                }
+                .padding(.trailing, 8)
+            }
+
+            // — Delete button, visible whenever showDelete == true
             if showDelete {
                 Button(role: .destructive, action: onDelete) {
                     Image(systemName: "minus.circle")
@@ -664,13 +841,13 @@ private struct BufferedPriorityRow: View {
             }
         }
         .padding(4)
-        .background(Color(.sRGB,
-                          red: 0.15, green: 0.15, blue: 0.15,
-                          opacity: 1))
+        .background(Color.black)
         .cornerRadius(8)
         .shadow(radius: 0)
     }
 }
+
+
 // MARK: - Default Time View
 //struct ChangeDefaultTimeView: View {
 //    let currentWakeUp: Date

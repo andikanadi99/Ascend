@@ -1,4 +1,3 @@
-//
 //  ProfileInfo.swift
 //  Mind Reset
 //
@@ -7,7 +6,6 @@
 
 import SwiftUI
 import FirebaseFirestore
-
 
 struct ProfileInfo: View {
     @EnvironmentObject var session: SessionStore
@@ -52,7 +50,6 @@ struct ProfileInfo: View {
                                 .background(Color.gray.opacity(0.2))
                                 .cornerRadius(8)
                                 .foregroundColor(.white)
-                            
                         }
                     } else {
                         Text(user.displayName.isEmpty ? "No Display Name" : user.displayName)
@@ -164,7 +161,7 @@ struct ProfileInfo: View {
                             Button("Cancel", role: .cancel) { }
                         },
                         message: {
-                            Text("This will update your default wake‑up and sleep times for all future days.")
+                            Text("This will update your default wake-up and sleep times for all future days. Note: days you’ve already edited will not be changed.")
                         }
                     )
 
@@ -176,13 +173,13 @@ struct ProfileInfo: View {
             .padding()
         }
         .background(Color.black.edgesIgnoringSafeArea(.all))
-        .toolbar {                                             // ← this goes on your root
-          ToolbarItemGroup(placement: .keyboard) {
-            Spacer()
-            Button("Done") {
-              isDisplayNameFocused = false
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    isDisplayNameFocused = false
+                }
             }
-          }
         }
     }
 
@@ -213,7 +210,13 @@ struct ProfileInfo: View {
     }
 
     private func saveDefaultTimes() {
-        session.setDefaultTimes(wake: defaultWake, sleep: defaultSleep)
+        // 1) Persist to UserDefaults
+        UserDefaults.standard.set(defaultWake, forKey: "DefaultWakeUpTime")
+        UserDefaults.standard.set(defaultSleep, forKey: "DefaultSleepTime")
+
+        // 2) Directly publish into SessionStore so DayView will see it:
+        session.defaultWakeTime = defaultWake
+        session.defaultSleepTime = defaultSleep
     }
 }
 

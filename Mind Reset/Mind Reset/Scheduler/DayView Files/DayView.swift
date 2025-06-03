@@ -133,32 +133,62 @@ struct DayView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                copyButton
-                dateNavigation
-                prioritiesSection
-                wakeSleepSection
-                timeBlocksSection
-                Spacer()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    copyButton
+                    dateNavigation
+                    prioritiesSection
+                    wakeSleepSection
+                    timeBlocksSection
+                    Spacer()
+                }
+                .padding()
+                .padding(.top, -20)
             }
-            .padding()
-            .padding(.top, -20)
-        }
-        .onAppear(perform: loadInitialSchedule)
-        .onReceive(session.$defaultWakeTime.combineLatest(session.$defaultSleepTime)) { w, s in
-            applyDefaultTimes(wakeOpt: w, sleepOpt: s)
-        }
-        .onReceive(Timer.publish(every: 0.5, on: .main, in: .common)
-            .autoconnect()) { _ in
-            if viewModel.schedule == nil,
-               let uid = session.userModel?.id {
-                viewModel.loadDaySchedule(for: dayViewState.selectedDate,
-                                          userId: uid)
+            // Whenever viewModel.schedule is set or changed, force-regeneration if it's a future date with no blocks:
+            .onReceive(viewModel.$schedule) { optionalSched in
+                guard let sched = optionalSched else { return }
+                let today = Calendar.current.startOfDay(for: Date())
+                if sched.date > today && sched.timeBlocks.isEmpty {
+                    viewModel.regenerateBlocks()
+                    viewModel.updateDaySchedule()
+                    // Re-assign to fire the @Published publisher again:
+                    viewModel.schedule = viewModel.schedule
+                }
             }
+            .onAppear(perform: loadInitialSchedule)
+            .onReceive(
+                session.$defaultWakeTime.combineLatest(session.$defaultSleepTime)
+            ) { wake, sleep in
+                guard let uid = session.userModel?.id else { return }
+                let selected = dayViewState.selectedDate
+                let today = Calendar.current.startOfDay(for: Date())
+
+                // Only touch future dates
+                guard selected > today else { return }
+
+                if viewModel.schedule != nil {
+                    // If a schedule is already loaded for that date, apply new defaults immediately
+                    applyDefaultTimes(wakeOpt: wake, sleepOpt: sleep)
+                } else {
+                    // Otherwise load the schedule so that applyDefaultTimes (and regeneration) can run
+                    viewModel.loadDaySchedule(for: selected, userId: uid)
+                }
+            }
+            .onReceive(
+                Timer.publish(every: 0.5, on: .main, in: .common)
+                    .autoconnect()
+            ) { _ in
+                if viewModel.schedule == nil,
+                   let uid = session.userModel?.id {
+                    viewModel.loadDaySchedule(
+                        for: dayViewState.selectedDate,
+                        userId: uid
+                    )
+                }
+            }
+            .alert(item: $activeAlert, content: buildAlert)
         }
-        .alert(item: $activeAlert, content: buildAlert)
-    }
 
     // ─────────────────────────────────────────
     // MARK: – Copy Button
@@ -302,14 +332,18 @@ struct DayView: View {
                 HStack {
                     VStack(alignment: .leading) {
                         Text("Wake Up Time").foregroundColor(.white)
+
                         DatePicker("", selection: Binding(
                             get: { sched.wakeUpTime },
                             set: { new in
-                                var t = sched; t.wakeUpTime = new
+                                var t = sched
+                                t.wakeUpTime = new
                                 viewModel.schedule = t
                                 viewModel.regenerateBlocks()
-                            }),
-                                   displayedComponents: .hourAndMinute)
+                                // ← Force‐publish updated blocks:
+                                viewModel.schedule = viewModel.schedule
+                            }
+                        ), displayedComponents: .hourAndMinute)
                         .focused($isDayTimeFocused)
                         .labelsHidden()
                         .environment(\.colorScheme, .dark)
@@ -317,17 +351,23 @@ struct DayView: View {
                         .background(Color.black)
                         .cornerRadius(4)
                     }
+
                     Spacer()
+
                     VStack(alignment: .leading) {
                         Text("Sleep Time").foregroundColor(.white)
+
                         DatePicker("", selection: Binding(
                             get: { sched.sleepTime },
                             set: { new in
-                                var t = sched; t.sleepTime = new
+                                var t = sched
+                                t.sleepTime = new
                                 viewModel.schedule = t
                                 viewModel.regenerateBlocks()
-                            }),
-                                   displayedComponents: .hourAndMinute)
+                                // ← Force‐publish updated blocks:
+                                viewModel.schedule = viewModel.schedule
+                            }
+                        ), displayedComponents: .hourAndMinute)
                         .focused($isDayTimeFocused)
                         .labelsHidden()
                         .environment(\.colorScheme, .dark)
@@ -407,17 +447,55 @@ struct DayView: View {
     }
 
     private func applyDefaultTimes(wakeOpt: Date?, sleepOpt: Date?) {
-        guard let wake = wakeOpt, let sleep = sleepOpt,
-              var sched = viewModel.schedule else { return }
+        guard
+            let wake   = wakeOpt,
+            let sleep  = sleepOpt,
+            var sched  = viewModel.schedule
+        else { return }
+
+        // Only touch strictly future days:
         let today = Calendar.current.startOfDay(for: Date())
-        if sched.date >= today {
-            sched.wakeUpTime = wake
-            sched.sleepTime  = sleep
-            viewModel.schedule = sched
-            viewModel.updateDaySchedule()
-            viewModel.regenerateBlocks()
+        guard sched.date > today else { return }
+
+        // 1) Overwrite the schedule’s wake/sleep times:
+        sched.wakeUpTime = wake
+        sched.sleepTime  = sleep
+
+        // 2) Build the list of “slot” strings between wake and sleep:
+        let calendar = Calendar.current
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+          // ← Must match exactly the format you use elsewhere for block.time.
+
+        var slotTimes: [String] = []
+        var cursor = wake
+        while cursor < sleep {
+            slotTimes.append(formatter.string(from: cursor))
+            guard let nextHour = calendar.date(byAdding: .hour, value: 1, to: cursor) else { break }
+            cursor = nextHour
         }
+
+        // 3) Filter out any existing blocks that lie outside the new window,
+        //    then “merge in” only the ones whose .time matches a slot string.
+        //    Any slot missing a block becomes a brand-new empty TimeBlock.
+        var mergedBlocks: [TimeBlock] = []
+        for timeStr in slotTimes {
+            // If there’s already a block exactly at this time, keep it (preserves its task).
+            if let existing = sched.timeBlocks.first(where: { $0.time == timeStr }) {
+                mergedBlocks.append(existing)
+            } else {
+                // Otherwise, insert an empty block at this slot
+                mergedBlocks.append(TimeBlock(id: UUID(), time: timeStr, task: ""))
+            }
+        }
+        sched.timeBlocks = mergedBlocks
+
+        // 4) Push the updated schedule back into the view model and persist.
+        viewModel.schedule = sched
+        viewModel.updateDaySchedule()
     }
+
+
 
     private func copyPreviousDay() {
         guard let uid = session.userModel?.id else { return }

@@ -16,18 +16,18 @@ private struct TextHeightPreferenceKey: PreferenceKey {
 struct WeeklyPriorityRowView: View {
     @Binding var title: String
     @Binding var isCompleted: Bool
-    @FocusState var isFocused: Bool
 
+    let onToggle:   () -> Void
     let showDelete: Bool            // ← Remove-mode flag
-    let onDelete: () -> Void
+    let onDelete:   () -> Void
     let accentCyan: Color
-    let onCommit: () -> Void
+    let onCommit:   () -> Void
+
+    // Indicates this row belongs to a past week
+    let isPastWeek: Bool
 
     @State private var measuredTextHeight: CGFloat = 0
 
-    // ———————————————————————————————————————————————
-    // MARK: - Body
-    // ———————————————————————————————————————————————
     var body: some View {
         let minTextHeight: CGFloat = 50
         let totalVPad:     CGFloat = 24
@@ -42,8 +42,10 @@ struct WeeklyPriorityRowView: View {
                     .font(.body)
                     .background(
                         GeometryReader { geo in
-                            Color.clear.preference(key: TextHeightPreferenceKey.self,
-                                                   value: geo.size.height)
+                            Color.clear.preference(
+                                key: TextHeightPreferenceKey.self,
+                                value: geo.size.height
+                            )
                         }
                     )
                     .opacity(0)
@@ -53,31 +55,35 @@ struct WeeklyPriorityRowView: View {
                     .font(.body)
                     .padding(.vertical, halfPad)
                     .padding(.leading, 4)
-                    .padding(.trailing, 40)   // leave space for the trailing icon
+                    .padding(.trailing, 40)   // space for the trailing icon
                     .frame(height: finalH)
                     .background(Color.black)
                     .cornerRadius(8)
-                    .focused($isFocused)
                     .onChange(of: title) { _ in onCommit() }
 
-                // √ Check-mark  — hidden (and untappable) during remove-mode
+                // √ Check-mark — hidden during remove-mode
                 if !showDelete {
                     Button {
-                        isCompleted.toggle()
+                        onToggle()
                         onCommit()
                     } label: {
-                        Image(systemName: isCompleted
-                              ? "checkmark.circle.fill"
-                              : "circle")
-                            .font(.title2)
-                            .foregroundColor(isCompleted ? accentCyan : .gray)
+                        Group {
+                            if isCompleted {
+                                Image(systemName: "checkmark.circle.fill")
+                            } else if isPastWeek {
+                                Image(systemName: "xmark.circle.fill")
+                            } else {
+                                Image(systemName: "circle")
+                            }
+                        }
+                        .font(.title2)
+                        .foregroundColor(
+                            isCompleted
+                                ? accentCyan
+                                : (isPastWeek ? .red : .gray)
+                        )
                     }
                     .padding(.trailing, 8)
-                } else {
-                    // Keep row width stable when check is hidden
-                    Color.clear
-                        .frame(width: 32, height: 1)
-                        .padding(.trailing, 8)
                 }
             }
             .onPreferenceChange(TextHeightPreferenceKey.self) {
@@ -91,14 +97,11 @@ struct WeeklyPriorityRowView: View {
                         .font(.title2)
                         .foregroundColor(.red)
                 }
+                .padding(.trailing, 8)
             }
         }
         .padding(4)
-        .background(
-            Color(.sRGB,
-                  red: 0.15, green: 0.15, blue: 0.15,
-                  opacity: 1.0)
-        )
+        .background(Color.black)
         .cornerRadius(8)
     }
 }

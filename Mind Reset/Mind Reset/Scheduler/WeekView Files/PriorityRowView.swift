@@ -1,5 +1,4 @@
-//
-//  PriorityRowView.swift
+//  WeekDayPriorityRowView.swift
 //  Shared component for Day / Week pages
 //
 
@@ -11,7 +10,7 @@ struct WeekDayPriorityRowView: View {
     @Binding var isCompleted: Bool
 
     // unified focus binding passed from the parent view
-    let focus: FocusState<Bool>.Binding          // ← **single binding**
+    let focus: FocusState<Bool>.Binding
 
     // callbacks / config
     let onToggle:   () -> Void
@@ -19,6 +18,9 @@ struct WeekDayPriorityRowView: View {
     let onDelete:   () -> Void
     let accentCyan: Color
     let onCommit:   () -> Void
+
+    // ─── NEW: flag indicating this row belongs to a past date ───
+    let isPast: Bool
 
     // local state for dynamic height
     @State private var measuredTextHeight: CGFloat = 0
@@ -49,39 +51,55 @@ struct WeekDayPriorityRowView: View {
                     .font(.body)
                     .padding(.vertical, vPad / 2)
                     .padding(.leading, 4)
-                    .padding(.trailing, 40)          // space for checkmark
+                    .padding(.trailing, 40)          // space for checkmark/X
                     .frame(height: finalH)
                     .background(Color.black)
                     .cornerRadius(8)
-                    .focused(focus)                  // ← new unified focus
+                    .focused(focus)
                     .onChange(of: title) { _ in onCommit() }
 
-                // inline checkmark
-                Button(action: {
-                    onToggle()
-                    onCommit()
-                }) {
-                    Image(systemName: isCompleted
-                          ? "checkmark.circle.fill"
-                          : "circle")
+                // ──────────────────────────────────────────────────
+                // If not in delete mode, show either ✓ (if complete),
+                // or X (if past+incomplete), or empty circle (if today+incomplete)
+                if !showDelete {
+                    Button(action: {
+                        onToggle()
+                        onCommit()
+                    }) {
+                        Group {
+                            if isCompleted {
+                                Image(systemName: "checkmark.circle.fill")
+                            } else if isPast {
+                                Image(systemName: "xmark.circle.fill")
+                            } else {
+                                Image(systemName: "circle")
+                            }
+                        }
                         .font(.title2)
-                        .foregroundColor(isCompleted ? accentCyan : .gray)
+                        .foregroundColor(
+                            isCompleted
+                            ? accentCyan
+                            : (isPast ? .red : .gray)
+                        )
+                    }
+                    .padding(.trailing, 8)
                 }
-                .padding(.trailing, 8)
+                // ──────────────────────────────────────────────────
             }
             .onPreferenceChange(TextHeightKey.self) { measuredTextHeight = $0 }
 
-            // optional delete
+            // optional delete (always visible in remove mode)
             if showDelete {
                 Button(role: .destructive, action: onDelete) {
                     Image(systemName: "minus.circle")
                         .font(.title2)
                         .foregroundColor(.red)
                 }
+                .padding(.trailing, 8)
             }
         }
         .padding(4)
-        .background(Color(.sRGB, red: 0.15, green: 0.15, blue: 0.15, opacity: 1))
+        .background(Color.black)
         .cornerRadius(8)
     }
 }

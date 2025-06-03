@@ -82,10 +82,11 @@ struct MonthlyPriorityRowView: View {
                 }
                 .buttonStyle(.plain)
                 .contentShape(Rectangle())         // full hit-area
+                .padding(.trailing, 8)
             }
         }
         .padding(4)
-        .background(Color(.sRGB, red: 0.15, green: 0.15, blue: 0.15))
+        .background(Color.black)
         .cornerRadius(8)
     }
 }

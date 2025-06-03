@@ -1,9 +1,8 @@
-//
 //  WeekView.swift
 //  Mind Reset
 //
+//  Created by Andika Yudhatrisna on [DATE].
 //
-
 
 import SwiftUI
 import FirebaseFirestore
@@ -23,6 +22,41 @@ struct WeekView: View {
     @State private var showWeekCopyAlert  = false
     @State private var editMode: EditMode = .inactive
 
+    // ─────────────────────────────────────────────────
+    // Track whether last week had any unfinished priorities
+    @State private var hasPreviousUnfinished = false
+
+    /// Reloads the “unfinished from last week” flag whenever the week changes or on appear.
+    private func updateHasPreviousUnfinished() {
+        guard let uid = session.userModel?.id else {
+            hasPreviousUnfinished = false
+            return
+        }
+        // Only check if the displayed week is “this” calendar week
+        let thisWeek = Calendar.current.isDate(
+            Date(),
+            equalTo: weekViewState.currentWeekStart,
+            toGranularity: .weekOfYear
+        )
+        if thisWeek {
+            // Compute last week’s start date
+            let lastWeekStart = Calendar.current.date(
+                byAdding: .weekOfYear,
+                value: -1,
+                to: weekViewState.currentWeekStart
+            )!
+            viewModel.fetchUnfinishedWeeklyPriorities(
+                for: lastWeekStart,
+                userId: uid
+            ) { unfinished in
+                hasPreviousUnfinished = !unfinished.isEmpty
+            }
+        } else {
+            hasPreviousUnfinished = false
+        }
+    }
+    // ─────────────────────────────────────────────────
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -37,20 +71,36 @@ struct WeekView: View {
                     if let uid = session.userModel?.id {
                         viewModel.loadWeeklySchedule(for: newStart, userId: uid)
                     }
+                    updateHasPreviousUnfinished()
                 }
 
                 // Weekly priorities at top
                 if viewModel.schedule != nil {
                     WeeklyPrioritiesSection(
-                        priorities:         viewModel.weeklyPrioritiesBinding,
-                        editMode:           $editMode,
-                        accentColor:        accentColor,
-                        isRemoveMode:       isRemoveMode,
-                        onToggleRemoveMode: { isRemoveMode.toggle() },
-                        onMove:             viewModel.moveWeeklyPriorities(indices:to:),
-                        onCommit:           viewModel.updateWeeklySchedule,
-                        onDelete:           viewModel.deletePriority(_:),
-                        addAction:          viewModel.addNewPriority
+                        priorities:             viewModel.weeklyPrioritiesBinding,
+                        editMode:               $editMode,
+                        accentColor:            accentColor,
+                        isRemoveMode:           isRemoveMode,
+                        onToggleRemoveMode:     { isRemoveMode.toggle() },
+                        onMove:                 viewModel.moveWeeklyPriorities(indices:to:),
+                        onCommit:               viewModel.updateWeeklySchedule,
+                        onDelete:               viewModel.deletePriority(_:),
+                        addAction:              viewModel.addNewPriority,
+
+                        // ─── NEW PARAMETERS ───────────────────────
+                        isThisWeek:             Calendar.current.isDate(
+                                                    Date(),
+                                                    equalTo: weekViewState.currentWeekStart,
+                                                    toGranularity: .weekOfYear
+                                                ),
+                        hasPreviousUnfinished:  hasPreviousUnfinished,
+                        importAction:           {
+                                                    viewModel.importUnfinishedFromLastWeek(
+                                                        to: weekViewState.currentWeekStart,
+                                                        userId: session.userModel?.id ?? ""
+                                                    )
+                                                }
+                        // ───────────────────────────────────────────
                     )
                 } else {
                     Text("Loading priorities…")
@@ -85,7 +135,13 @@ struct WeekView: View {
             .padding()
             .padding(.top, -20)
         }
-        .onAppear(perform: loadSchedule)
+        .onAppear {
+            loadSchedule()
+            // Defer so that `weekViewState.currentWeekStart` is set
+            DispatchQueue.main.async {
+                updateHasPreviousUnfinished()
+            }
+        }
     }
 
     // “Copy from Previous Week” button
@@ -127,6 +183,3 @@ struct WeekView: View {
         }
     }
 }
-
-
-

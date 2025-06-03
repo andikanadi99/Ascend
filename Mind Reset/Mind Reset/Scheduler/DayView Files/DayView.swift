@@ -838,6 +838,7 @@ private struct BufferedPriorityRow: View {
                         .font(.title2)
                         .foregroundColor(.red)
                 }
+                .padding(.trailing, 8)
             }
         }
         .padding(4)

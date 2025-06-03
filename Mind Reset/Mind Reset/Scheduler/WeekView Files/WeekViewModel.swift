@@ -1,7 +1,7 @@
-//
 //  WeekViewModel.swift
 //  Mind Reset
 //
+//  Created by Andika Yudhatrisna on 5/27/25.
 //
 
 import SwiftUI
@@ -71,11 +71,87 @@ final class WeekViewModel: ObservableObject {
     // MARK: – SAVE WEEK
     func updateWeeklySchedule() {
         guard let s = schedule, let id = s.id else { return }
-        try? db.collection("users")
-              .document(s.userId)
-              .collection("weekSchedules")
-              .document(id)
-              .setData(from: s, merge: true)
+        do {
+            try db.collection("users")
+                  .document(s.userId)
+                  .collection("weekSchedules")
+                  .document(id)
+                  .setData(from: s, merge: true)
+        } catch {
+            print("Error updating weekly schedule:", error)
+        }
+    }
+
+    // MARK: – FETCH UNFINISHED WEEKLY PRIORITIES
+    /// Fetches all WeeklyPriority items from the given weekStart whose `isCompleted == false`.
+    /// - Parameters:
+    ///   - weekStart: The start-of-week Date (00:00) for the week to fetch.
+    ///   - userId: The current user's UID.
+    ///   - completion: Called on main thread with `[WeeklyPriority]` of unfinished items.
+    func fetchUnfinishedWeeklyPriorities(
+        for weekStart: Date,
+        userId: String,
+        completion: @escaping ([WeeklyPriority]) -> Void
+    ) {
+        let startOfWeek = Calendar.current.startOfDay(for: weekStart)
+        let docID        = Self.iso.string(from: startOfWeek)
+        let ref = db.collection("users")
+                    .document(userId)
+                    .collection("weekSchedules")
+                    .document(docID)
+
+        ref.getDocument { snap, error in
+            if let error = error {
+                print("Error fetching week doc for unfinished priorities:", error)
+                DispatchQueue.main.async { completion([]) }
+                return
+            }
+            guard let snap = snap, snap.exists,
+                  let weekSchedule = try? snap.data(as: WeeklySchedule.self)
+            else {
+                DispatchQueue.main.async { completion([]) }
+                return
+            }
+            let unfinished = weekSchedule.weeklyPriorities.filter { !$0.isCompleted }
+            DispatchQueue.main.async { completion(unfinished) }
+        }
+    }
+
+    // MARK: – IMPORT UNFINISHED FROM LAST WEEK
+    /// Imports any unfinished priorities from last week into the current week’s schedule.
+    /// - Parameters:
+    ///   - currentWeekStart: The start-of-week Date for the current week.
+    ///   - userId: The current user's UID.
+    func importUnfinishedFromLastWeek(
+        to currentWeekStart: Date,
+        userId: String
+    ) {
+        let cal = Calendar.current
+        let lastWeekDate = cal.date(byAdding: .weekOfYear, value: -1, to: currentWeekStart)!
+        let lastWeekStart = cal.startOfDay(for: lastWeekDate)
+
+        fetchUnfinishedWeeklyPriorities(for: lastWeekStart, userId: userId) { [weak self] unfinished in
+            guard let self, var sched = self.schedule else { return }
+            // Avoid duplicating titles
+            let existingTitles = Set(sched.weeklyPriorities.map { $0.title })
+            var didChange = false
+            for old in unfinished {
+                if !existingTitles.contains(old.title) {
+                    let newPriority = WeeklyPriority(
+                        id: UUID(),
+                        title: old.title,
+                        progress: 0,
+                        isCompleted: false
+                    )
+                    sched.weeklyPriorities.append(newPriority)
+                    didChange = true
+                }
+            }
+            if didChange {
+                self.schedule = sched
+                self.updateWeeklySchedule()
+            }
+        }
     }
 
     // MARK: – PUBLIC BINDINGS  (WeekView UI)

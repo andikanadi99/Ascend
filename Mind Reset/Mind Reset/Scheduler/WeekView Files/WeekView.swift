@@ -33,17 +33,21 @@ struct WeekView: View {
             return
         }
         // Only check if the displayed week is “this” calendar week
-        let thisWeek = Calendar.current.isDate(
-            Date(),
-            equalTo: weekViewState.currentWeekStart,
+        let thisWeekStart = WeekViewState.startOfCurrentWeek(Date())
+        let displayedWeekStart = weekViewState.currentWeekStart
+
+        let isThisWeek = Calendar.current.isDate(
+            thisWeekStart,
+            equalTo: displayedWeekStart,
             toGranularity: .weekOfYear
         )
-        if thisWeek {
+
+        if isThisWeek {
             // Compute last week’s start date
             let lastWeekStart = Calendar.current.date(
                 byAdding: .weekOfYear,
                 value: -1,
-                to: weekViewState.currentWeekStart
+                to: displayedWeekStart
             )!
             viewModel.fetchUnfinishedWeeklyPriorities(
                 for: lastWeekStart,
@@ -76,32 +80,43 @@ struct WeekView: View {
 
                 // Weekly priorities at top
                 if viewModel.schedule != nil {
-                    WeeklyPrioritiesSection(
-                        priorities:             viewModel.weeklyPrioritiesBinding,
-                        editMode:               $editMode,
-                        accentColor:            accentColor,
-                        isRemoveMode:           isRemoveMode,
-                        onToggleRemoveMode:     { isRemoveMode.toggle() },
-                        onMove:                 viewModel.moveWeeklyPriorities(indices:to:),
-                        onCommit:               viewModel.updateWeeklySchedule,
-                        onDelete:               viewModel.deletePriority(_:),
-                        addAction:              viewModel.addNewPriority,
+                    let thisWeekStart     = WeekViewState.startOfCurrentWeek(Date())
+                    let displayedWeekStart = weekViewState.currentWeekStart
 
-                        // ─── NEW PARAMETERS ───────────────────────
-                        isThisWeek:             Calendar.current.isDate(
-                                                    Date(),
-                                                    equalTo: weekViewState.currentWeekStart,
-                                                    toGranularity: .weekOfYear
-                                                ),
-                        hasPreviousUnfinished:  hasPreviousUnfinished,
-                        importAction:           {
-                                                    viewModel.importUnfinishedFromLastWeek(
-                                                        to: weekViewState.currentWeekStart,
-                                                        userId: session.userModel?.id ?? ""
-                                                    )
-                                                }
+                    // True if displayedWeekStart is the same calendar‐week as today
+                    let isThisWeek = Calendar.current.isDate(
+                        thisWeekStart,
+                        equalTo: displayedWeekStart,
+                        toGranularity: .weekOfYear
+                    )
+
+                    // True if the displayed week is strictly before this week
+                    let isPastWeek = displayedWeekStart < thisWeekStart
+
+                    WeeklyPrioritiesSection(
+                        priorities:            viewModel.weeklyPrioritiesBinding,
+                        editMode:              $editMode,
+                        accentColor:           accentColor,
+                        isRemoveMode:          isRemoveMode,
+                        onToggleRemoveMode:    { isRemoveMode.toggle() },
+                        onMove:                viewModel.moveWeeklyPriorities(indices:to:),
+                        onCommit:              viewModel.updateWeeklySchedule,
+                        onDelete:              viewModel.deletePriority(_:),
+                        addAction:             viewModel.addNewPriority,
+
+                        // ─── Pass both flags now ───────────────────────
+                        isThisWeek:            isThisWeek,
+                        isPastWeek:            isPastWeek,
+                        hasPreviousUnfinished: hasPreviousUnfinished,
+                        importAction:          {
+                                                  viewModel.importUnfinishedFromLastWeek(
+                                                      to: displayedWeekStart,
+                                                      userId: session.userModel?.id ?? ""
+                                                  )
+                                              }
                         // ───────────────────────────────────────────
                     )
+
                 } else {
                     Text("Loading priorities…")
                         .foregroundColor(.white)

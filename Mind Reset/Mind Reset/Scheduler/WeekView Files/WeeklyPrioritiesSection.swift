@@ -7,7 +7,7 @@
 import SwiftUI
 
 /// Section showing the weekly priorities list with drag-to-reorder, inline checkmarks,
-/// confirmation on delete, add/remove buttons, and “Import Unfinished from Last Week.”
+/// confirmation on delete, and fixed Add/Remove-Done buttons below (so they never scroll away).
 struct WeeklyPrioritiesSection: View {
     // ─────────── Inputs ────────────────────────────────
     @Binding var priorities: [WeeklyPriority]
@@ -23,6 +23,8 @@ struct WeeklyPrioritiesSection: View {
     // ─── Week context ────────────────────────────
     /// True if the displayed week is the current calendar week.
     let isThisWeek: Bool
+    /// True if the displayed week’s start date is strictly before this week’s start.
+    let isPastWeek: Bool
     /// True if there are any unfinished priorities in last week.
     let hasPreviousUnfinished: Bool
     /// Action to import last week’s unfinished priorities into this week.
@@ -52,11 +54,9 @@ struct WeeklyPrioritiesSection: View {
                     .background(Color(.sRGB, white: 0.1, opacity: 1))
                     .cornerRadius(8)
             } else {
+                // ───── The scrolling list itself ─────
                 List {
-                    // ───── Binding‐based ForEach over $priorities ─────
                     ForEach($priorities, id: \.id) { $priority in
-                        let isPastWeek = !isThisWeek
-
                         WeeklyPriorityRowView(
                             title:       $priority.title,
                             isCompleted: $priority.isCompleted,
@@ -95,7 +95,7 @@ struct WeeklyPrioritiesSection: View {
                 .padding(.bottom, 20)
             }
 
-            // ───── Add / Remove buttons ─────
+            // ───── Fixed “Add / Remove-Done” HStack below the list ─────
             HStack {
                 Button(action: addAction) {
                     Text("Add Priority")
@@ -123,7 +123,7 @@ struct WeeklyPrioritiesSection: View {
             }
             .padding(.top, 8)
 
-            // ───── Import Unfinished from Last Week ─────
+            // ───── “Import Unfinished from Last Week” (below the buttons) ─────
             if isThisWeek && hasPreviousUnfinished {
                 HStack {
                     Button(action: importAction) {
@@ -138,7 +138,6 @@ struct WeeklyPrioritiesSection: View {
                 }
                 .padding(.top, 8)
             }
-
         }
         .padding()
         .background(Color.gray.opacity(0.3))

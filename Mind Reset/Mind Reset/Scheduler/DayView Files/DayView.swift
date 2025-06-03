@@ -1,8 +1,7 @@
-//
 //  DayView.swift
 //  Mind Reset
 //
-//  Created by Andika Yudhatrisna on 2/6/25.
+//  Created by Andika Yudhatrisna on 2/6/25.
 //
 
 import SwiftUI
@@ -22,6 +21,72 @@ enum DayViewAlert: Identifiable {
         }
     }
 }
+
+// ───────────────────────────────────────────────
+// MARK: - Time Block view
+// ───────────────────────────────────────────────
+struct TimeBlockRow: View {
+    let block: TimeBlock
+    let onCommit: (_ block: TimeBlock, _ newTime: String?, _ newTask: String?) -> Void
+
+    // Local buffers that SwiftUI will preserve
+    @State private var localTime: String
+    @State private var localTask: String
+
+    // Track whether this row’s TextEditor is focused
+    @FocusState private var isThisBlockFocused: Bool
+
+    init(block: TimeBlock,
+         onCommit: @escaping (_ block: TimeBlock, _ newTime: String?, _ newTask: String?) -> Void)
+    {
+        self.block = block
+        self.onCommit = onCommit
+
+        // Initialize the @State buffers from the incoming TimeBlock
+        _localTime = State(initialValue: block.time)
+        _localTask = State(initialValue: block.task)
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            // — TextField for “time”:
+            TextField("Time", text: $localTime, onCommit: {
+                // The user pressed Return inside the Time text field:
+                onCommit(block, localTime, nil)
+            })
+            .focused($isThisBlockFocused, equals: false)
+            .font(.caption)
+            .foregroundColor(.white)
+            .frame(width: 80)
+            .padding(8)
+            .background(Color.black.opacity(0.5))
+            .cornerRadius(8)
+
+            // — TextEditor for “task”:
+            TextEditor(text: $localTask)
+                .focused($isThisBlockFocused)
+                .font(.caption)
+                .foregroundColor(.white)
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                .background(Color.black.opacity(0.5))
+                .cornerRadius(8)
+                .frame(minHeight: 50, maxHeight: 80)
+                .onChange(of: isThisBlockFocused) { newFocus in
+                    // When focus leaves, commit the updated “task”
+                    if !newFocus {
+                        onCommit(block, nil, localTask)
+                    }
+                }
+
+            Spacer()
+        }
+        .padding(8)
+        .background(Color.gray.opacity(0.3))
+        .cornerRadius(8)
+    }
+}
+
 
 // ───────────────────────────────────────────────
 // MARK: - Day View (“Your Mindful Day”)
@@ -135,15 +200,16 @@ struct DayView: View {
                     List {
                         Section {
                             ForEach(binding) { $priority in
-                                PriorityRowView(
-                                    title:       $priority.title,
+                                // Use buffered PriorityRowView
+                                BufferedPriorityRow(
+                                    title: $priority.title,
                                     isCompleted: $priority.isCompleted,
-                                    isFocused:   _isDayPriorityFocused,
-                                    onToggle:    { viewModel.togglePriorityCompletion(priority.id) },
-                                    showDelete:  isRemoveMode,
-                                    onDelete:    { activeAlert = .delete(priority) },
-                                    accentCyan:  accentCyan,
-                                    onCommit:    { viewModel.updateDaySchedule() }
+                                    isFocused: _isDayPriorityFocused,
+                                    onToggle: { viewModel.togglePriorityCompletion(priority.id) },
+                                    showDelete: isRemoveMode,
+                                    onDelete: { activeAlert = .delete(priority) },
+                                    accentCyan: accentCyan,
+                                    onCommit: { viewModel.updateDaySchedule() }
                                 )
                                 .listRowBackground(Color.clear)
                                 .listRowInsets(.init(top: 4, leading: 0, bottom: 4, trailing: 0))
@@ -201,7 +267,6 @@ struct DayView: View {
         .background(Color.gray.opacity(0.3))
         .cornerRadius(8)
     }
-
 
     // ─────────────────────────────────────────
     // MARK: – Date Navigation
@@ -288,7 +353,13 @@ struct DayView: View {
         if let sched = viewModel.schedule {
             VStack(spacing: 16) {
                 ForEach(sched.timeBlocks) { block in
-                    blockRow(block)
+                    TimeBlockRow(block: block) { changedBlock, newTime, newTask in
+                        // When either newTime or newTask is nonnil, update your model:
+                        updateBlock(changedBlock,
+                                    time: newTime,
+                                    task: newTask)
+                        viewModel.updateDaySchedule()
+                    }
                 }
             }
         } else {
@@ -296,38 +367,10 @@ struct DayView: View {
         }
     }
 
-    private func blockRow(_ block: TimeBlock) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            TextField("Time", text: Binding(
-                get: { block.time },
-                set: { new in updateBlock(block, time: new) }))
-                .focused($isDayTimeFocused)
-                .font(.caption)
-                .foregroundColor(.white)
-                .frame(width: 80)
-                .padding(8)
-                .background(Color.black.opacity(0.5))
-                .cornerRadius(8)
+    // Auxiliary helper, no longer needed:
+    // private func blockRow(_ block: TimeBlock) -> some View { … }
 
-            TextEditor(text: Binding(
-                get: { block.task },
-                set: { new in updateBlock(block, task: new) }))
-                .focused($isDayTaskFocused)
-                .font(.caption)
-                .foregroundColor(.white)
-                .scrollContentBackground(.hidden)
-                .padding(8)
-                .background(Color.black.opacity(0.5))
-                .cornerRadius(8)
-                .frame(minHeight: 50, maxHeight: 80)
-
-            Spacer()
-        }
-        .padding(8)
-        .background(Color.gray.opacity(0.3))
-        .cornerRadius(8)
-    }
-
+    
     // ─────────────────────────────────────────
     // MARK: – Alerts & Helpers
     // ─────────────────────────────────────────
@@ -349,7 +392,6 @@ struct DayView: View {
             )
         }
     }
-
 
     // MARK: – Helper methods
     private func loadInitialSchedule() {
@@ -426,12 +468,12 @@ struct DayView: View {
     private func updateBlock(_ block: TimeBlock, time: String? = nil, task: String? = nil) {
         guard var sched = viewModel.schedule,
               let idx   = sched.timeBlocks.firstIndex(where: { $0.id == block.id }) else { return }
-        if let t  = time { sched.timeBlocks[idx].time = t }
+        if let t  = time  { sched.timeBlocks[idx].time = t }
         if let tx = task { sched.timeBlocks[idx].task = tx }
         viewModel.schedule = sched
-        viewModel.updateDaySchedule()
     }
 }
+
 
 private struct TextHeightPreferenceKey: PreferenceKey {
   static var defaultValue: CGFloat = 50
@@ -441,11 +483,12 @@ private struct TextHeightPreferenceKey: PreferenceKey {
   }
 }
 
+
 // ───────────────────────────────────────────────
-// MARK: - PriorityRowView  (DayView)
+// MARK: - BufferedPriorityRow (DayView)
 // ───────────────────────────────────────────────
 
-private struct PriorityRowView: View {
+private struct BufferedPriorityRow: View {
     @Binding var title: String
     @Binding var isCompleted: Bool
     @FocusState var isFocused: Bool
@@ -456,20 +499,38 @@ private struct PriorityRowView: View {
     let accentCyan: Color
     let onCommit:   () -> Void
 
+    @State private var localTitle: String
     @State private var measuredTextHeight: CGFloat = 0
 
+    init(title: Binding<String>,
+         isCompleted: Binding<Bool>,
+         isFocused: FocusState<Bool>,
+         onToggle: @escaping () -> Void,
+         showDelete: Bool,
+         onDelete: @escaping () -> Void,
+         accentCyan: Color,
+         onCommit: @escaping () -> Void) {
+        self._title = title
+        self._isCompleted = isCompleted
+        self._isFocused = isFocused
+        self.onToggle = onToggle
+        self.showDelete = showDelete
+        self.onDelete = onDelete
+        self.accentCyan = accentCyan
+        self.onCommit = onCommit
+        _localTitle = State(initialValue: title.wrappedValue)
+    }
+
     var body: some View {
-        // Match DayView’s original sizing rules
         let minTextHeight: CGFloat = 50
-        let totalVerticalPadding: CGFloat = 24   // 12 pt top & bottom
+        let totalVerticalPadding: CGFloat = 24
         let padded = measuredTextHeight + totalVerticalPadding
         let finalHeight = max(padded, minTextHeight)
         let halfPad = totalVerticalPadding / 2
 
         HStack(spacing: 8) {
             ZStack(alignment: .trailing) {
-                // Invisible probe to determine dynamic height
-                Text(title)
+                Text(localTitle)
                     .font(.body)
                     .background(
                         GeometryReader { geo in
@@ -481,19 +542,22 @@ private struct PriorityRowView: View {
                     )
                     .opacity(0)
 
-                // Editable field
-                TextEditor(text: $title)
+                TextEditor(text: $localTitle)
                     .font(.body)
                     .padding(.vertical, halfPad)
                     .padding(.leading, 4)
-                    .padding(.trailing, 40)       // space for ✓ or its spacer
+                    .padding(.trailing, 40)
                     .frame(height: finalHeight)
                     .background(Color.black)
                     .cornerRadius(8)
                     .focused($isFocused)
-                    .onChange(of: title) { _ in onCommit() }
+                    .onChange(of: isFocused) { focused in
+                        if !focused {
+                            title = localTitle
+                            onCommit()
+                        }
+                    }
 
-                // ✓ Check-mark  — hidden in remove-mode
                 if !showDelete {
                     Button(action: onToggle) {
                         Image(systemName: isCompleted
@@ -504,7 +568,6 @@ private struct PriorityRowView: View {
                     }
                     .padding(.trailing, 8)
                 } else {
-                    // Invisible spacer keeps row width identical
                     Color.clear
                         .frame(width: 32, height: 1)
                         .padding(.trailing, 8)
@@ -514,7 +577,6 @@ private struct PriorityRowView: View {
                 measuredTextHeight = $0
             }
 
-            // Red “−” button shown only in remove-mode
             if showDelete {
                 Button(role: .destructive, action: onDelete) {
                     Image(systemName: "minus.circle")
@@ -528,12 +590,9 @@ private struct PriorityRowView: View {
                           red: 0.15, green: 0.15, blue: 0.15,
                           opacity: 1))
         .cornerRadius(8)
-        .shadow(radius: 0)     // explicitly no shadow
+        .shadow(radius: 0)
     }
 }
-
-
-
 // MARK: - Default Time View
 //struct ChangeDefaultTimeView: View {
 //    let currentWakeUp: Date

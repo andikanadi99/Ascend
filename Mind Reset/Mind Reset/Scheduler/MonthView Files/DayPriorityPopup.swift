@@ -1,8 +1,6 @@
-//
 //  DayPriorityPopup.swift
 //  Mind Reset
 //
-
 
 import SwiftUI
 
@@ -22,30 +20,30 @@ struct DayPriorityPopup: View {
 
     // MARK: – Body -------------------------------------------------------------
     var body: some View {
-            VStack(spacing: 8) {              // ↓ was 16
-                header
+        VStack(spacing: 8) {              // ↓ was 16
+            header
 
-                // MARK: – priorities list
-                ScrollView {
-                    LazyVStack(spacing: 8) { // ↓ was 12
-                        ForEach($priorities) { $pr in
-                            row(for: $pr)
-                                .transition(.opacity)
-                        }
+            // MARK: – priorities list
+            ScrollView {
+                LazyVStack(spacing: 8) { // ↓ was 12
+                    ForEach($priorities) { $pr in
+                        row(for: $pr)
+                            .transition(.opacity)
                     }
-                    .padding(.vertical, 2)   // ↓ was 4
                 }
-                .frame(maxHeight: min(listHeight, 300)) // ↓ was 360
-
-                controls
+                .padding(.vertical, 2)   // ↓ was 4
             }
-            .padding(12)                     // tweak outer padding if you like
-            .background(Color.gray.opacity(0.3))
-            .cornerRadius(12)
+            .frame(maxHeight: min(listHeight, 300)) // ↓ was 360
+
+            controls
+        }
+        .padding(12)                     // tweak outer padding if you like
+        .background(Color.gray.opacity(0.3))
+        .cornerRadius(12)
         .alert(item: $toDelete) { pr in
             Alert(
                 title: Text("Delete Priority"),
-                message: Text("Are you sure you want to delete “\(pr.title)” ?"),
+                message: Text("Are you sure you want to delete “\(pr.title)”?"),
                 primaryButton: .destructive(Text("Delete")) {
                     priorities.removeAll { $0.id == pr.id }
                     persist()
@@ -73,16 +71,25 @@ struct DayPriorityPopup: View {
     }
 
     private func row(for pr: Binding<TodayPriority>) -> some View {
-        HStack(spacing: 8) {
+        // Determine if this date is in the past
+        let todayStart = Calendar.current.startOfDay(for: Date())
+        let isPast = Calendar.current.startOfDay(for: date) < todayStart
+
+        // Explicitly return the HStack so the compiler knows this is the single View
+        return HStack(spacing: 8) {
             Button {
                 pr.wrappedValue.isCompleted.toggle()
                 persist()
             } label: {
                 Image(systemName: pr.isCompleted.wrappedValue
                       ? "checkmark.circle.fill"
-                      : "circle")
+                      : (isPast ? "xmark.circle.fill" : "circle"))
                     .font(.title2)
-                    .foregroundColor(pr.isCompleted.wrappedValue ? accentCyan : .gray)
+                    .foregroundColor(
+                        pr.isCompleted.wrappedValue
+                        ? accentCyan
+                        : (isPast ? .red : .gray)
+                    )
             }
 
             TextField("Priority", text: pr.title)

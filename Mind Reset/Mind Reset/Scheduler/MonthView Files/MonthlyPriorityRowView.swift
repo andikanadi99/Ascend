@@ -1,7 +1,7 @@
-//  MonthlyPriorityRowView.swift
-//  Mind Reset
+// MonthlyPriorityRowView.swift
+// Mind Reset
 //
-//  Created by Andika Yudhatrisna on 5/28/25.
+// Created by Andika Yudhatrisna on 5/28/25.
 //
 
 import SwiftUI
@@ -17,11 +17,14 @@ struct MonthlyPriorityRowView: View {
     @Binding var title: String
     @Binding var isCompleted: Bool
 
-    let onToggle:  () -> Void
+    let onToggle:   () -> Void
     let showDelete: Bool
-    let onDelete:  () -> Void          // ⬅︎ this triggers up to the section
+    let onDelete:   () -> Void
     let accentCyan: Color
-    let onCommit:  () -> Void
+    let onCommit:   () -> Void
+
+    // ← NEW: indicates this row belongs to a past month
+    let isPastMonth: Bool
 
     @State private var measured: CGFloat = 0
 
@@ -53,16 +56,27 @@ struct MonthlyPriorityRowView: View {
                     .scrollContentBackground(.hidden)
                     .onChange(of: title) { _ in onCommit() }
 
-                // checkmark (only when NOT in remove mode)
+                // √ Check-mark or ✕ for a past-month item (only when NOT in remove mode)
                 if !showDelete {
                     Button(action: {
                         onToggle()
+                        onCommit()
                     }) {
-                        Image(systemName: isCompleted
-                              ? "checkmark.circle.fill"
-                              : "circle")
-                            .font(.title2)
-                            .foregroundColor(isCompleted ? accentCyan : .gray)
+                        Group {
+                            if isCompleted {
+                                Image(systemName: "checkmark.circle.fill")
+                            } else if isPastMonth {
+                                Image(systemName: "xmark.circle.fill")
+                            } else {
+                                Image(systemName: "circle")
+                            }
+                        }
+                        .font(.title2)
+                        .foregroundColor(
+                            isCompleted
+                                ? accentCyan
+                                : (isPastMonth ? .red : .gray)
+                        )
                     }
                     .buttonStyle(.plain)
                     .padding(.trailing, 8)
@@ -70,11 +84,10 @@ struct MonthlyPriorityRowView: View {
             }
             .onPreferenceChange(TextHeightKey.self) { measured = $0 }
 
-            // delete button (only in remove mode)
+            // Delete button (visible whenever showDelete == true)
             if showDelete {
                 Button(role: .destructive, action: {
-                    print("[Row]  delete tapped  – \(title)")
-                    onDelete()                     // ⬅︎ bubble up
+                    onDelete()
                 }) {
                     Image(systemName: "minus.circle")
                         .font(.title2)
@@ -90,4 +103,3 @@ struct MonthlyPriorityRowView: View {
         .cornerRadius(8)
     }
 }
-

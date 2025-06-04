@@ -1,4 +1,3 @@
-//
 //  MonthView.swift
 //  Mind Reset
 //
@@ -32,6 +31,9 @@ struct MonthView: View {
     @State private var isRemoveMode  = false
     @FocusState private var focusedField: Field?
 
+    // Track whether last month has any unfinished priorities
+    @State private var hasPreviousUnfinished = false
+
     // palette
     private let accentCyan = Color(red: 0, green: 1,  blue: 1)
     private let coolRed    = Color(red: 1, green: 0.45, blue: 0.45)
@@ -55,7 +57,17 @@ struct MonthView: View {
             .padding(.top, -20)
             .overlay(dayPopupOverlay)
         }
-        .onAppear(perform: loadAllMonthDataOnce)
+        .onAppear {
+            loadAllMonthDataOnce()
+            // Defer so that monthViewState.currentMonth is set
+            DispatchQueue.main.async {
+                updateHasPreviousUnfinished()
+            }
+        }
+        .onChange(of: monthViewState.currentMonth) { _ in
+            loadMonth()
+            updateHasPreviousUnfinished()
+        }
         .navigationTitle("Your Month")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -87,7 +99,9 @@ struct MonthView: View {
             accountCreationDate: accountCreationDate,
             accentColor: accentColor
         )
-        .onChange(of: monthViewState.currentMonth) { _ in loadMonth() }
+        .onChange(of: monthViewState.currentMonth) { _ in
+            loadMonth()
+        }
     }
 
     // ───────────────────────────────────────────────────────────────
@@ -95,7 +109,6 @@ struct MonthView: View {
     // ───────────────────────────────────────────────────────────────
     private var monthlyPrioritiesSection: some View {
         MonthlyPrioritiesSection(
-
             priorities: Binding(
                 get: { monthVM.schedule?.monthlyPriorities ?? [] },
                 set: { new in
@@ -105,47 +118,53 @@ struct MonthView: View {
                     monthVM.updateMonthSchedule()
                 }
             ),
-
-            editMode:           $editMode,
-            accentColor:        accentCyan,
-            isRemoveMode:       isRemoveMode,
-            onToggleRemoveMode: { isRemoveMode.toggle() },
-
-            onToggle: { id in
-                guard var s = monthVM.schedule,
-                      let idx = s.monthlyPriorities.firstIndex(where: { $0.id == id })
-                else { return }
-                s.monthlyPriorities[idx].isCompleted.toggle()
-                monthVM.schedule = s
-                monthVM.updateMonthSchedule()
-            },
-
-            onMove: { offsets, newOffset in
-                guard var s = monthVM.schedule else { return }
-                s.monthlyPriorities.move(fromOffsets: offsets, toOffset: newOffset)
-                monthVM.schedule = s
-                monthVM.updateMonthSchedule()
-            },
-
-            onCommit: { monthVM.updateMonthSchedule() },
-
-            onDelete: { p in
-                guard var s = monthVM.schedule else { return }
-                s.monthlyPriorities.removeAll { $0.id == p.id }
-                monthVM.schedule = s
-                monthVM.updateMonthSchedule()
-                if s.monthlyPriorities.isEmpty { isRemoveMode = false }
-            },
-
-            addAction: {
-                guard var s = monthVM.schedule else { return }
-                s.monthlyPriorities.append(
-                    MonthlyPriority(id: UUID(), title: "New Priority",
-                                    progress: 0, isCompleted: false))
-                monthVM.schedule = s
-                monthVM.updateMonthSchedule()
-                isRemoveMode = false
-            }
+            editMode:             $editMode,
+            accentColor:          accentCyan,
+            isRemoveMode:         isRemoveMode,
+            isThisMonth:          Calendar.current.isDate(
+                                      monthViewState.currentMonth,
+                                      equalTo: Date(),
+                                      toGranularity: .month
+                                  ),
+            hasPreviousUnfinished: hasPreviousUnfinished,
+            onToggleRemoveMode:   { isRemoveMode.toggle() },
+            onToggle:             { id in
+                                      guard var s = monthVM.schedule,
+                                            let idx = s.monthlyPriorities.firstIndex(where: { $0.id == id })
+                                      else { return }
+                                      s.monthlyPriorities[idx].isCompleted.toggle()
+                                      monthVM.schedule = s
+                                      monthVM.updateMonthSchedule()
+                                  },
+            onMove:               { offsets, newOffset in
+                                      guard var s = monthVM.schedule else { return }
+                                      s.monthlyPriorities.move(fromOffsets: offsets, toOffset: newOffset)
+                                      monthVM.schedule = s
+                                      monthVM.updateMonthSchedule()
+                                  },
+            onCommit:             { monthVM.updateMonthSchedule() },
+            onDelete:             { p in
+                                      guard var s = monthVM.schedule else { return }
+                                      s.monthlyPriorities.removeAll { $0.id == p.id }
+                                      monthVM.schedule = s
+                                      monthVM.updateMonthSchedule()
+                                      if s.monthlyPriorities.isEmpty { isRemoveMode = false }
+                                  },
+            addAction:            {
+                                      guard var s = monthVM.schedule else { return }
+                                      s.monthlyPriorities.append(
+                                          MonthlyPriority(
+                                              id: UUID(),
+                                              title: "New Priority",
+                                              progress: 0,
+                                              isCompleted: false
+                                          )
+                                      )
+                                      monthVM.schedule = s
+                                      monthVM.updateMonthSchedule()
+                                      isRemoveMode = false
+                                  },
+            importAction:         { importUnfinishedFromLastMonth() }
         )
     }
 
@@ -191,33 +210,32 @@ struct MonthView: View {
     // ───────────────────────────────────────────────────────────────
     // MARK: – Data helpers
     // ───────────────────────────────────────────────────────────────
-    /// fetches MonthSchedule *and* the 30-odd DaySchedule docs
+    /// Fetches MonthSchedule *and* the 30-odd DaySchedule docs
     private func loadMonth() {
-            guard let uid = session.userModel?.id else { return }
+        guard let uid = session.userModel?.id else { return }
 
-            // FIX here ↓↓↓
-            let monthID = MonthViewModel.isoMonth.string(from: monthViewState.currentMonth)
-            monthVM.loadMonthSchedule(for: monthViewState.currentMonth, userId: uid)
+        // Ensure MonthSchedule document exists and load it
+        let monthID = MonthViewModel.isoMonth.string(from: monthViewState.currentMonth)
+        monthVM.loadMonthSchedule(for: monthViewState.currentMonth, userId: uid)
 
-            // Ensures the MonthSchedule doc exists
-            let ref = Firestore.firestore()
-                .collection("users").document(uid)
-                .collection("monthSchedules").document(monthID)
-            ref.getDocument { snap, _ in
-                if !(snap?.exists ?? false) {
-                    let fresh = MonthSchedule(
-                        id:                 monthID,
-                        userId:             uid,
-                        yearMonth:          monthID,
-                        monthlyPriorities:  [],
-                        dayCompletions:     [:],
-                        dailyPrioritiesByDay: [:]
-                    )
-                    try? ref.setData(from: fresh)
-                    monthVM.schedule = fresh
-                }
+        let ref = Firestore.firestore()
+            .collection("users").document(uid)
+            .collection("monthSchedules").document(monthID)
+        ref.getDocument { snap, _ in
+            if !(snap?.exists ?? false) {
+                let fresh = MonthSchedule(
+                    id:                  monthID,
+                    userId:              uid,
+                    yearMonth:           monthID,
+                    monthlyPriorities:   [],
+                    dayCompletions:      [:],
+                    dailyPrioritiesByDay: [:]
+                )
+                try? ref.setData(from: fresh)
+                monthVM.schedule = fresh
             }
         }
+    }
 
     private func loadAllMonthDataOnce() {
         let now  = Date()
@@ -230,27 +248,103 @@ struct MonthView: View {
     }
 
     private func copyFromPreviousMonth() {
-            guard let uid  = session.userModel?.id,
-                  let curr = monthVM.schedule,
-                  let prev = Calendar.current.date(byAdding: .month, value: -1,
-                                                   to: monthViewState.currentMonth) else { return }
+        guard let uid  = session.userModel?.id,
+              let curr = monthVM.schedule,
+              let prev = Calendar.current.date(byAdding: .month, value: -1,
+                                               to: monthViewState.currentMonth) else { return }
 
-            // FIX here ↓↓↓
-            let idPrev = MonthViewModel.isoMonth.string(from: prev)
-            Firestore.firestore()
-                .collection("users").document(uid)
-                .collection("monthSchedules").document(idPrev)
-                .getDocument { snap, _ in
-                    guard let snap, snap.exists,
-                          let prevSched = try? snap.data(as: MonthSchedule.self) else { return }
-                    var updated = curr
-                    updated.monthlyPriorities = prevSched.monthlyPriorities
-                    monthVM.schedule = updated
-                    monthVM.updateMonthSchedule()
-                }
+        let idPrev = MonthViewModel.isoMonth.string(from: prev)
+        Firestore.firestore()
+            .collection("users").document(uid)
+            .collection("monthSchedules").document(idPrev)
+            .getDocument { snap, _ in
+                guard let snap, snap.exists,
+                      let prevSched = try? snap.data(as: MonthSchedule.self) else { return }
+                var updated = curr
+                updated.monthlyPriorities = prevSched.monthlyPriorities
+                monthVM.schedule = updated
+                monthVM.updateMonthSchedule()
+            }
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // MARK: – Import Unfinished Helper
+    // ───────────────────────────────────────────────────────────────
+    private func updateHasPreviousUnfinished() {
+        guard let uid = session.userModel?.id else {
+            hasPreviousUnfinished = false
+            return
         }
-}
+        // Only check if displayed month is “this” calendar month
+        let thisMonth = Calendar.current.isDate(
+            Date(),
+            equalTo: monthViewState.currentMonth,
+            toGranularity: .month
+        )
+        if thisMonth {
+            // Compute last month’s start date
+            guard let lastMonth = Calendar.current.date(
+                      byAdding: .month,
+                      value: -1,
+                      to: monthViewState.currentMonth
+                  ) else {
+                hasPreviousUnfinished = false
+                return
+            }
+            let lastID = MonthViewModel.isoMonth.string(from: lastMonth)
+            let ref = Firestore.firestore()
+                .collection("users").document(uid)
+                .collection("monthSchedules").document(lastID)
+            ref.getDocument { snap, _ in
+                if let snap, snap.exists,
+                   let prevSched = try? snap.data(as: MonthSchedule.self) {
+                    let unfinished = prevSched.monthlyPriorities.filter { !$0.isCompleted }
+                    hasPreviousUnfinished = !unfinished.isEmpty
+                } else {
+                    hasPreviousUnfinished = false
+                }
+            }
+        } else {
+            hasPreviousUnfinished = false
+        }
+    }
 
+    private func importUnfinishedFromLastMonth() {
+        guard let uid = session.userModel?.id else { return }
+        // Compute last month’s start date
+        guard let lastMonth = Calendar.current.date(
+                  byAdding: .month,
+                  value: -1,
+                  to: monthViewState.currentMonth
+              ) else { return }
+        let lastID = MonthViewModel.isoMonth.string(from: lastMonth)
+        let ref = Firestore.firestore()
+            .collection("users").document(uid)
+            .collection("monthSchedules").document(lastID)
+        ref.getDocument { snap, _ in
+            if let snap, snap.exists,
+               let prevSched = try? snap.data(as: MonthSchedule.self),
+               var currSched = monthVM.schedule {
+                let unfinished = prevSched.monthlyPriorities.filter { !$0.isCompleted }
+                // Avoid duplicates by title
+                let existingTitles = Set(currSched.monthlyPriorities.map { $0.title })
+                for old in unfinished {
+                    if !existingTitles.contains(old.title) {
+                        let newPriority = MonthlyPriority(
+                            id: UUID(),
+                            title: old.title,
+                            progress: 0,
+                            isCompleted: false
+                        )
+                        currSched.monthlyPriorities.append(newPriority)
+                    }
+                }
+                monthVM.schedule = currSched
+                monthVM.updateMonthSchedule()
+            }
+        }
+    }
+}
 
 // ──────────────────────────────────────────────────────────────────
 // MARK: – Month navigation view (arrows + label)
@@ -416,8 +510,7 @@ private struct CalendarView: View {
         return days
     }
 }
-
-// MARK: – Day Summary View
+// MARK: – Day Summary View (unchanged from previous)
 struct DaySummaryView: View {
     let day: Date
     @Binding var habits: [Habit]

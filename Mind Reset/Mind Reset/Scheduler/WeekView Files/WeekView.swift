@@ -64,8 +64,6 @@ struct WeekView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                copyButton
-
                 WeekNavigationView(
                     currentWeekStart: $weekViewState.currentWeekStart,
                     accountCreationDate: session.userModel?.createdAt ?? Date(),
@@ -159,31 +157,6 @@ struct WeekView: View {
         }
     }
 
-    // “Copy from Previous Week” button
-    private var copyButton: some View {
-        HStack {
-            Spacer()
-            Button("Copy from Previous Week") { showWeekCopyAlert = true }
-                .font(.headline)
-                .foregroundColor(accentColor)
-                .padding(.horizontal, 16)
-                .background(Color.black)
-                .cornerRadius(8)
-            Spacer()
-        }
-        .alert(isPresented: $showWeekCopyAlert) {
-            Alert(
-                title: Text("Confirm Copy"),
-                message: Text("Are you sure you want to copy the previous week's schedule?"),
-                primaryButton: .destructive(Text("Copy")) {
-                    if let uid = session.userModel?.id {
-                        viewModel.copyPreviousWeek(to: weekViewState.currentWeekStart, userId: uid)
-                    }
-                },
-                secondaryButton: .cancel()
-            )
-        }
-    }
 
     // Load or refresh this week’s schedule
     private func loadSchedule() {

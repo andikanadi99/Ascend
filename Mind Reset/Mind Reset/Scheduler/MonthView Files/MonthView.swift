@@ -51,7 +51,6 @@ struct MonthView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                copyPreviousMonthButton
                 monthNavigationHeader
 
                 
@@ -193,26 +192,7 @@ struct MonthView: View {
         return result
     }
 
-    // ───────────────────────────────────────────────────────────────
-    // MARK: – Top controls
-    // ───────────────────────────────────────────────────────────────
-    private var copyPreviousMonthButton: some View {
-        HStack {
-            Spacer()
-            Button("Copy from Previous Month") { showCopyAlert = true }
-                .font(.headline)
-                .foregroundColor(accentColor)
-                .padding(.vertical, 8)
-                .padding(.horizontal, 16)
-                .background(Color.black)
-                .cornerRadius(8)
-            Spacer()
-        }
-        .alert("Confirm Copy", isPresented: $showCopyAlert) {
-            Button("Copy", role: .destructive) { copyFromPreviousMonth() }
-            Button("Cancel", role: .cancel) { }
-        }
-    }
+
 
     private var monthNavigationHeader: some View {
         MonthNavigationView(

@@ -177,7 +177,7 @@ class DayViewModel: ObservableObject {
       userId: String,
       completion: @escaping (Bool) -> Void
     ) {
-        let cal       = Calendar.current
+        let cal        = Calendar.current
         let sourceDate = cal.date(byAdding: .day, value: -1, to: targetDate)!
         let sourceId   = DayViewModel.isoFormatter.string(
           from: cal.startOfDay(for: sourceDate)
@@ -189,6 +189,7 @@ class DayViewModel: ObservableObject {
         let sourceRef = db
             .collection("users").document(userId)
             .collection("daySchedules").document(sourceId)
+
         let targetRef = db
             .collection("users").document(userId)
             .collection("daySchedules").document(targetId)
@@ -205,13 +206,54 @@ class DayViewModel: ObservableObject {
                 return completion(false)
             }
 
-            var targetSchedule = sourceSchedule
-            targetSchedule.id = targetId
-            targetSchedule.date = cal.startOfDay(for: targetDate)
+            // ─────────── Build a brand-new Schedule for “today” ───────────
+            //
+            // Instead of doing:
+            //     var targetSchedule = sourceSchedule
+            //     targetSchedule.id = targetId
+            //     targetSchedule.date = <today>
+            // which simply copies the struct but preserves child‐IDs (so editing one
+            // mutates both), we explicitly rebuild each array element with a fresh UUID.
 
+            // 1) Deep‐copy timeBlocks:
+            let newTimeBlocks: [TimeBlock] = sourceSchedule.timeBlocks.map { oldBlock in
+                TimeBlock(
+                    id: UUID(),               // NEW UUID
+                    time: oldBlock.time,
+                    task: oldBlock.task
+                )
+            }
+
+            // 2) Deep‐copy priorities:
+            let newPriorities: [TodayPriority] = sourceSchedule.priorities.map { oldPriority in
+                TodayPriority(
+                    id: UUID(),               // NEW UUID
+                    title: oldPriority.title,
+                    progress: oldPriority.progress,
+                    isCompleted: oldPriority.isCompleted
+                )
+            }
+
+            // 3) Create a brand‐new DaySchedule struct (with today’s ID and date):
+            let todayStart = cal.startOfDay(for: targetDate)
+            let newSchedule = DaySchedule(
+                id: targetId,
+                userId: sourceSchedule.userId,
+                date: todayStart,
+                wakeUpTime: sourceSchedule.wakeUpTime,
+                sleepTime: sourceSchedule.sleepTime,
+                priorities: newPriorities,
+                timeBlocks: newTimeBlocks
+            )
+
+            // 4) Immediately publish locally so the UI updates:
+            DispatchQueue.main.async {
+                self.schedule = newSchedule
+            }
+
+            // 5) Persist under a distinct Firestore document (so you don’t overwrite yesterday):
             do {
-                try targetRef.setData(from: targetSchedule)
-                DispatchQueue.main.async { self.schedule = targetSchedule }
+                try targetRef.setData(from: newSchedule)
                 completion(true)
             } catch {
                 print("Error saving target schedule:", error)
@@ -219,6 +261,7 @@ class DayViewModel: ObservableObject {
             }
         }
     }
+
 
     // ────────────────────────────────────────────────────────────
     // MARK: – NEW: Fetch yesterday’s unfinished priorities only

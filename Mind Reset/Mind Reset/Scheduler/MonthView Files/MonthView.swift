@@ -10,6 +10,11 @@ import FirebaseFirestore
 // ───────────────────────────────────────────────────────────────
 private enum Field: Hashable { case monthlyPriority(UUID) }
 
+private enum DisplayMode: String, CaseIterable {
+    case days = "Days"
+    case weeks = "Weeks"
+}
+
 struct MonthView: View {
 
     // — injected —
@@ -33,6 +38,8 @@ struct MonthView: View {
 
     // Track whether last month has any unfinished priorities
     @State private var hasPreviousUnfinished = false
+    // Variable to alternate between days and weeks view
+    @State private var displayMode: DisplayMode = .days
 
     // palette
     private let accentCyan = Color(red: 0, green: 1,  blue: 1)
@@ -44,14 +51,24 @@ struct MonthView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-
                 copyPreviousMonthButton
                 monthNavigationHeader
-                monthlyPrioritiesSection
 
-                calendarSection
-                    .frame(height: 300)
-                    .environmentObject(monthVM)
+                
+
+                monthlyPrioritiesSection
+                
+                // ═══ “Days / Weeks” Segmented Picker (moved below priorities) ═══
+                segmentedPicker
+                
+                // ═══ Show either calendar grid or week cards ═══
+                if displayMode == .days {
+                    calendarSection
+                        .frame(height: 300)
+                        .environmentObject(monthVM)
+                } else {
+                    weekCardsSection
+                }
             }
             .padding()
             .padding(.top, -20)
@@ -59,17 +76,121 @@ struct MonthView: View {
         }
         .onAppear {
             loadAllMonthDataOnce()
-            // Defer so that monthViewState.currentMonth is set
-            DispatchQueue.main.async {
-                updateHasPreviousUnfinished()
-            }
-        }
-        .onChange(of: monthViewState.currentMonth) { _ in
-            loadMonth()
+            // Update “hasPreviousUnfinished” once the view appears
             updateHasPreviousUnfinished()
         }
         .navigationTitle("Your Month")
         .navigationBarTitleDisplayMode(.inline)
+    }
+    
+    /// “Days / Weeks” segmented picker styled like other tabs
+        private var segmentedPicker: some View {
+            VStack(spacing: 4) {
+                Picker("", selection: $displayMode) {
+                    Text(DisplayMode.days.rawValue).tag(DisplayMode.days)
+                    Text(DisplayMode.weeks.rawValue).tag(DisplayMode.weeks)
+                }
+                .pickerStyle(SegmentedPickerStyle())
+                .tint(.gray)
+                .background(Color.gray)
+                .cornerRadius(8)
+                .padding(.horizontal, 10)
+
+                Rectangle()
+                    .fill(Color.black)
+                    .frame(height: 4)
+                    .padding(.horizontal, 10)
+            }
+        }
+    /// This section appears when “Weeks” is selected.
+    private var weekCardsSection: some View {
+        ScrollView {
+            LazyVStack(spacing: 16) {
+                ForEach(weeksInMonth(), id: \.self) { weekStart in
+                    WeekCardHostView(
+                      accentColor:   accentCyan,
+                      weekStart:     weekStart,
+                      editMode:      $editMode,
+                      isRemoveMode:  $isRemoveMode
+                    )
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+
+    /// A small wrapper that instantiates a WeekViewModel and drives WeekCardView
+    private struct WeekCardHostView: View {
+        let accentColor: Color
+        let weekStart:   Date
+
+        @Binding var editMode:   EditMode
+        @Binding var isRemoveMode: Bool
+        @EnvironmentObject private var session: SessionStore
+
+        @StateObject private var weekVM = WeekViewModel()
+
+        init(accentColor: Color,
+             weekStart: Date,
+             editMode: Binding<EditMode>,
+             isRemoveMode: Binding<Bool>)
+        {
+            self.accentColor = accentColor
+            self.weekStart   = weekStart
+            self._editMode   = editMode
+            self._isRemoveMode = isRemoveMode
+        }
+
+        var body: some View {
+            WeekCardView(
+                accentColor:      accentColor,
+                weekStart:        weekStart,
+                weeklyPriorities: Binding(
+                                     get:  { weekVM.schedule?.weeklyPriorities ?? [] },
+                                     set: { new in
+                                         guard var s = weekVM.schedule else { return }
+                                         s.weeklyPriorities = new
+                                         weekVM.schedule = s
+                                     }
+                                   ),
+                editMode:         $editMode,
+                isRemoveMode:     $isRemoveMode,
+                onToggle:         { id in weekVM.toggleWeeklyPriorityCompletion(id) },
+                onDelete:         { pr in weekVM.deletePriority(pr) },
+                onCommit:         { weekVM.updateWeeklySchedule() },
+                addAction:        { weekVM.addNewPriority() }
+            )
+            .onAppear {
+                guard let uid = session.userModel?.id else { return }
+                weekVM.loadWeeklySchedule(for: weekStart, userId: uid)
+            }
+        }
+    }
+
+    /// Returns an array of Date objects (each the start-of-week) covering this month.
+    private func weeksInMonth() -> [Date] {
+        var result: [Date] = []
+        let calendar = Calendar.current
+        // 1) find the month’s full range:
+        guard let monthInterval = calendar.dateInterval(of: .month,
+                                                        for: monthViewState.currentMonth)
+        else { return result }
+
+        // 2) Step back to the start-of-week that contains the first of the month:
+        let firstDay = monthInterval.start
+        let firstWeekStart = calendar.date(
+            byAdding: .day,
+            value: -(calendar.component(.weekday, from: firstDay) - 1),
+            to: firstDay
+        )!
+
+        // 3) Now iterate in 7-day increments until you pass month end:
+        var cursor = firstWeekStart
+        while cursor < monthInterval.end {
+            result.append(cursor)
+            cursor = calendar.date(byAdding: .day, value: 7, to: cursor)!
+        }
+        return result
     }
 
     // ───────────────────────────────────────────────────────────────
@@ -88,7 +209,7 @@ struct MonthView: View {
             Spacer()
         }
         .alert("Confirm Copy", isPresented: $showCopyAlert) {
-            Button("Copy",  role: .destructive) { copyFromPreviousMonth() }
+            Button("Copy", role: .destructive) { copyFromPreviousMonth() }
             Button("Cancel", role: .cancel) { }
         }
     }
@@ -101,6 +222,7 @@ struct MonthView: View {
         )
         .onChange(of: monthViewState.currentMonth) { _ in
             loadMonth()
+            updateHasPreviousUnfinished()
         }
     }
 
@@ -510,6 +632,7 @@ private struct CalendarView: View {
         return days
     }
 }
+
 // MARK: – Day Summary View (unchanged from previous)
 struct DaySummaryView: View {
     let day: Date

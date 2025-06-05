@@ -1,3 +1,4 @@
+//
 //  ProfileInfo.swift
 //  Mind Reset
 //
@@ -31,119 +32,57 @@ struct ProfileInfo: View {
     let accentCyan = Color(red: 0, green: 1, blue: 1)
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                // Profile Picture
-                Image(systemName: "person.crop.circle.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 100, height: 100)
-                    .foregroundColor(accentCyan)
-
-                // Account Info
-                if let user = session.userModel {
-                    if isEditing {
-                        VStack(spacing: 12) {
-                            TextField("Display Name", text: $updatedDisplayName)
-                                .focused($isDisplayNameFocused)
-                                .padding(8)
-                                .background(Color.gray.opacity(0.2))
-                                .cornerRadius(8)
-                                .foregroundColor(.white)
-                        }
-                    } else {
-                        Text(user.displayName.isEmpty ? "No Display Name" : user.displayName)
-                            .font(.title)
-                            .foregroundColor(.white)
-                        Text(user.email)
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.8))
-                    }
-
-                    Text("Joined on \(formattedDate(user.createdAt))")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.7))
-                } else {
-                    Text("Loading Profile...")
-                        .foregroundColor(.white)
-                }
-
-                // Edit / Save Profile Button
-                Button(action: {
-                    if isEditing {
-                        showSaveProfileAlert = true
-                    } else if let user = session.userModel {
-                        updatedDisplayName = user.displayName
-                        updatedEmail = user.email
-                    }
-                    withAnimation { isEditing.toggle() }
-                }) {
-                    Text(isEditing ? "Save Profile" : "Edit Profile")
-                        .font(.headline)
-                        .foregroundColor(.black)
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(accentCyan)
-                        .cornerRadius(8)
-                }
-                .alert(
-                    "Save Profile Changes?",
-                    isPresented: $showSaveProfileAlert,
-                    actions: {
-                        Button("Save", role: .destructive) {
-                            saveProfile()
-                        }
-                        Button("Cancel", role: .cancel) { }
-                    },
-                    message: {
-                        Text("Are you sure you want to overwrite your display name?")
-                    }
-                )
-
-                // Default Times Section
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Default Times")
-                        .font(.headline)
+        // ───────────────────────────────────────────────────────────────────────────
+        // Wrap the entire view in a tappable area to dismiss the keyboard.
+        ZStack {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Profile Picture
+                    Image(systemName: "person.crop.circle.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 100, height: 100)
                         .foregroundColor(accentCyan)
 
-                    HStack(spacing: 16) {
-                        VStack(alignment: .leading) {
-                            Text("Wake Up")
+                    // Account Info
+                    if let user = session.userModel {
+                        if isEditing {
+                            VStack(spacing: 12) {
+                                TextField("Display Name", text: $updatedDisplayName)
+                                    .focused($isDisplayNameFocused)
+                                    .padding(8)
+                                    .background(Color.gray.opacity(0.2))
+                                    .cornerRadius(8)
+                                    .foregroundColor(.white)
+                            }
+                        } else {
+                            Text(user.displayName.isEmpty ? "No Display Name" : user.displayName)
+                                .font(.title)
                                 .foregroundColor(.white)
-                            DatePicker(
-                                "",
-                                selection: $defaultWake,
-                                displayedComponents: .hourAndMinute
-                            )
-                            .labelsHidden()
-                            .environment(\.colorScheme, .dark)
-                            .padding(4)
-                            .background(Color.black)
-                            .cornerRadius(4)
+                            Text(user.email)
+                                .font(.subheadline)
+                                .foregroundColor(.white.opacity(0.8))
                         }
 
-                        Spacer()
-
-                        VStack(alignment: .leading) {
-                            Text("Sleep")
-                                .foregroundColor(.white)
-                            DatePicker(
-                                "",
-                                selection: $defaultSleep,
-                                displayedComponents: .hourAndMinute
-                            )
-                            .labelsHidden()
-                            .environment(\.colorScheme, .dark)
-                            .padding(4)
-                            .background(Color.black)
-                            .cornerRadius(4)
-                        }
+                        Text("Joined on \(formattedDate(user.createdAt))")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.7))
+                    } else {
+                        Text("Loading Profile...")
+                            .foregroundColor(.white)
                     }
 
+                    // Edit / Save Profile Button
                     Button(action: {
-                        showSaveTimesAlert = true
+                        if isEditing {
+                            showSaveProfileAlert = true
+                        } else if let user = session.userModel {
+                            updatedDisplayName = user.displayName
+                            updatedEmail = user.email
+                        }
+                        withAnimation { isEditing.toggle() }
                     }) {
-                        Text("Save Default Times")
+                        Text(isEditing ? "Save Profile" : "Edit Profile")
                             .font(.headline)
                             .foregroundColor(.black)
                             .padding()
@@ -152,35 +91,104 @@ struct ProfileInfo: View {
                             .cornerRadius(8)
                     }
                     .alert(
-                        "Save Default Times?",
-                        isPresented: $showSaveTimesAlert,
+                        "Save Profile Changes?",
+                        isPresented: $showSaveProfileAlert,
                         actions: {
                             Button("Save", role: .destructive) {
-                                saveDefaultTimes()
+                                saveProfile()
                             }
                             Button("Cancel", role: .cancel) { }
                         },
                         message: {
-                            Text("This will update your default wake-up and sleep times for all future days. Note: days you’ve already edited will not be changed.")
+                            Text("Are you sure you want to overwrite your display name?")
                         }
                     )
 
+                    // Default Times Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Default Times")
+                            .font(.headline)
+                            .foregroundColor(accentCyan)
+
+                        HStack(spacing: 16) {
+                            VStack(alignment: .leading) {
+                                Text("Wake Up")
+                                    .foregroundColor(.white)
+                                DatePicker(
+                                    "",
+                                    selection: $defaultWake,
+                                    displayedComponents: .hourAndMinute
+                                )
+                                .labelsHidden()
+                                .environment(\.colorScheme, .dark)
+                                .padding(4)
+                                .background(Color.black)
+                                .cornerRadius(4)
+                            }
+
+                            Spacer()
+
+                            VStack(alignment: .leading) {
+                                Text("Sleep")
+                                    .foregroundColor(.white)
+                                DatePicker(
+                                    "",
+                                    selection: $defaultSleep,
+                                    displayedComponents: .hourAndMinute
+                                )
+                                .labelsHidden()
+                                .environment(\.colorScheme, .dark)
+                                .padding(4)
+                                .background(Color.black)
+                                .cornerRadius(4)
+                            }
+                        }
+
+                        Button(action: {
+                            showSaveTimesAlert = true
+                        }) {
+                            Text("Save Default Times")
+                                .font(.headline)
+                                .foregroundColor(.black)
+                                .padding()
+                                .frame(maxWidth: .infinity)
+                                .background(accentCyan)
+                                .cornerRadius(8)
+                        }
+                        .alert(
+                            "Save Default Times?",
+                            isPresented: $showSaveTimesAlert,
+                            actions: {
+                                Button("Save", role: .destructive) {
+                                    saveDefaultTimes()
+                                }
+                                Button("Cancel", role: .cancel) { }
+                            },
+                            message: {
+                                Text("This will update your default wake-up and sleep times for all future days. Note: days you’ve already edited will not be changed.")
+                            }
+                        )
+                    }
+                    .padding()
+                    .background(Color.gray.opacity(0.3))
+                    .cornerRadius(8)
                 }
                 .padding()
-                .background(Color.gray.opacity(0.3))
-                .cornerRadius(8)
             }
-            .padding()
+            .background(Color.black.edgesIgnoringSafeArea(.all))
         }
-        .background(Color.black.edgesIgnoringSafeArea(.all))
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") {
-                    isDisplayNameFocused = false
-                }
+        .contentShape(Rectangle())   // Make the entire ZStack respond to taps
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                UIApplication.shared.sendAction(
+                    #selector(UIResponder.resignFirstResponder),
+                    to: nil,
+                    from: nil,
+                    for: nil
+                )
             }
-        }
+        )
+        // ───────────────────────────────────────────────────────────────────────────
     }
 
     // MARK: - Helpers

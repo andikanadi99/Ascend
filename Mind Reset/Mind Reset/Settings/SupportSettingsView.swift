@@ -13,33 +13,35 @@ struct SupportSettingsView: View {
     private let db = Firestore.firestore()
     private let accentCyan = Color(red: 0, green: 1, blue: 1)
     private let supportAddress = "andikanadi10@gmail.com"
-    
+
     // MARK: – User input
     @State private var feedbackMessage: String = ""
     @State private var issueMessage: String = ""
-    
+
     // MARK: – Focus states for keyboard
     @FocusState private var isFeedbackFocused: Bool
     @FocusState private var isIssueFocused: Bool
-    
+
     // MARK: – Alert state
     @State private var showAlert      = false
     @State private var alertTitle     = ""
     @State private var alertMessage   = ""
-    
+
     var body: some View {
+        // ───────────────────────────────────────────────────────────────────────────
+        // Wrap the entire view in a tappable area to dismiss the keyboard.
         ZStack {
             Color.black.ignoresSafeArea()
-            
+
             ScrollView {
                 VStack(spacing: 24) {
-                    
+
                     // MARK: General Feedback
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Share Feedback")
                             .font(.headline)
                             .foregroundColor(.white)
-                        
+
                         TextEditor(text: $feedbackMessage)
                             .focused($isFeedbackFocused)                              // focus binding
                             .frame(minHeight: 150)
@@ -58,8 +60,7 @@ struct SupportSettingsView: View {
                                 },
                                 alignment: .topLeading
                             )
-                           
-                        
+
                         Button("Send Feedback") {
                             submit(type: "Feedback", message: feedbackMessage)
                         }
@@ -69,13 +70,13 @@ struct SupportSettingsView: View {
                     .padding()
                     .background(Color.gray.opacity(0.2))
                     .cornerRadius(12)
-                    
+
                     // MARK: Problem Reports
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Report a Problem")
                             .font(.headline)
                             .foregroundColor(.white)
-                        
+
                         TextEditor(text: $issueMessage)
                             .focused($isIssueFocused)                                 // focus binding
                             .frame(minHeight: 150)
@@ -94,8 +95,7 @@ struct SupportSettingsView: View {
                                 },
                                 alignment: .topLeading
                             )
-                            
-                        
+
                         Button("Send Report") {
                             submit(type: "Issue Report", message: issueMessage)
                         }
@@ -105,21 +105,24 @@ struct SupportSettingsView: View {
                     .padding()
                     .background(Color.gray.opacity(0.2))
                     .cornerRadius(12)
-                    
+
                     Spacer()
                 }
                 .padding()
             }
         }
-        .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done") {
-                        isFeedbackFocused = false
-                        isIssueFocused = false
-                    }
-                }
+        .contentShape(Rectangle())   // Make the entire ZStack respond to taps
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                UIApplication.shared.sendAction(
+                    #selector(UIResponder.resignFirstResponder),
+                    to: nil,
+                    from: nil,
+                    for: nil
+                )
             }
+        )
+        // ───────────────────────────────────────────────────────────────────────────
         .navigationBarTitle("Support", displayMode: .inline)
         .preferredColorScheme(.dark)
         .alert(alertTitle, isPresented: $showAlert) {
@@ -128,7 +131,7 @@ struct SupportSettingsView: View {
             Text(alertMessage)
         }
     }
-    
+
     // MARK: – Submit to `mail` collection
     private func submit(type: String, message: String) {
         guard let user = session.userModel else {
@@ -137,7 +140,7 @@ struct SupportSettingsView: View {
             showAlert    = true
             return
         }
-        
+
         let emailDoc: [String: Any] = [
             "to":      [ supportAddress ],
             "from":    user.email,
@@ -147,7 +150,7 @@ struct SupportSettingsView: View {
                 "text":    message
             ]
         ]
-        
+
         db.collection("mail")
           .addDocument(data: emailDoc) { error in
             if let error = error {
@@ -178,7 +181,6 @@ private struct CyanButtonStyle: ButtonStyle {
             .cornerRadius(8)
     }
 }
-
 
 // MARK: – Preview
 struct SupportSettingsView_Previews: PreviewProvider {

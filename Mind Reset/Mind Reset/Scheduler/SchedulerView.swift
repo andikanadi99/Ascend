@@ -11,7 +11,7 @@ struct SchedulerView: View {
     @EnvironmentObject var session: SessionStore
     @State private var selectedTab: SchedulerTab = .day
 
-    /// Accent colour reused in sub‑views
+    /// Accent colour reused in sub-views
     private let accentCyan = Color(red: 0, green: 1, blue: 1)
 
     // ───── greetings & quotes ─────
@@ -49,8 +49,11 @@ struct SchedulerView: View {
     var body: some View {
         NavigationStack {                                // ← the one persistent stack
             ZStack {
-                Color.black.ignoresSafeArea()
+                // 1) Background color
+                Color.black
+                    .ignoresSafeArea()
 
+                // 2) Main content
                 VStack {
                     greetingBanner
                     segmentedPicker
@@ -59,22 +62,24 @@ struct SchedulerView: View {
                     Spacer()
                 }
             }
-            .navigationBarHidden(true)                   // hide default nav bar
-            .toolbarRole(.editor)                        // let children supply focus
-            .toolbar {                                   // single shared keyboard bar
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done") {
-                        UIApplication.shared.sendAction(
-                            #selector(UIResponder.resignFirstResponder),
-                            to: nil, from: nil, for: nil)
-                    }
+            // 3) Make the entire ZStack tappable, but allow underlying taps (e.g., buttons, lists) to still work
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    UIApplication.shared.sendAction(
+                        #selector(UIResponder.resignFirstResponder),
+                        to: nil,
+                        from: nil,
+                        for: nil
+                    )
                 }
-            }
+            )
+            .navigationBarHidden(true)                   // hide default nav bar
         }
     }
 
-    // ───── sub‑views ─────
+    // ───── sub-views ─────
+
     private var greetingBanner: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(dailyGreeting)

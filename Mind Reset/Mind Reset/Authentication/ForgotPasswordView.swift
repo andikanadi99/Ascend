@@ -1,12 +1,7 @@
 //
 //  ForgetPasswordView.swift
 //  Mind Reset
-//  This View handles the situation when a user clicks the forget password link on the login pahe
-//  Objectives:
-//      1.User Registration: Allow users to create a new account using their email and password.
-//      2.Handle input validation.
-//      3.Error Handling: Display meaningful error messages when registration fails.
-//      4.Navigation: Provide a way for users to navigate to the LoginView if they already have an account.
+//  This View handles the situation when a user clicks the forget password link on the login page
 //  Created by Andika Yudhatrisna on 11/22/24.
 //
 
@@ -16,21 +11,22 @@ import SwiftUI
 struct ForgetPasswordView: View {
     @EnvironmentObject var session: SessionStore
     @Environment(\.presentationMode) var presentationMode
-    
+
     @State private var email = ""
     @State private var isShowingAlert = false
-    
+
     // Color definitions
     let backgroundBlack = Color.black
     let neonCyan = Color(red: 0, green: 1, blue: 1)  // #00FFFF
     let fieldBackground = Color(red: 0.102, green: 0.102, blue: 0.102) // #1A1A1A
-    
+
     var body: some View {
+        // ───────────────────────────────────────────────────────────────────────────
+        // Wrap everything in a tappable area to dismiss the keyboard.
         ZStack {
-            // Main black background
             backgroundBlack
                 .ignoresSafeArea()
-            
+
             VStack(spacing: 30) {
                 // Page Title in neonCyan
                 Text("Reset Password")
@@ -39,7 +35,7 @@ struct ForgetPasswordView: View {
                     .foregroundColor(neonCyan)
                     .multilineTextAlignment(.center)
                     .padding()
-                
+
                 // Email Field with .prompt placeholders
                 TextField(
                     "",
@@ -53,17 +49,17 @@ struct ForgetPasswordView: View {
                 .background(fieldBackground)
                 .cornerRadius(8)
                 .padding(.horizontal)
-                .onChange(of: email, initial: false) { _, _ in
+                .onChange(of: email) { _ in
                     session.auth_error = nil
                 }
-                
+
                 // Error message
                 if let errorMessage = session.auth_error {
                     Text(errorMessage)
                         .foregroundColor(.red)
                         .padding(.horizontal)
                 }
-                
+
                 // Reset Password Button with #00FFFF background, black text
                 Button(action: {
                     resetPassword()
@@ -86,16 +82,20 @@ struct ForgetPasswordView: View {
                         }
                     )
                 }
-                
+
                 Spacer()
             }
             .padding()
-            .onTapGesture {
+        }
+        .contentShape(Rectangle())   // Make the entire ZStack respond to taps
+        .simultaneousGesture(
+            TapGesture().onEnded {
                 hideKeyboard()
             }
-        }
+        )
+        // ───────────────────────────────────────────────────────────────────────────
     }
-    
+
     /*
      Purpose: Resets password after field is verified and checked.
     */
@@ -104,19 +104,19 @@ struct ForgetPasswordView: View {
             session.auth_error = "Please enter your email address."
             return
         }
-        
+
         guard isEmailValid(email) else {
             session.auth_error = "Please enter a valid email address."
             return
         }
-        
+
         session.resetPassword(email: email) { success in
             if success {
                 isShowingAlert = true
             }
         }
     }
-    
+
     // Validate email
     func isEmailValid(_ email: String) -> Bool {
         let emailRegEx = "(?:[A-Z0-9a-z._%+-]+)@(?:[A-Za-z0-9-]+\\.)+[A-Za-z]{2,64}"

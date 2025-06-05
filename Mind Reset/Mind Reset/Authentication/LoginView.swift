@@ -2,10 +2,8 @@
 //  LoginView.swift
 //  Mind Reset
 //
-//  Created by Andika Yudhatrisna on 11/21/24.
+//  Created by Andika Yudhatrisna on 11/21/24.
 //
-
-
 
 import SwiftUI
 import AuthenticationServices   // ← Apple Sign-in
@@ -161,7 +159,7 @@ struct LoginView: View {
 
                 // Google Sign-in
                 Button {
-                    startGoogleSignIn()          // ← trigger the flow
+                    startGoogleSignIn()
                 } label: {
                     HStack(spacing: 8) {
                         Image("GoogleLogo")
@@ -301,7 +299,6 @@ struct LoginView: View {
 }
 
 // MARK: - Primary Button Style
-
 private struct PrimaryButton: ButtonStyle {
     let color: Color
     init(_ color: Color) { self.color = color }
@@ -316,7 +313,6 @@ private struct PrimaryButton: ButtonStyle {
 }
 
 // MARK: - Hide Keyboard Helper
-
 #if canImport(UIKit)
 extension View {
     func hideLoginKeyboard() {
@@ -329,7 +325,6 @@ extension View {
 #endif
 
 // MARK: - Preview
-
 struct LoginView_Previews: PreviewProvider {
     static var previews: some View {
         NavigationView {
@@ -339,5 +334,4 @@ struct LoginView_Previews: PreviewProvider {
         .preferredColorScheme(.dark)
     }
 }
-
 

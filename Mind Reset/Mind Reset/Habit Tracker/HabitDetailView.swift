@@ -95,12 +95,13 @@ struct HabitDetailView: View {
     @State private var weekOffset: Int = 0
     @State private var monthOffset: Int = 0
     @State private var showDateRangeOverlay: Bool = false
-    //Variables to handle done fields
+
+    // Variables to handle “Done” on TextEditor/TextField
     @FocusState private var isTitleFocused: Bool
     @FocusState private var isDescriptionFocused: Bool
     @FocusState private var isGoalFocused: Bool
     @FocusState private var isNotesFocused: Bool
-    
+
     // MARK: - Time functions and variables
     @State private var audioPlayer: AVAudioPlayer?
     private let hapticEngine = try? CHHapticEngine()
@@ -134,6 +135,7 @@ struct HabitDetailView: View {
         audioPlayer?.stop()
         audioPlayer = nil
     }
+
     /// Plays a short “timer done” sound that you’ve dropped into the app bundle
     /// Play the chime once or in an infinite loop.
     private func playEndSound(loop: Bool = false) {
@@ -175,7 +177,6 @@ struct HabitDetailView: View {
         }
     }
 
-
     // MARK: - Initialization
     init(habit: Binding<Habit>) {
         _habit = habit
@@ -186,10 +187,13 @@ struct HabitDetailView: View {
 
     // MARK: - Body
     var body: some View {
+        // ───────────────────────────────────────────────────────────────────────────
+        // Wrap the entire screen in a tappable area that will dismiss the keyboard.
+        // A simultaneousGesture ensures taps still go through to buttons, lists, etc.
         ZStack {
             mainContent
 
-            // Existing overlays.
+            // Existing overlays (they float above everything else):
             if showDateRangeOverlay {
                 Color.white.opacity(0.9)
                     .ignoresSafeArea()
@@ -204,7 +208,6 @@ struct HabitDetailView: View {
                 unmarkConfirmationOverlay
                     .transition(.opacity)
             }
-            // NEW: Custom Date Range Overlay.
             if showCustomDateRangeOverlay {
                 customDateRangeOverlayView
                     .transition(.opacity)
@@ -214,16 +217,34 @@ struct HabitDetailView: View {
                     .transition(.opacity)
             }
         }
+        .contentShape(Rectangle())   // Make the entire ZStack respond to taps
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                UIApplication.shared.sendAction(
+                    #selector(UIResponder.resignFirstResponder),
+                    to: nil,
+                    from: nil,
+                    for: nil
+                )
+            }
+        )
+        // ───────────────────────────────────────────────────────────────────────────
+
+        // Alerts, banners, and lifecycle handlers:
         .alert(isPresented: $showAlert) {
-            Alert(title: Text("Invalid Date Range"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
+            Alert(
+                title: Text("Invalid Date Range"),
+                message: Text(alertMessage),
+                dismissButton: .default(Text("OK"))
+            )
         }
         .alert("Timer Done",
                isPresented: $showRingerAlert,
                actions: {
                    // Single button that stops the sound and closes the alert
-                   Button("Stop Sound", role: .cancel) {   // role=.cancel so it’s bold on iOS
+                   Button("Stop Sound", role: .cancel) {
                        stopLoopingSound()
-                       ringerWorkItem?.cancel()            // cancel the 30-s auto-stop
+                       ringerWorkItem?.cancel() // cancel the 30-second auto‐stop
                    }
                },
                message: {
@@ -261,12 +282,13 @@ struct HabitDetailView: View {
     private var mainContent: some View {
         ZStack {
             backgroundBlack.ignoresSafeArea()
+
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 15) {
                     topBarSection
 
                     TextEditor(text: $editableDescription)
-                      .focused($isDescriptionFocused)                           // ①
+                      .focused($isDescriptionFocused)   // ① focus binding
                       .foregroundColor(.white.opacity(0.8))
                       .font(.subheadline)
                       .disableAutocorrection(true)
@@ -282,7 +304,8 @@ struct HabitDetailView: View {
                               .padding(.horizontal, 15)
                               .padding(.vertical, 2)
                           }
-                        }, alignment: .topLeading
+                        },
+                        alignment: .topLeading
                       )
 
                     goalSection
@@ -299,7 +322,7 @@ struct HabitDetailView: View {
                         .background(Color.gray)
                         .cornerRadius(8)
                         .padding(.horizontal, 10)
-                        
+
                         // More visible black divider.
                         Rectangle()
                             .fill(Color.black)
@@ -308,7 +331,6 @@ struct HabitDetailView: View {
                             .padding(.horizontal, 10)
                     }
 
-
                     Group {
                         switch selectedTabIndex {
                         case 0: progressTab
@@ -316,10 +338,9 @@ struct HabitDetailView: View {
                         default: notesTab
                         }
                     }
-                    
+
                     Spacer()
-                    
-                    // Display metric info.
+
                     // Display metric info.
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -349,7 +370,7 @@ struct HabitDetailView: View {
                         }
                     }
                     .padding(.horizontal)
-                    
+
                     // Mark/Unmark button.
                     Button {
                         if completedToday {
@@ -368,21 +389,8 @@ struct HabitDetailView: View {
                             .cornerRadius(8)
                     }
                     .padding(.bottom, 30)
-
-
                 }
                 .padding()
-            }
-            .toolbar {
-              ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") {
-                  isDescriptionFocused = false
-                  isGoalFocused       = false
-                  isNotesFocused      = false
-                  isTitleFocused      = false
-                }
-              }
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -481,9 +489,16 @@ struct HabitDetailView: View {
                 .font(.title3.weight(.semibold))
                 .foregroundColor(.white)
             // Use the custom calendar view instead of standard DatePickers.
-            CustomCalendarView(month: Date(), minDate: habit.startDate, maxDate: Date(), startDate: $customStartDate, endDate: $customEndDate, accentColor: accentCyan)
-                .frame(height: 300)
-                .padding(.horizontal)
+            CustomCalendarView(
+                month: Date(),
+                minDate: habit.startDate,
+                maxDate: Date(),
+                startDate: $customStartDate,
+                endDate: $customEndDate,
+                accentColor: accentCyan
+            )
+            .frame(height: 300)
+            .padding(.horizontal)
             HStack(spacing: 20) {
                 Button("Show Graph") {
                     // Validate that the selected range is within allowed dates.
@@ -501,6 +516,7 @@ struct HabitDetailView: View {
                 .padding()
                 .background(Color.white)
                 .cornerRadius(8)
+
                 Button("Cancel") {
                     withAnimation { showCustomDateRangeOverlay = false }
                 }
@@ -610,20 +626,19 @@ struct HabitDetailView: View {
         let alreadyCompleted = updatedHabit.dailyRecords.contains { record in
             calendar.isDate(record.date, inSameDayAs: today) && ((record.value ?? 0) > 0)
         }
-        
+
         updatedHabit.dailyRecords.append(newRecord)
-        
+
         if !alreadyCompleted {
             updatedHabit.currentStreak += 1
             if updatedHabit.currentStreak > updatedHabit.longestStreak {
                 updatedHabit.longestStreak = updatedHabit.currentStreak
             }
         }
-        
+
         viewModel.updateHabit(updatedHabit)
         habit = updatedHabit
     }
-
 
     // MARK: - Date Range Overlay (Existing Code)
     @ViewBuilder
@@ -861,10 +876,9 @@ struct CustomCalendarView: View {
     }
 }
 
-
 // MARK: - Subviews & Helpers (unchanged)
 extension HabitDetailView {
-    
+
     private var topBarSection: some View {
         HStack {
             Button {
@@ -886,14 +900,14 @@ extension HabitDetailView {
             Spacer().frame(width: 40)
         }
     }
-    
+
     private var completedToday: Bool {
         let calendar = Calendar.current
         return habit.dailyRecords.contains { record in
             calendar.isDate(record.date, inSameDayAs: Date()) && ((record.value ?? 0) > 0)
         }
     }
-    
+
     private var goalSection: some View {
         VStack() {
             Text("Goal Related to Habit:")
@@ -923,7 +937,6 @@ extension HabitDetailView {
         }
     }
 
-    
     // Custom circular button style.
     struct CircularButtonStyle: ButtonStyle {
         let backgroundColor: Color
@@ -955,7 +968,7 @@ extension HabitDetailView {
                         .foregroundColor(.white)
                 }
             }
-            
+
             // When the timer is not running and not paused, display the segmented wheel pickers for hours, minutes, and seconds.
             if !isTimerRunning && !isTimerPaused {
                 HStack(spacing: 20) {
@@ -973,7 +986,7 @@ extension HabitDetailView {
                         .frame(width: 70, height: 130)
                         .clipped()
                     }
-                    
+
                     // MINUTES Picker
                     VStack(spacing: 4) {
                         Picker("", selection: $selectedMinutes) {
@@ -988,7 +1001,7 @@ extension HabitDetailView {
                         .frame(width: 70, height: 130)
                         .clipped()
                     }
-                    
+
                     // SECONDS Picker
                     VStack(spacing: 4) {
                         Picker("", selection: $selectedSeconds) {
@@ -1012,7 +1025,7 @@ extension HabitDetailView {
                         .shadow(color: accentCyan.opacity(0.3), radius: 5)
                 )
             }
-            
+
             // Timer control buttons.
             HStack(spacing: 20) {
                 if !isTimerRunning && !isTimerPaused {
@@ -1035,7 +1048,6 @@ extension HabitDetailView {
                         .buttonStyle(CircularButtonStyle(backgroundColor: accentCyan, foregroundColor: .black))
                 }
             }
-            
         }
     }
 
@@ -1056,14 +1068,14 @@ extension HabitDetailView {
             .pickerStyle(WheelPickerStyle())
         }
     }
-    
+
     private func navigationButtonLabel(title: String, isDisabled: Bool) -> some View {
         Text(title)
             .multilineTextAlignment(.center)
             .foregroundColor(isDisabled ? Color.gray : accentCyan)
             .fixedSize(horizontal: false, vertical: true)
     }
-    
+
     private var progressTab: some View {
         // Base everything on the habit’s startDate
         let habitStart = Calendar.current.startOfDay(for: habit.startDate)
@@ -1141,8 +1153,10 @@ extension HabitDetailView {
                         showDateRangeOverlay = true
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "calendar").font(.callout)
-                            Text("Choose Week").font(.callout)
+                            Image(systemName: "calendar")
+                                .font(.callout)
+                            Text("Choose Week")
+                                .font(.callout)
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
@@ -1155,8 +1169,10 @@ extension HabitDetailView {
                         withAnimation { showCustomDateRangeOverlay = true }
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "calendar.badge.plus").font(.callout)
-                            Text("Custom Range").font(.callout)
+                            Image(systemName: "calendar.badge.plus")
+                                .font(.callout)
+                            Text("Custom Range")
+                                .font(.callout)
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
@@ -1206,8 +1222,10 @@ extension HabitDetailView {
                         showDateRangeOverlay = true
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "calendar").font(.callout)
-                            Text("Choose Month").font(.callout)
+                            Image(systemName: "calendar")
+                                .font(.callout)
+                            Text("Choose Month")
+                                .font(.callout)
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
@@ -1234,7 +1252,6 @@ extension HabitDetailView {
         .padding(.top, 10)
     }
 
-    
     private func weeklyData(habit: Habit, offset: Int, userCreationDate: Date) -> ([String], [CGFloat?]) {
         let dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
         var intensities: [CGFloat?] = Array(repeating: nil, count: 7)
@@ -1283,7 +1300,7 @@ extension HabitDetailView {
         results.sort { $0.start < $1.start }
         return results
     }
-    
+
     private func formatWeekInterval(_ interval: DateInterval) -> String {
         let fmt = DateFormatter()
         fmt.dateFormat = "MMM d"
@@ -1291,7 +1308,7 @@ extension HabitDetailView {
         let endStr = fmt.string(from: interval.end)
         return "\(startStr) - \(endStr)"
     }
-    
+
     private func computeWeekOffset(for interval: DateInterval) -> Int {
         let calendar = Calendar.current
         let now = Date()
@@ -1304,7 +1321,7 @@ extension HabitDetailView {
         let dayDiff = comps.day ?? 0
         return dayDiff / 7
     }
-    
+
     private func realMonths() -> [Date] {
         let calendar = Calendar.current
         let now = Date()
@@ -1316,25 +1333,25 @@ extension HabitDetailView {
         }
         return months.sorted()
     }
-    
+
     private func formatMonth(_ date: Date) -> String {
         let fmt = DateFormatter()
         fmt.dateFormat = "LLLL yyyy"
         return fmt.string(from: date)
     }
-    
+
     private func computeMonthOffset(for date: Date) -> Int {
         let calendar = Calendar.current
         let now = Date()
         let comps = calendar.dateComponents([.month], from: startOfMonth(now), to: startOfMonth(date))
         return comps.month ?? 0
     }
-    
+
     private func startOfMonth(_ date: Date) -> Date {
         let cal = Calendar.current
         return cal.date(from: cal.dateComponents([.year, .month], from: date)) ?? date
     }
-    
+
     private func currentWeekInterval(offset: Int) -> DateInterval {
         let calendar = Calendar.current
         let now = Date()
@@ -1347,7 +1364,7 @@ extension HabitDetailView {
         }
         return DateInterval(start: startOfThisWeek, end: end)
     }
-    
+
     private func currentMonthDate(offset: Int) -> Date {
         let calendar = Calendar.current
         let now = Date()
@@ -1390,7 +1407,7 @@ extension HabitDetailView {
             .cornerRadius(8)
         }
     }
-    
+
     private func saveNote() {
         guard !sessionNotes.isEmpty, let habitID = habit.id else { return }
         viewModel.saveUserNote(for: habitID, note: sessionNotes) { success in
@@ -1405,7 +1422,7 @@ extension HabitDetailView {
             }
         }
     }
-    
+
     private func fetchUserNotes() {
         guard let habitID = habit.id else { return }
         let db = Firestore.firestore()
@@ -1426,14 +1443,14 @@ extension HabitDetailView {
                 }
             }
     }
-    
+
     private func formatTimestamp(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
         formatter.timeStyle = .short
         return formatter.string(from: date)
     }
-    
+
     private func deleteNote(_ note: UserNote) {
         viewModel.deleteUserNote(note: note) { success in
             if success {
@@ -1446,7 +1463,6 @@ extension HabitDetailView {
 }
 
 // MARK: - Timer & Habit Edits
-
 extension HabitDetailView {
     // Handles everything when the countdown reaches zero
     private func timerCompleted() {
@@ -1468,7 +1484,6 @@ extension HabitDetailView {
         DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: task)
     }
 
-    
     private func startTimer() {
         // Stop if already running (unless we’re resuming from pause)
         guard !isTimerRunning || isTimerPaused else { return }
@@ -1487,13 +1502,13 @@ extension HabitDetailView {
             }
         }
     }
-    
+
     private func pauseTimer() {
         guard isTimerRunning && !isTimerPaused else { return }
         isTimerPaused = true
         timer?.invalidate()
     }
-    
+
     private func resetTimer() {
         timer?.invalidate()
         countdownSeconds = 0
@@ -1503,13 +1518,13 @@ extension HabitDetailView {
         selectedMinutes = 0
         selectedSeconds = 0
     }
-    
+
     private func formatTime(_ seconds: Int) -> String {
         let m = seconds / 60
         let s = seconds % 60
         return String(format: "%02d:%02d", m, s)
     }
-    
+
     private func toggleHabitDone() {
         let calendar = Calendar.current
         var updatedHabit = habit
@@ -1517,7 +1532,7 @@ extension HabitDetailView {
         let isCompletedToday = updatedHabit.dailyRecords.contains { record in
             calendar.isDate(record.date, inSameDayAs: Date()) && ((record.value ?? 0) > 0)
         }
-        
+
         if isCompletedToday {
             // Unmark the habit: Remove all records for today.
             updatedHabit.dailyRecords.removeAll { record in
@@ -1538,12 +1553,11 @@ extension HabitDetailView {
                 localStreaks[habitID] = localVal + 1
             }
         }
-        
+
         viewModel.updateHabit(updatedHabit)
         habit = updatedHabit
     }
 
-    
     private func saveEditsToHabit() {
         guard editableTitle != habit.title ||
               editableDescription != habit.description ||
@@ -1580,7 +1594,7 @@ extension HabitDetailView {
         let weeks = calendar.dateComponents([.weekOfYear], from: accountWeekStart, to: currentWeekStart).weekOfYear ?? 0
         return -weeks
     }
-    
+
     private var maxWeekOffset: Int { 0 }
     private var minMonthOffset: Int {
         let calendar = Calendar.current
@@ -1620,7 +1634,7 @@ fileprivate struct SingleLineGraphView: View {
                     p.addLine(to: CGPoint(x: 20, y: geo.size.height))
                 }
                 .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                
+
                 ForEach(gridLines.indices, id: \.self) { index in
                     let value = gridLines[index]
                     let y = yPosition(for: value, in: geo.size.height, maxValue: maxValue, topPadding: topPadding)
@@ -1634,10 +1648,10 @@ fileprivate struct SingleLineGraphView: View {
                         .foregroundColor(.white)
                         .position(x: 10, y: y)
                 }
-                
+
                 ConnectedLineShape(values: intensities, maxValue: maxValue, axisPadding: 20, topPadding: topPadding)
                     .stroke(Color.white, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                
+
                 ForEach(intensities.indices, id: \.self) { i in
                     if let value = intensities[i] {
                         let x = xPosition(for: i, totalWidth: geo.size.width, axisPadding: 20)
@@ -1666,7 +1680,7 @@ fileprivate struct SingleLineGraphView: View {
         .frame(minHeight: desiredHeight)
         .padding()
     }
-    
+
     private func xPosition(for index: Int, totalWidth: CGFloat, axisPadding: CGFloat) -> CGFloat {
         guard intensities.count > 1 else {
             return axisPadding + totalWidth / 2
@@ -1675,7 +1689,7 @@ fileprivate struct SingleLineGraphView: View {
         let step = usableWidth / CGFloat(intensities.count - 1)
         return axisPadding + CGFloat(index) * step
     }
-    
+
     private func yPosition(for value: CGFloat, in height: CGFloat, maxValue: CGFloat, topPadding: CGFloat) -> CGFloat {
         let availableHeight = height - topPadding
         let ratio = value / maxValue
@@ -1696,7 +1710,7 @@ fileprivate struct ConnectedLineShape: Shape {
         let width = rect.width - axisPadding
         let step = width / CGFloat(max(count - 1, 1))
         var previousPoint: CGPoint? = nil
-        
+
         for i in 0..<count {
             let x = axisPadding + CGFloat(i) * step
             guard let value = values[i] else {
@@ -1762,7 +1776,7 @@ fileprivate struct PreviousNotesView: View {
             .onAppear(perform: fetchNotes)
         }
     }
-    
+
     private func fetchNotes() {
         let db = Firestore.firestore()
         db.collection("UserNotes")
@@ -1782,7 +1796,7 @@ fileprivate struct PreviousNotesView: View {
                 }
             }
     }
-    
+
     private func formatTimestamp(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium  // e.g., "Mar 14, 2025"
@@ -1849,7 +1863,7 @@ fileprivate struct MonthlyCurrentMonthGridView: View {
         .background(accentColor.opacity(0.15))
         .cornerRadius(8)
     }
-    
+
     private func monthDayData(offset: Int) -> [DayData] {
         let calendar = Calendar.current
         let now = Date()

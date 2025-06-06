@@ -88,11 +88,6 @@ struct ForgetPasswordView: View {
             .padding()
         }
         .contentShape(Rectangle())   // Make the entire ZStack respond to taps
-        .simultaneousGesture(
-            TapGesture().onEnded {
-                hideKeyboard()
-            }
-        )
         // ───────────────────────────────────────────────────────────────────────────
     }
 

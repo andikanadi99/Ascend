@@ -118,26 +118,83 @@ class DayViewModel: ObservableObject {
     }
 
     func regenerateBlocks() {
-        guard var schedule = schedule else { return }
-        schedule.timeBlocks = generateTimeBlocks(
-          from: schedule.wakeUpTime,
-          to: schedule.sleepTime
-        )
-        self.schedule = schedule
+        guard let oldSchedule = schedule else { return }
+        let cal = Calendar.current
+
+        // 1️⃣ map "label" ➜ previous text
+        let taskByLabel = Dictionary(uniqueKeysWithValues: oldSchedule.timeBlocks.map {
+            ($0.time, $0.task)
+        })
+
+        // 2️⃣ derive first/last instants
+        let wake   = oldSchedule.wakeUpTime
+        let sleep  = oldSchedule.sleepTime
+        let sleepCorrected: Date = (sleep <= wake)
+            ? cal.date(byAdding: .day, value: 1, to: sleep)!
+            : sleep
+
+        // 3️⃣ helper: label formatter
+        func label(_ date: Date) -> String {
+            DayViewModel.timeFormatter.string(from: date)
+        }
+
+        // 4️⃣ build new array
+        var blocks: [TimeBlock] = []
+
+        // -- a) add the exact wake-slot (always)
+        if wake <= sleepCorrected {
+            blocks.append(
+                TimeBlock(
+                    id: UUID(),
+                    time: label(wake),
+                    task: taskByLabel[label(wake)] ?? ""
+                )
+            )
+        }
+
+        // -- b) start cursor at the *next* full hour
+        let comps = cal.dateComponents([.year, .month, .day, .hour], from: wake)
+        var cursor = cal.date(from: comps)!
+        if cal.component(.minute, from: wake) != 0 {
+            cursor = cal.date(byAdding: .hour, value: 1, to: cursor)!   // jump to next hour
+        }
+
+        // -- c) march hour-by-hour until sleep
+        while cursor <= sleepCorrected {
+            let lbl = label(cursor)
+            blocks.append(
+                TimeBlock(
+                    id: UUID(),
+                    time: lbl,
+                    task: taskByLabel[lbl] ?? ""
+                )
+            )
+            cursor = cal.date(byAdding: .hour, value: 1, to: cursor)!
+        }
+
+        // 5️⃣ publish + persist
+        var updated = oldSchedule
+        updated.timeBlocks = blocks
+        schedule = updated
         updateDaySchedule()
     }
 
-    // MARK: – Toggle Completion on a Priority
-    func togglePriorityCompletion(_ priorityId: UUID) {
-        guard var sched = schedule,
-              let idx = sched.priorities.firstIndex(where: { $0.id == priorityId })
-        else { return }
 
-        // flip the flag, publish & persist
-        sched.priorities[idx].isCompleted.toggle()
+
+    // MARK: – Toggle Completion on a Priority
+    func togglePriorityCompletion(_ id: UUID) {
+        guard var sched = schedule,
+              let idx = sched.priorities.firstIndex(where: { $0.id == id }) else { return }
+
+        let nowCompleted = !sched.priorities[idx].isCompleted
+        sched.priorities[idx].isCompleted = nowCompleted
+        sched.priorities[idx].progress    = nowCompleted ? 1.0 : 0.0   // optional
+
         schedule = sched
         updateDaySchedule()
     }
+
+
 
     // MARK: – Reorder priorities
     func movePriorities(indices: IndexSet, to newOffset: Int) {

@@ -101,6 +101,7 @@ struct HabitDetailView: View {
     @FocusState private var isDescriptionFocused: Bool
     @FocusState private var isGoalFocused: Bool
     @FocusState private var isNotesFocused: Bool
+    
 
     // MARK: - Time functions and variables
     @State private var audioPlayer: AVAudioPlayer?
@@ -177,13 +178,24 @@ struct HabitDetailView: View {
         }
     }
 
+    // MARK: - New: Metrics Editor State
+    @State private var showMetricsEditor: Bool = false
+    @State private var editedCategory: MetricCategory
+    @State private var editedMetricType: MetricType
+
     // MARK: - Initialization
     init(habit: Binding<Habit>) {
         _habit = habit
         _editableTitle = State(initialValue: habit.wrappedValue.title)
         _editableDescription = State(initialValue: habit.wrappedValue.description)
         _goal = State(initialValue: habit.wrappedValue.goal)
+
+        // Initialize the new “editedCategory” and “editedMetricType” from the current habit
+        let currentCategory = habit.wrappedValue.metricCategory
+        _editedCategory = State(initialValue: currentCategory)
+        _editedMetricType = State(initialValue: habit.wrappedValue.metricType)
     }
+
 
     // MARK: - Body
     var body: some View {
@@ -230,7 +242,7 @@ struct HabitDetailView: View {
         )
         // ───────────────────────────────────────────────────────────────────────────
 
-        // Alerts, banners, and lifecycle handlers:
+        // Alerts, banners, sheet, and lifecycle handlers:
         .alert(isPresented: $showAlert) {
             Alert(
                 title: Text("Invalid Date Range"),
@@ -251,6 +263,34 @@ struct HabitDetailView: View {
                    Text("The ring will silence automatically after 30 seconds if you do nothing.")
                })
         .banner(message: "Note Saved!", isPresented: $showBanner)
+        .sheet(isPresented: $showMetricsEditor) {
+            MetricsEditorSheet(
+                originalHabit: $habit,
+                editedCategory: $editedCategory,
+                editedMetricType: $editedMetricType,
+                onSave: {
+                    // 1) Update the habit's category & type
+                    var updated = habit
+                    updated.metricCategory = editedCategory
+                    updated.metricType = editedMetricType
+
+                    // 2) Push update through your ViewModel
+                    viewModel.updateHabit(updated)
+                    // 3) Also update the binding so the UI refreshes
+                    habit = updated
+
+                    // 4) Dismiss the sheet
+                    showMetricsEditor = false
+                },
+                onCancel: {
+                    // Revert edits to match the current habit
+                    editedCategory = habit.metricCategory
+                    editedMetricType = habit.metricType
+                    showMetricsEditor = false
+                }
+            )
+        }
+
         .onAppear {
             guard let userId = session.current_user?.uid else { return }
             viewModel.fetchHabits(for: userId)
@@ -288,7 +328,7 @@ struct HabitDetailView: View {
                     topBarSection
 
                     TextEditor(text: $editableDescription)
-                      .focused($isDescriptionFocused)   // ① focus binding
+                      .focused($isDescriptionFocused)
                       .foregroundColor(.white.opacity(0.8))
                       .font(.subheadline)
                       .disableAutocorrection(true)
@@ -371,7 +411,19 @@ struct HabitDetailView: View {
                     }
                     .padding(.horizontal)
 
-                    // Mark/Unmark button.
+                    Button {
+                        showMetricsEditor = true
+                    } label: {
+                        Text("Change Habit Metrics")
+                            .foregroundColor(.black)
+                            .fontWeight(.bold)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.yellow)
+                            .cornerRadius(8)
+                    }
+                    .padding(.bottom, 10)    // ← reduced padding here
+
                     Button {
                         if completedToday {
                             showUnmarkConfirmation = true
@@ -389,6 +441,9 @@ struct HabitDetailView: View {
                             .cornerRadius(8)
                     }
                     .padding(.bottom, 30)
+
+
+                    Spacer()
                 }
                 .padding()
             }
@@ -482,7 +537,7 @@ struct HabitDetailView: View {
         .shadow(radius: 8)
     }
 
-    // NEW: Custom Date Range Overlay.
+    // Custom Date Range Overlay.
     private var customDateRangeOverlayView: some View {
         VStack(spacing: 16) {
             Text("Custom Date Range")
@@ -530,7 +585,7 @@ struct HabitDetailView: View {
         .shadow(radius: 10)
     }
 
-    // NEW: Custom Graph Overlay view.
+    // Custom Graph Overlay view.
     private var customGraphView: some View {
         let customData = getCustomGraphData()
         return VStack(spacing: 16) {
@@ -560,7 +615,7 @@ struct HabitDetailView: View {
         .shadow(radius: 10)
     }
 
-    // NEW: Helper to generate custom graph data by iterating through every day in the range.
+    // Helper to generate custom graph data by iterating through every day in the range.
     private func getCustomGraphData() -> (labels: [String], intensities: [CGFloat?]) {
         let calendar = Calendar.current
         var labels: [String] = []
@@ -582,7 +637,7 @@ struct HabitDetailView: View {
         return (labels, intensities)
     }
 
-    // NEW: Helper to format a Date.
+    // Helper to format a Date.
     private func formattedDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -691,7 +746,7 @@ struct HabitDetailView: View {
                 }
             }
             Divider()
-            // NEW: Custom Range button.
+            // Custom Range button.
             Button {
                 withAnimation { showCustomDateRangeOverlay = true }
             } label: {
@@ -921,7 +976,7 @@ extension HabitDetailView {
                         .padding(.top, 8)
                 }
                 TextEditor(text: $goal)
-                    .focused($isGoalFocused)                  // ← focus binding
+                    .focused($isGoalFocused)
                     .foregroundColor(.white)
                     .accentColor(accentCyan)
                     .padding(8)
@@ -960,7 +1015,7 @@ extension HabitDetailView {
                 ZStack {
                     Circle()
                         .stroke(accentCyan.opacity(0.2), lineWidth: 10)
-                        .frame(width: 180, height: 220) // Slightly taller clock
+                        .frame(width: 180, height: 220)
                         .shadow(color: accentCyan.opacity(0.4), radius: 5)
                     Text(formatTime(countdownSeconds))
                         .font(.largeTitle)
@@ -1736,6 +1791,9 @@ fileprivate struct PreviousNotesView: View {
     let habitID: String
     @EnvironmentObject var viewModel: HabitViewModel
     @State private var notes: [UserNote] = []
+    @State private var noteToDelete: UserNote? = nil
+    @State private var showDeleteAlert: Bool = false
+
     @Environment(\.presentationMode) var presentationMode
 
     var body: some View {
@@ -1752,21 +1810,38 @@ fileprivate struct PreviousNotesView: View {
                                 .foregroundColor(.secondary)
                         }
                         Spacer()
-                        Button(action: {
-                            viewModel.deleteUserNote(note: note) { success in
-                                if success {
-                                    fetchNotes()
-                                } else {
-                                    print("Failed to delete note with id: \(note.id ?? "unknown")")
-                                }
-                            }
-                        }) {
+                        Button {
+                            noteToDelete = note
+                            showDeleteAlert = true
+                        } label: {
                             Image(systemName: "trash")
                                 .foregroundColor(.red)
                         }
+
                     }
                     .padding(.vertical, 8)
                 }
+            }
+            .alert(
+                "Delete Note?",
+                isPresented: $showDeleteAlert,
+                presenting: noteToDelete
+            ) { deletingNote in
+                Button("Cancel", role: .cancel) {
+                    noteToDelete = nil
+                }
+                Button("Delete", role: .destructive) {
+                    viewModel.deleteUserNote(note: deletingNote) { success in
+                        if success {
+                            fetchNotes()
+                        } else {
+                            print("Failed to delete note with id: \(deletingNote.id ?? "unknown")")
+                        }
+                    }
+                    noteToDelete = nil
+                }
+            } message: { _ in
+                Text("Are you sure you want to delete this note?")
             }
             .listStyle(InsetGroupedListStyle())
             .navigationTitle("Previous Notes")
@@ -1898,3 +1973,104 @@ struct DayData: Hashable {
     let dayLabel: String
     let intensity: CGFloat?
 }
+
+// MARK: - MetricsEditorSheet
+private struct MetricsEditorSheet: View {
+    @Binding var originalHabit: Habit
+
+    @Binding var editedCategory: MetricCategory
+    @Binding var editedMetricType: MetricType
+
+    let onSave: () -> Void
+    let onCancel: () -> Void
+
+    // You already have accentCyan defined in HabitDetailView;
+    // if not, import it or redefine it here:
+    private let backgroundBlack = Color.black
+    private let accentCyan = Color(red: 0, green: 1, blue: 1)
+
+    var body: some View {
+        NavigationView {
+            ZStack {
+                // Dark background
+                backgroundBlack.ignoresSafeArea()
+                // Make the Form’s cells transparent so we see the black behind
+                Form {
+                    Section(header: Text("Metric Category").foregroundColor(.white)) {
+                        Picker("Category", selection: $editedCategory) {
+                            ForEach(MetricCategory.allCases, id: \.self) { category in
+                                Text(category.rawValue)
+                                    .foregroundColor(.white)
+                                    .tag(category)
+                            }
+                        }
+                        .pickerStyle(WheelPickerStyle())
+                        .onChange(of: editedCategory) { newCategory in
+                            if newCategory != .custom, let first = newCategory.metricTypes.first {
+                                editedMetricType = first
+                            } else if newCategory == .custom {
+                                editedMetricType = .custom("")
+                            }
+                        }
+                    }
+                    .listRowBackground(backgroundBlack)   // transparent form background
+
+                    Section(header: Text("Metric Type").foregroundColor(.white)) {
+                        if editedCategory != .custom {
+                            Picker("Type", selection: $editedMetricType) {
+                                ForEach(editedCategory.metricTypes, id: \.self) { type in
+                                    Text(type.id)
+                                        .foregroundColor(.white)
+                                        .tag(type)
+                                }
+                            }
+                            .pickerStyle(WheelPickerStyle())
+                        } else {
+                            TextField(
+                                "Enter custom type",
+                                text: Binding(
+                                    get: {
+                                        if case .custom(let customValue) = editedMetricType {
+                                            return customValue
+                                        } else { return "" }
+                                    },
+                                    set: { newValue in
+                                        editedMetricType = .custom(newValue)
+                                    }
+                                )
+                            )
+                            .autocorrectionDisabled(true)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .foregroundColor(.white)
+                        }
+                    }
+                    .listRowBackground(backgroundBlack)
+                }
+                .scrollContentBackground(.hidden)       // iOS 16+ to hide default Form background
+                .background(backgroundBlack)            // ensure entire form is black
+            }
+            .navigationTitle("Edit Habit Metrics")
+            .accentColor(accentCyan)                  // apply accentCyan to pickers/buttons
+            .navigationBarItems(
+                leading:
+                    Button("Cancel", action: onCancel)
+                        .foregroundColor(.red),
+                trailing:
+                    Button("Save", action: onSave)
+                        .disabled({
+                            if editedCategory == .custom {
+                                if case .custom(let val) = editedMetricType {
+                                    return val.trimmingCharacters(in: .whitespaces).isEmpty
+                                }
+                                return true
+                            }
+                            return false
+                        }())
+                        .foregroundColor(accentCyan)
+            )
+        }
+        .navigationViewStyle(StackNavigationViewStyle())
+    }
+}
+
+

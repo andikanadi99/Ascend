@@ -83,6 +83,7 @@ struct WeeklyPriorityRowView: View {
                                 : (isPastWeek ? .red : .gray)
                         )
                     }
+                    .buttonStyle(.borderless)
                     .padding(.trailing, 8)
                 }
             }
@@ -97,6 +98,7 @@ struct WeeklyPriorityRowView: View {
                         .font(.title2)
                         .foregroundColor(.red)
                 }
+                .buttonStyle(.borderless)
                 .padding(.trailing, 8)
             }
         }

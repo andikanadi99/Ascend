@@ -27,7 +27,7 @@ struct HabitDetailView: View {
     // MARK: - Environment & Dependencies
     @EnvironmentObject var viewModel: HabitViewModel
     @EnvironmentObject var session: SessionStore
-    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: - Editable Local Fields
     @State private var editableTitle: String
@@ -933,12 +933,34 @@ struct CustomCalendarView: View {
 
 // MARK: - Subviews & Helpers (unchanged)
 extension HabitDetailView {
+    // 1️⃣  Add a helper inside HabitDetailView
+    private func handleBack() {
+        // Close whichever overlay is on-screen, if any
+        if showMetricInput
+            || showUnmarkConfirmation
+            || showDateRangeOverlay
+            || showCustomDateRangeOverlay
+            || customGraphOverlay
+            || showAlert {
+            showMetricInput           = false
+            showUnmarkConfirmation    = false
+            showDateRangeOverlay      = false
+            showCustomDateRangeOverlay = false
+            customGraphOverlay        = false
+            showAlert                 = false
+            // also dismiss keyboard if it’s still up
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                            to: nil, from: nil, for: nil)
+            return                       // ← stop; user is still on this screen
+        }
+        // No overlays left – pop back to the list
+        dismiss()
+    }
+    
 
     private var topBarSection: some View {
         HStack {
-            Button {
-                presentationMode.wrappedValue.dismiss()
-            } label: {
+            Button(action: handleBack) {
                 Image(systemName: "chevron.left")
                     .foregroundColor(accentCyan)
                     .font(.title2)
@@ -1794,7 +1816,7 @@ fileprivate struct PreviousNotesView: View {
     @State private var noteToDelete: UserNote? = nil
     @State private var showDeleteAlert: Bool = false
 
-    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationView {
@@ -1846,11 +1868,14 @@ fileprivate struct PreviousNotesView: View {
             .listStyle(InsetGroupedListStyle())
             .navigationTitle("Previous Notes")
             .navigationBarItems(trailing: Button("Done") {
-                presentationMode.wrappedValue.dismiss()
+                dismiss()
             })
             .onAppear(perform: fetchNotes)
         }
     }
+    
+    
+
 
     private func fetchNotes() {
         let db = Firestore.firestore()

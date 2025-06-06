@@ -1,7 +1,9 @@
+//
 //  DayCardView.swift
 //  Mind Reset
 //
-//  Created by Andika Yudhatrisna on 5/27/25.
+//  Updated 06 Jun 2025 – unified to a single alert, so prompts appear for
+//  *all* add / delete actions regardless of date.
 //
 
 import SwiftUI
@@ -16,14 +18,15 @@ struct DayCardView: View {
 
     // ─── local ui state ────────────────────────────────────────
     @State private var isRemoveMode = false
-    @State private var pendingDelete: TodayPriority?  // for “delete” confirmation
-    @State private var pastDayAlert: DayCardAlert?    // for “past-day editing” confirmation
+    @State private var dayAlert: DayCardAlert?        // ← unified alert state
     @State private var pendingToggle: TodayPriority?  // store priority to toggle after confirm
 
     // palette
     private let accentCyan = Color(red: 0, green: 1, blue: 1)
 
+    // ─────────────────────────────────────────
     // MARK: – body
+    // ─────────────────────────────────────────
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
@@ -34,7 +37,7 @@ struct DayCardView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 12) {
-                        // ───── Use 0..<priorities.count instead of priorities.indices ─────
+                        // iterate by index so Binding<$priority> works
                         ForEach(0 ..< priorities.count, id: \.self) { idx in
                             let pr = priorities[idx]
                             let isPast = isPastDay()
@@ -46,17 +49,17 @@ struct DayCardView: View {
                                 onToggle: {
                                     if isPast {
                                         pendingToggle = pr
-                                        pastDayAlert = .confirmModify(pr)
+                                        dayAlert = .confirmModifyPast(pr)
                                     } else {
                                         priorities[idx].isCompleted.toggle()
                                     }
                                 },
                                 showDelete:  isRemoveMode,
-                                onDelete:    {
+                                onDelete: {
                                     if isPast {
-                                        pastDayAlert = .confirmDelete(pr)
+                                        dayAlert = .confirmDeletePast(pr)
                                     } else {
-                                        pendingDelete = pr
+                                        dayAlert = .confirmDeleteCurrent(pr)
                                     }
                                 },
                                 accentCyan:  accentCyan,
@@ -67,10 +70,6 @@ struct DayCardView: View {
                     }
                     .padding(.vertical, 4)
                 }
-
-
-
-                // ─── end of ScrollView
                 .frame(maxHeight: CGFloat(max(priorities.count, 1)) * 90)
             }
 
@@ -78,7 +77,7 @@ struct DayCardView: View {
             HStack {
                 Button("Add Priority") {
                     if isPastDay() {
-                        pastDayAlert = .confirmAdd
+                        dayAlert = .confirmAddPast
                     } else {
                         addPriority()
                     }
@@ -108,20 +107,20 @@ struct DayCardView: View {
         .padding()
         .background(Color.gray.opacity(0.2))
         .cornerRadius(8)
-        // ───── Alerts ─────
-        .alert(item: $pendingDelete) { pr in
-            Alert(
-                title: Text("Delete Priority"),
-                message: Text("Delete “\(pr.title)”?"),
-                primaryButton: .destructive(Text("Delete")) {
-                    delete(pr)
-                },
-                secondaryButton: .cancel()
-            )
-        }
-        .alert(item: $pastDayAlert) { alertCase in
+
+        // ───── Single .alert handles ALL cases ─────
+        .alert(item: $dayAlert) { alertCase in
             switch alertCase {
-            case .confirmModify(let pr):
+
+            case .confirmDeleteCurrent(let pr):
+                return Alert(
+                    title: Text("Delete Priority"),
+                    message: Text("Delete “\(pr.title)” ?"),
+                    primaryButton: .destructive(Text("Delete")) { delete(pr) },
+                    secondaryButton: .cancel()
+                )
+
+            case .confirmModifyPast(let pr):
                 return Alert(
                     title: Text("Editing Past Day"),
                     message: Text("You’re changing a priority from a previous day. Continue?"),
@@ -133,30 +132,28 @@ struct DayCardView: View {
                     secondaryButton: .cancel()
                 )
 
-            case .confirmDelete(let pr):
+            case .confirmDeletePast(let pr):
                 return Alert(
                     title: Text("Deleting From Past Day"),
                     message: Text("You’re deleting a priority from a previous day. Continue?"),
-                    primaryButton: .destructive(Text("Delete")) {
-                        delete(pr)
-                    },
+                    primaryButton: .destructive(Text("Delete")) { delete(pr) },
                     secondaryButton: .cancel()
                 )
 
-            case .confirmAdd:
+            case .confirmAddPast:
                 return Alert(
                     title: Text("Adding to Past Day"),
                     message: Text("You’re adding a priority to a previous day. Continue?"),
-                    primaryButton: .default(Text("Yes")) {
-                        addPriority()
-                    },
+                    primaryButton: .default(Text("Yes")) { addPriority() },
                     secondaryButton: .cancel()
                 )
             }
         }
     }
 
+    // ─────────────────────────────────────────
     // MARK: – helpers
+    // ─────────────────────────────────────────
     private func isPastDay() -> Bool {
         let today = Calendar.current.startOfDay(for: Date())
         return Calendar.current.startOfDay(for: day) < today
@@ -164,10 +161,7 @@ struct DayCardView: View {
 
     private func addPriority() {
         priorities.append(
-            TodayPriority(id: UUID(),
-                          title: "New Priority",
-                          progress: 0,
-                          isCompleted: false)
+            TodayPriority(id: UUID(), title: "New Priority", progress: 0, isCompleted: false)
         )
         isRemoveMode = false
     }
@@ -177,7 +171,7 @@ struct DayCardView: View {
         if priorities.isEmpty { isRemoveMode = false }
     }
 
-    // placeholder shown when the list is empty
+    // placeholder when list empty
     private var placeholder: some View {
         Text("Please list priorities for this day")
             .foregroundColor(.white.opacity(0.7))
@@ -203,22 +197,21 @@ struct DayCardView: View {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MARK: – Alert cases for DayCardView
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// MARK: – Unified alert enum
+// ─────────────────────────────────────────────
 enum DayCardAlert: Identifiable {
-    case confirmModify(TodayPriority)
-    case confirmDelete(TodayPriority)
-    case confirmAdd
+    case confirmDeleteCurrent(TodayPriority)   // today / future
+    case confirmModifyPast(TodayPriority)
+    case confirmDeletePast(TodayPriority)
+    case confirmAddPast
 
     var id: String {
         switch self {
-        case .confirmModify(let p):
-            return "confirmModify-\(p.id)"
-        case .confirmDelete(let p):
-            return "confirmDelete-\(p.id)"
-        case .confirmAdd:
-            return "confirmAdd"
+        case .confirmDeleteCurrent(let p): return "deleteCurrent-\(p.id)"
+        case .confirmModifyPast(let p):   return "modifyPast-\(p.id)"
+        case .confirmDeletePast(let p):   return "deletePast-\(p.id)"
+        case .confirmAddPast:             return "addPast"
         }
     }
 }

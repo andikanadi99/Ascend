@@ -1,9 +1,11 @@
+//
 //  MonthlyPrioritiesSection.swift
 //  Mind Reset
 //
-//  Shows a reorderable, check‐off list of monthly priorities plus
-//  Add / Remove controls and a confirmation prompt on delete.
-//  Updated 30 May 2025.
+//  Updated 06 Jun 2025
+//  • “Import Unfinished from Last Month” is now styled like the other buttons
+//    (full-width, black background, 8 pt corner radius).
+//  • Tapping it first prompts the user; nothing is imported until they confirm.
 //
 
 import SwiftUI
@@ -15,27 +17,28 @@ struct MonthlyPrioritiesSection: View {
 
     let accentColor:       Color
     let isRemoveMode:      Bool
-    let isThisMonth:       Bool                     // ← NEW: is the displayed month the calendar’s current month?
-    let hasPreviousUnfinished: Bool                 // ← NEW: whether last month has unfinished
+    let isThisMonth:       Bool
+    let hasPreviousUnfinished: Bool
     let onToggleRemoveMode: () -> Void
-    let onToggle:         (UUID) -> Void   // toggle completion
+    let onToggle:         (UUID) -> Void
     let onMove:           (IndexSet, Int) -> Void
     let onCommit:         () -> Void
     let onDelete:         (MonthlyPriority) -> Void
     let addAction:        () -> Void
-    let importAction:     () -> Void       // ← NEW: import unfinished
+    let importAction:     () -> Void
 
-    // ── Local state for a combined set of alerts ─────────────────
+    // ── Single source for *all* alerts ────────────────
     @State private var monthAlert: MonthViewAlert? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // ── Header ───────────────────────────────────────
+
+            // ── Header ────────────────────────────────
             Text("Monthly Priorities")
                 .font(.headline)
                 .foregroundColor(accentColor)
 
-            // ── List or placeholder ───────────────────────────
+            // ── List or placeholder ───────────────────
             if priorities.isEmpty {
                 Text("Please list your priorities for the month")
                     .foregroundColor(.white.opacity(0.7))
@@ -54,26 +57,22 @@ struct MonthlyPrioritiesSection: View {
                             isCompleted: bindings.isCompleted,
                             onToggle: {
                                 if !isThisMonth {
-                                    // Prompt before toggling a past‐month priority
                                     monthAlert = .confirmTogglePast(pr)
                                 } else {
-                                    onToggle(pr.id)
-                                    onCommit()
+                                    onToggle(pr.id); onCommit()
                                 }
                             },
                             showDelete:  isRemoveMode,
                             onDelete: {
                                 if !isThisMonth {
-                                    // Prompt before deleting a past‐month priority
                                     monthAlert = .confirmDeletePast(pr)
                                 } else {
-                                    // Prompt before deleting a this‐month priority
                                     monthAlert = .confirmDeleteThisMonth(pr)
                                 }
                             },
                             accentCyan:  accentColor,
                             onCommit:    onCommit,
-                            isPastMonth: !isThisMonth      
+                            isPastMonth: !isThisMonth
                         )
                         .listRowBackground(Color.clear)
                         .listRowInsets(.init(top: 4, leading: 0, bottom: 4, trailing: 0))
@@ -90,14 +89,11 @@ struct MonthlyPrioritiesSection: View {
                 .padding(.bottom, 20)
             }
 
-            // ── Add / Remove buttons ─────────────────────────
+            // ── Add / Remove buttons ───────────────────
             HStack {
                 Button("Add Priority") {
-                    if !isThisMonth {
-                        monthAlert = .confirmAddPast
-                    } else {
-                        addAction()
-                    }
+                    if !isThisMonth { monthAlert = .confirmAddPast }
+                    else            { addAction() }
                 }
                 .font(.headline)
                 .foregroundColor(accentColor)
@@ -122,36 +118,38 @@ struct MonthlyPrioritiesSection: View {
             }
             .padding(.top, 8)
 
-            // ── Import Unfinished from Last Month ──────────────────
+            // ── Import unfinished (full-width & confirmed) ────────────
             if isThisMonth && hasPreviousUnfinished {
                 HStack {
-                    Button(action: importAction) {
+                    Button {
+                        monthAlert = .confirmImportUnfinished      // prompt first
+                    } label: {
                         Text("Import Unfinished from Last Month")
                             .font(.headline)
                             .foregroundColor(.orange)
                             .underline()
+                            .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
-                            .padding(.horizontal, 16)
                     }
-                    .frame(maxWidth: .infinity)
+                    .cornerRadius(8)
                 }
                 .padding(.top, 8)
             }
         }
-        .padding()                                     // card padding
-        .background(Color.gray.opacity(0.3))           // grey card bg
+        .padding()
+        .background(Color.gray.opacity(0.3))
         .cornerRadius(12)
 
-        // ── Single alert for all cases ─────────────────────────────
+        // ── Single alert handler ───────────────────────
         .alert(item: $monthAlert) { alertCase in
             switch alertCase {
+
             case .confirmDeleteThisMonth(let pr):
                 return Alert(
                     title: Text("Delete Priority"),
-                    message: Text("Are you sure you want to delete “\(pr.title)”?"),
+                    message: Text("Are you sure you want to delete “\(pr.title)” ?"),
                     primaryButton: .destructive(Text("Delete")) {
-                        onDelete(pr)
-                        onCommit()
+                        onDelete(pr); onCommit()
                     },
                     secondaryButton: .cancel()
                 )
@@ -159,13 +157,9 @@ struct MonthlyPrioritiesSection: View {
             case .confirmTogglePast(let pr):
                 return Alert(
                     title: Text("Editing Past Month"),
-                    message: Text("""
-                    You’re about to change the completion status \
-                    of a priority from a previous month. Continue?
-                    """),
+                    message: Text("You’re about to change a past month’s priority. Continue?"),
                     primaryButton: .destructive(Text("Yes")) {
-                        onToggle(pr.id)
-                        onCommit()
+                        onToggle(pr.id); onCommit()
                     },
                     secondaryButton: .cancel()
                 )
@@ -173,13 +167,9 @@ struct MonthlyPrioritiesSection: View {
             case .confirmDeletePast(let pr):
                 return Alert(
                     title: Text("Delete From Past Month"),
-                    message: Text("""
-                    You’re about to delete a priority from a previous \
-                    month. Continue?
-                    """),
+                    message: Text("You’re about to delete a priority from a past month. Continue?"),
                     primaryButton: .destructive(Text("Delete")) {
-                        onDelete(pr)
-                        onCommit()
+                        onDelete(pr); onCommit()
                     },
                     secondaryButton: .cancel()
                 )
@@ -187,22 +177,25 @@ struct MonthlyPrioritiesSection: View {
             case .confirmAddPast:
                 return Alert(
                     title: Text("Adding to Past Month"),
-                    message: Text("""
-                    You’re adding a new priority into a previous month, \
-                    which changes historical data. Continue?
-                    """),
-                    primaryButton: .default(Text("Yes")) {
-                        addAction()
-                    },
+                    message: Text("You’re adding a priority to a previous month. Continue?"),
+                    primaryButton: .default(Text("Yes")) { addAction() },
                     secondaryButton: .cancel()
+                )
+
+            case .confirmImportUnfinished:
+                return Alert(
+                    title: Text("Import Unfinished?"),
+                    message: Text("Copy all unfinished priorities from last month into this month?"),
+                    primaryButton: .destructive(Text("Cancel")),
+                    secondaryButton: .default(Text("Import")) { importAction() }
                 )
             }
         }
     }
 
-    // ────────────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────
     // MARK: – helper for array bindings
-    // ────────────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────
     private func binding(for pr: MonthlyPriority)
       -> (title: Binding<String>, isCompleted: Binding<Bool>) {
         guard let idx = priorities.firstIndex(where: { $0.id == pr.id }) else {
@@ -220,25 +213,23 @@ struct MonthlyPrioritiesSection: View {
         )
     }
 
-    // ────────────────────────────────────────────────────────────────────────────────
-    // MARK: – Alert cases for MonthlyPrioritiesSection
-    // ────────────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────
+    // MARK: – Alert enum
+    // ─────────────────────────────────────────
     enum MonthViewAlert: Identifiable {
         case confirmDeleteThisMonth(MonthlyPriority)
         case confirmTogglePast(MonthlyPriority)
         case confirmDeletePast(MonthlyPriority)
         case confirmAddPast
+        case confirmImportUnfinished                            // NEW
 
         var id: String {
             switch self {
-            case .confirmDeleteThisMonth(let p):
-                return "confirmDeleteThisMonth-\(p.id)"
-            case .confirmTogglePast(let p):
-                return "confirmTogglePast-\(p.id)"
-            case .confirmDeletePast(let p):
-                return "confirmDeletePast-\(p.id)"
-            case .confirmAddPast:
-                return "confirmAddPast"
+            case .confirmDeleteThisMonth(let p): return "deleteThis-\(p.id)"
+            case .confirmTogglePast(let p):      return "togglePast-\(p.id)"
+            case .confirmDeletePast(let p):      return "deletePast-\(p.id)"
+            case .confirmAddPast:                return "addPast"
+            case .confirmImportUnfinished:       return "importUnfinished"
             }
         }
     }

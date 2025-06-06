@@ -121,65 +121,64 @@ class DayViewModel: ObservableObject {
         guard let oldSchedule = schedule else { return }
         let cal = Calendar.current
 
-        // 1️⃣ map "label" ➜ previous text
-        let taskByLabel = Dictionary(uniqueKeysWithValues: oldSchedule.timeBlocks.map {
-            ($0.time, $0.task)
-        })
+        // ── 1. Map "label" → original text, tolerate duplicates ─────────
+        let taskByLabel = Dictionary(
+            oldSchedule.timeBlocks.map { ($0.time, $0.task) },
+            uniquingKeysWith: { first, _ in first }          // keep first duplicate
+        )
 
-        // 2️⃣ derive first/last instants
-        let wake   = oldSchedule.wakeUpTime
-        let sleep  = oldSchedule.sleepTime
+        // ── 2. Determine bounds and rounding info ───────────────────────
+        let wake  = oldSchedule.wakeUpTime
+        let sleep = oldSchedule.sleepTime
+        let wakeMinutes = cal.component(.minute, from: wake)
+
+        // If sleep ≤ wake, treat sleep as next day
         let sleepCorrected: Date = (sleep <= wake)
             ? cal.date(byAdding: .day, value: 1, to: sleep)!
             : sleep
 
-        // 3️⃣ helper: label formatter
+        // Helper to format labels
         func label(_ date: Date) -> String {
             DayViewModel.timeFormatter.string(from: date)
         }
 
-        // 4️⃣ build new array
+        // ── 3. Build new block array ────────────────────────────────────
         var blocks: [TimeBlock] = []
 
-        // -- a) add the exact wake-slot (always)
-        if wake <= sleepCorrected {
+        // a) Exact wake-slot *only* if wake time has minutes > 0
+        if wakeMinutes != 0 && wake <= sleepCorrected {
             blocks.append(
-                TimeBlock(
-                    id: UUID(),
-                    time: label(wake),
-                    task: taskByLabel[label(wake)] ?? ""
-                )
+                TimeBlock(id: UUID(),
+                          time: label(wake),
+                          task: taskByLabel[label(wake)] ?? "")
             )
         }
 
-        // -- b) start cursor at the *next* full hour
-        let comps = cal.dateComponents([.year, .month, .day, .hour], from: wake)
-        var cursor = cal.date(from: comps)!
-        if cal.component(.minute, from: wake) != 0 {
-            cursor = cal.date(byAdding: .hour, value: 1, to: cursor)!   // jump to next hour
-        }
+        // b) Start cursor at the next full hour (or same hour if minutes == 0)
+        let hourOnly = cal.date(
+            from: cal.dateComponents([.year, .month, .day, .hour], from: wake)
+        )!
+        var cursor = (wakeMinutes == 0)
+            ? hourOnly
+            : cal.date(byAdding: .hour, value: 1, to: hourOnly)!
 
-        // -- c) march hour-by-hour until sleep
+        // c) March hour-by-hour until sleep
         while cursor <= sleepCorrected {
             let lbl = label(cursor)
             blocks.append(
-                TimeBlock(
-                    id: UUID(),
-                    time: lbl,
-                    task: taskByLabel[lbl] ?? ""
-                )
+                TimeBlock(id: UUID(),
+                          time: lbl,
+                          task: taskByLabel[lbl] ?? "")
             )
             cursor = cal.date(byAdding: .hour, value: 1, to: cursor)!
         }
 
-        // 5️⃣ publish + persist
+        // ── 4. Publish and persist ──────────────────────────────────────
         var updated = oldSchedule
         updated.timeBlocks = blocks
-        schedule = updated
-        updateDaySchedule()
+        schedule = updated            // @Published → UI refresh
+        updateDaySchedule()           // Firestore sync
     }
-
-
 
     // MARK: – Toggle Completion on a Priority
     func togglePriorityCompletion(_ id: UUID) {

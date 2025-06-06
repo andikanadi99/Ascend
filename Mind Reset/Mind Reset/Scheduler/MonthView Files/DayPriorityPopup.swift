@@ -1,49 +1,57 @@
+//
 //  DayPriorityPopup.swift
 //  Mind Reset
+//
+//  Updated 07 Jun 2025
+//  • Control buttons keep the same black background as the row text-fields.
+//  • When “Remove Priority” mode is active, check-/x-icons are hidden so only
+//    the red minus icons appear.
 //
 
 import SwiftUI
 
 struct DayPriorityPopup: View {
-    // 🔗 Bindings supplied by MonthView -----------------------------------------
+    // ─────────── Bindings from MonthView ───────────
     @Binding var priorities: [TodayPriority]
-    let date: Date
-    let onSave: ([TodayPriority]) -> Void
+    let date:    Date
+    let onSave:  ([TodayPriority]) -> Void
     let onClose: () -> Void
 
-    // UI state -----------------------------------------------------------------
-    @State private var isRemoveMode = false          // show minus buttons
-    @State private var toDelete: TodayPriority?      // confirmation alert
+    // ─────────── Local UI state ────────────────────
+    @State private var isRemoveMode = false
+    @State private var toDelete: TodayPriority?
 
-    // Style --------------------------------------------------------------------
+    // ─────────── Style palette ─────────────────────
     private let accentCyan = Color(red: 0, green: 1, blue: 1)
 
-    // MARK: – Body -------------------------------------------------------------
+    // ╔══════════════════════════════════════════════╗
+    // ║                    Body                      ║
+    // ╚══════════════════════════════════════════════╝
     var body: some View {
-        VStack(spacing: 8) {              // ↓ was 16
+        VStack(spacing: 8) {
             header
 
-            // MARK: – priorities list
+            // ▼ Scrollable list of priorities
             ScrollView {
-                LazyVStack(spacing: 8) { // ↓ was 12
+                LazyVStack(spacing: 8) {
                     ForEach($priorities) { $pr in
                         row(for: $pr)
                             .transition(.opacity)
                     }
                 }
-                .padding(.vertical, 2)   // ↓ was 4
+                .padding(.vertical, 2)
             }
-            .frame(maxHeight: min(listHeight, 300)) // ↓ was 360
+            .frame(maxHeight: min(listHeight, 300))
 
             controls
         }
-        .padding(12)                     // tweak outer padding if you like
-        .background(Color.gray.opacity(0.3))
+        .padding(12)
+        .background(Color.gray.opacity(0.8))     // darker popup bg
         .cornerRadius(12)
         .alert(item: $toDelete) { pr in
             Alert(
                 title: Text("Delete Priority"),
-                message: Text("Are you sure you want to delete “\(pr.title)”?"),
+                message: Text("Delete “\(pr.title)” ?"),
                 primaryButton: .destructive(Text("Delete")) {
                     priorities.removeAll { $0.id == pr.id }
                     persist()
@@ -55,7 +63,7 @@ struct DayPriorityPopup: View {
         .animation(.easeInOut, value: priorities)
     }
 
-    // MARK: – Sub-views --------------------------------------------------------
+    // ─────────── Header ────────────────────────────
     private var header: some View {
         HStack {
             Text(dateFormatted(date))
@@ -70,32 +78,18 @@ struct DayPriorityPopup: View {
         }
     }
 
+    // ─────────── Row View ──────────────────────────
     private func row(for pr: Binding<TodayPriority>) -> some View {
-        // Determine if this date is in the past
         let todayStart = Calendar.current.startOfDay(for: Date())
         let isPast = Calendar.current.startOfDay(for: date) < todayStart
 
-        // Explicitly return the HStack so the compiler knows this is the single View
         return HStack(spacing: 8) {
-            Button {
-                pr.wrappedValue.isCompleted.toggle()
-                persist()
-            } label: {
-                Image(systemName: pr.isCompleted.wrappedValue
-                      ? "checkmark.circle.fill"
-                      : (isPast ? "xmark.circle.fill" : "circle"))
-                    .font(.title2)
-                    .foregroundColor(
-                        pr.isCompleted.wrappedValue
-                        ? accentCyan
-                        : (isPast ? .red : .gray)
-                    )
-            }
 
+            // editable text field
             TextField("Priority", text: pr.title)
                 .font(.body)
                 .foregroundColor(.white)
-                .padding(.vertical, 10)          // extra vertical padding
+                .padding(.vertical, 10)
                 .padding(.horizontal, 4)
                 .background(Color.black)
                 .cornerRadius(6)
@@ -103,6 +97,25 @@ struct DayPriorityPopup: View {
 
             Spacer()
 
+            // check/x icon – hidden when in remove mode
+            if !isRemoveMode {
+                Button {
+                    pr.wrappedValue.isCompleted.toggle()
+                    persist()
+                } label: {
+                    Image(systemName: pr.isCompleted.wrappedValue
+                          ? "checkmark.circle.fill"
+                          : (isPast ? "xmark.circle.fill" : "circle"))
+                        .font(.title2)
+                        .foregroundColor(
+                            pr.isCompleted.wrappedValue
+                            ? accentCyan
+                            : (isPast ? .red : .gray)
+                        )
+                }
+            }
+
+            // red minus icon appears *only* in remove mode
             if isRemoveMode {
                 Button(role: .destructive) { toDelete = pr.wrappedValue } label: {
                     Image(systemName: "minus.circle")
@@ -114,6 +127,7 @@ struct DayPriorityPopup: View {
         .padding(.horizontal, 4)
     }
 
+    // ─────────── Bottom Controls ───────────────────
     private var controls: some View {
         HStack {
             Button("Add Priority") {
@@ -129,7 +143,7 @@ struct DayPriorityPopup: View {
             .foregroundColor(accentCyan)
             .padding(.vertical, 8)
             .padding(.horizontal, 16)
-            .background(Color.black)
+            .background(Color.black)          // black like rows
             .cornerRadius(8)
 
             Spacer()
@@ -142,22 +156,21 @@ struct DayPriorityPopup: View {
                 .foregroundColor(.red)
                 .padding(.vertical, 8)
                 .padding(.horizontal, 16)
-                .background(Color.black)
+                .background(Color.black)      // black like rows
                 .cornerRadius(8)
             }
         }
     }
 
-    // MARK: – Helpers ----------------------------------------------------------
-    /// Persist the entire array upward.
+    // ─────────── Helpers ───────────────────────────
     private func persist() { onSave(priorities) }
 
-    /// Simple height heuristic: 90 pt per row + header + controls.
     private var listHeight: CGFloat {
         CGFloat(max(priorities.count, 1)) * 90
     }
 
     private func dateFormatted(_ d: Date) -> String {
-        let f = DateFormatter(); f.dateStyle = .medium; return f.string(from: d)
+        let f = DateFormatter(); f.dateStyle = .medium
+        return f.string(from: d)
     }
 }

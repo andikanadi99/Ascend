@@ -47,11 +47,20 @@ struct SchedulerView: View {
 
     // ───── body ─────
     var body: some View {
-        NavigationStack {                                // ← the one persistent stack
+        NavigationStack {                                // persistent navigation stack
             ZStack {
                 // 1) Background color
                 Color.black
                     .ignoresSafeArea()
+                    // Tap outside active controls ⟶ dismiss keyboard
+                    .onTapGesture {
+                        UIApplication.shared.sendAction(
+                            #selector(UIResponder.resignFirstResponder),
+                            to: nil,
+                            from: nil,
+                            for: nil
+                        )
+                    }
 
                 // 2) Main content
                 VStack {
@@ -62,24 +71,12 @@ struct SchedulerView: View {
                     Spacer()
                 }
             }
-            // 3) Make the entire ZStack tappable, but allow underlying taps (e.g., buttons, lists) to still work
-            .contentShape(Rectangle())
-            .simultaneousGesture(
-                TapGesture().onEnded {
-                    UIApplication.shared.sendAction(
-                        #selector(UIResponder.resignFirstResponder),
-                        to: nil,
-                        from: nil,
-                        for: nil
-                    )
-                }
-            )
             .navigationBarHidden(true)                   // hide default nav bar
         }
+
     }
 
     // ───── sub-views ─────
-
     private var greetingBanner: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(dailyGreeting)
@@ -122,14 +119,14 @@ struct SchedulerView: View {
     private var contentArea: some View {
         switch selectedTab {
         case .day:
-            DayView()                                    // **no NavigationStack inside**
+            DayView()                                    // no extra NavigationStack
         case .week:
-            WeekView(accentColor: accentCyan)            // 〃
+            WeekView(accentColor: accentCyan)
         case .month:
             MonthView(
                 accentColor: accentCyan,
                 accountCreationDate: session.userModel?.createdAt ?? Date()
-            )                                            // 〃
+            )
         }
     }
 }
@@ -137,6 +134,54 @@ struct SchedulerView: View {
 // MARK: – Tab Enum
 enum SchedulerTab: String, CaseIterable {
     case day, week, month
+}
+
+// ───────────────────────────────────────────────
+// MARK: – Pan-outside-text → dismiss keyboard
+// ───────────────────────────────────────────────
+
+private struct DismissKeyboardOnPanView: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let v = UIView(frame: .zero)
+        v.backgroundColor = .clear
+
+        let pan = UIPanGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handlePan(_:))
+        )
+        pan.cancelsTouchesInView = false
+        pan.delegate = context.coordinator
+        v.addGestureRecognizer(pan)
+        return v
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        @objc func handlePan(_ pan: UIPanGestureRecognizer) {
+            // only dismiss once when the pan begins
+            if pan.state == .began {
+                UIApplication.shared.sendAction(
+                    #selector(UIResponder.resignFirstResponder),
+                    to: nil, from: nil, for: nil
+                )
+            }
+        }
+
+        // ignore pans that start inside text inputs
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldReceive touch: UITouch
+        ) -> Bool {
+            if let v = touch.view,
+               (v is UITextView || v is UITextField || v.superview is UITextView) {
+                return false
+            }
+            return true
+        }
+    }
 }
 
 // MARK: – Preview

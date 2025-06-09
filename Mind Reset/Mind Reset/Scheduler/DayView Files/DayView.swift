@@ -46,6 +46,9 @@ struct TimeBlockRow: View {
     @State private var localTask: String
     @FocusState private var isThisBlockFocused: Bool
 
+    // Tracks the dynamic height of the task editor
+    @State private var measuredTaskHeight: CGFloat = 0
+
     init(
         block: TimeBlock,
         onCommit: @escaping (_ block: TimeBlock, _ newTime: String?, _ newTask: String?) -> Void
@@ -58,6 +61,8 @@ struct TimeBlockRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
+
+            // ——— Time field ———
             TextField("Time", text: $localTime, onCommit: {
                 onCommit(block, localTime, nil)
             })
@@ -69,18 +74,45 @@ struct TimeBlockRow: View {
             .background(Color.black.opacity(0.5))
             .cornerRadius(8)
 
-            TextEditor(text: $localTask)
-                .focused($isThisBlockFocused)
-                .font(.caption)
-                .foregroundColor(.white)
-                .scrollContentBackground(.hidden)
-                .padding(8)
-                .background(Color.black.opacity(0.5))
-                .cornerRadius(8)
-                .frame(minHeight: 50, maxHeight: 80)
-                .onChange(of: isThisBlockFocused) { focused in
-                    if !focused { onCommit(block, nil, localTask) }
-                }
+            // ——— Auto-expanding task field ———
+            let minHeight: CGFloat = 50
+            let padV:      CGFloat = 8
+            let padH:      CGFloat = 8
+            let finalHeight = max(measuredTaskHeight + padV * 2, minHeight)
+
+            ZStack(alignment: .topLeading) {
+
+                // Invisible twin → measures intrinsic height
+                Text(localTask)
+                    .font(.caption)
+                    .padding(.vertical, padV)
+                    .padding(.horizontal, padH)
+                    .opacity(0)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(
+                                key: TextHeightPreferenceKey.self,
+                                value: geo.size.height
+                            )
+                        }
+                    )
+
+                // Actual editable field
+                TextEditor(text: $localTask)
+                    .focused($isThisBlockFocused)
+                    .font(.caption)
+                    .foregroundColor(.white)
+                    .scrollContentBackground(.hidden)
+                    .padding(.vertical, padV)
+                    .padding(.horizontal, padH)
+                    .background(Color.black.opacity(0.5))
+                    .cornerRadius(8)
+                    .frame(height: finalHeight)          // 💡 dynamic height
+                    .onChange(of: isThisBlockFocused) { foc in
+                        if !foc { onCommit(block, nil, localTask) }
+                    }
+            }
+            .onPreferenceChange(TextHeightPreferenceKey.self) { measuredTaskHeight = $0 }
 
             Spacer()
         }
@@ -89,6 +121,7 @@ struct TimeBlockRow: View {
         .cornerRadius(8)
     }
 }
+
 
 // ───────────────────────────────────────────────
 // MARK: - Day view (“Your Mindful Day”)
@@ -110,6 +143,8 @@ struct DayView: View {
     // Focus flags
     @FocusState private var isDayPriorityFocused: Bool
     @FocusState private var isDayTimeFocused:     Bool
+    
+    @State private var priorityListHeight: CGFloat = 1
 
     // Accent colour
     private let accentCyan = Color(red: 0, green: 1, blue: 1)
@@ -154,6 +189,7 @@ struct DayView: View {
             .padding()
             .padding(.top, -20)
         }
+        .scrollDismissesKeyboard(.immediately)
         .alert(item: $activeAlert, content: buildAlert)
 
         // ---------- lifecycle / combine ----------
@@ -230,6 +266,7 @@ struct DayView: View {
                         .background(Color(.sRGB, white: 0.1, opacity: 1))
                         .cornerRadius(8)
                 } else {
+                    // ——— Native List keeps drag-to-reorder ———
                     List {
                         Section {
                             ForEach(binding) { $priority in
@@ -285,17 +322,23 @@ struct DayView: View {
                         }
                     }
                     .listStyle(.plain)
-                    .scrollDisabled(true)
+                    .scrollDisabled(true)                 // outer ScrollView handles scrolling
                     .scrollContentBackground(.hidden)
                     .listRowSeparator(.hidden)
                     .listSectionSeparator(.hidden)
                     .background(Color.clear)
-                    .frame(minHeight: CGFloat(binding.wrappedValue.count) * 90)
+                    .frame(minHeight: max(
+                        priorityListHeight,
+                        CGFloat(binding.wrappedValue.count) * 60
+                    ))
+                    .onPreferenceChange(PriorityListHeightPreferenceKey.self) {
+                        priorityListHeight = $0           // total row height from prefs
+                    }
                     .environment(\.editMode, $editMode)
                     .padding(.bottom, 20)
                 }
 
-                // add / remove buttons
+                // ——— Add / Remove controls ———
                 HStack {
                     Button("Add Priority", action: addPriority)
                         .font(.headline)
@@ -321,7 +364,7 @@ struct DayView: View {
                 }
                 .padding(.top, 8)
 
-                // import unfinished
+                // ——— Import unfinished yesterday ———
                 if isToday && hasYesterdayUnfinished {
                     HStack {
                         Button { activeAlert = .confirmImport } label: {
@@ -337,13 +380,15 @@ struct DayView: View {
                     .padding(.top, 8)
                 }
             } else {
-                Text("Loading priorities…").foregroundColor(.white)
+                Text("Loading priorities…")
+                    .foregroundColor(.white)
             }
         }
         .padding()
         .background(Color.gray.opacity(0.3))
         .cornerRadius(8)
     }
+
 
     // ─────────────────────────────────────────
     // MARK: – Wake / Sleep pickers
@@ -697,9 +742,19 @@ private struct TextHeightPreferenceKey: PreferenceKey {
     }
 }
 
+// Reports each priority row’s height; parent sums them.
+private struct PriorityListHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value += nextValue()                // accumulate heights
+    }
+}
+
+
 // ───────────────────────────────────────────────
 // MARK: - Buffered priority row
 // ───────────────────────────────────────────────
+
 private struct BufferedPriorityRow: View {
     @Binding var title: String
     @Binding var isCompleted: Bool
@@ -713,7 +768,7 @@ private struct BufferedPriorityRow: View {
     let isPast:     Bool
 
     @State private var localTitle: String
-    @State private var measuredTextHeight: CGFloat = 0
+    @State private var measuredTextHeight: CGFloat = 0          // ← dynamic
 
     init(
         title: Binding<String>,
@@ -726,28 +781,36 @@ private struct BufferedPriorityRow: View {
         onCommit: @escaping () -> Void,
         isPast: Bool = false
     ) {
-        self._title = title
-        self._isCompleted = isCompleted
-        self._isFocused = isFocused
-        self.onToggle = onToggle
-        self.showDelete = showDelete
-        self.onDelete = onDelete
-        self.accentCyan = accentCyan
-        self.onCommit = onCommit
-        self.isPast = isPast
-        _localTitle = State(initialValue: title.wrappedValue)
+        self._title        = title
+        self._isCompleted  = isCompleted
+        self._isFocused    = isFocused
+        self.onToggle      = onToggle
+        self.showDelete    = showDelete
+        self.onDelete      = onDelete
+        self.accentCyan    = accentCyan
+        self.onCommit      = onCommit
+        self.isPast        = isPast
+        _localTitle        = State(initialValue: title.wrappedValue)
     }
 
     var body: some View {
+        // Layout constants
         let minHeight: CGFloat = 50
-        let padTotal: CGFloat = 24
-        let finalHeight = max(measuredTextHeight + padTotal, minHeight)
-        let halfPad = padTotal / 2
+        let padV:      CGFloat = 12        // half of padTotal (24)
+        let padH:      CGFloat = 8
+        let finalHeight = max(measuredTextHeight + padV * 2, minHeight)
 
         HStack(spacing: 8) {
-            ZStack(alignment: .trailing) {
+            // ——— Auto-expanding text area ———
+            ZStack(alignment: .topLeading) {
+
+                // Invisible twin → measures wrapped height
                 Text(localTitle)
                     .font(.body)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)        // ⚡️ wrap!
+                    .padding(.vertical, padV)
+                    .padding(.horizontal, padH)
                     .opacity(0)
                     .background(
                         GeometryReader { geo in
@@ -758,15 +821,15 @@ private struct BufferedPriorityRow: View {
                         }
                     )
 
+                // Actual editable field
                 TextEditor(text: $localTitle)
                     .font(.body)
-                    .padding(.vertical, halfPad)
-                    .padding(.leading, 4)
-                    .padding(.trailing, 8)       // inner pad; keeps button tappable
-                    .frame(height: finalHeight)
+                    .padding(.vertical, padV)
+                    .padding(.horizontal, padH)
                     .background(Color.black)
                     .cornerRadius(8)
                     .focused($isFocused)
+                    .frame(height: finalHeight)                          // 💡 dynamic
                     .onChange(of: isFocused) { foc in
                         if !foc {
                             title = localTitle
@@ -776,6 +839,7 @@ private struct BufferedPriorityRow: View {
             }
             .onPreferenceChange(TextHeightPreferenceKey.self) { measuredTextHeight = $0 }
 
+            // ——— Complete / delete buttons ———
             if !showDelete {
                 Button { onToggle() } label: {
                     Group {
@@ -792,7 +856,7 @@ private struct BufferedPriorityRow: View {
             }
 
             if showDelete {
-                Button(role: .destructive) { onDelete() } label: {
+                Button(role: .destructive, action: onDelete) {
                     Image(systemName: "minus.circle")
                         .font(.title2)
                         .foregroundColor(.red)
@@ -804,5 +868,15 @@ private struct BufferedPriorityRow: View {
         .padding(4)
         .background(Color.black)
         .cornerRadius(8)
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .preference(
+                        key: PriorityListHeightPreferenceKey.self,
+                        value: geo.size.height + 8      // +8 for LazyVStack spacing
+                    )
+            }
+        )
     }
 }
+

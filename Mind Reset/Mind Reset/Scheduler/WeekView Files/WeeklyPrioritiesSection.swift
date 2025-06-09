@@ -2,103 +2,122 @@
 //  WeeklyPrioritiesSection.swift
 //  Mind Reset
 //
-//  Updated 06 Jun 2025 – adds confirmation before importing unfinished priorities
+//  List of weekly priorities with drag-to-reorder, auto-expanding rows,
+//  delete confirmations, and an import-unfinished confirmation.
 //
 
 import SwiftUI
 
-/// Section showing the weekly priorities list with drag-to-reorder, inline check-marks,
-/// confirmation prompts, fixed Add / Remove-Done buttons, and an optional “Import
-/// Unfinished from Last Week” action.
-struct WeeklyPrioritiesSection: View {
+// MARK: – Preference key for List height
+private struct WeeklyPriorityListHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value += nextValue() }
+}
 
-    // ─────────── Inputs from WeekView ────────────────────────────────
+// MARK: – Alert types
+private enum WeeklyPriorityAlert: Identifiable {
+    case deleteCurrent(WeeklyPriority)
+    case deletePast(WeeklyPriority)
+
+    var id: String {
+        switch self {
+        case .deleteCurrent(let p): return "deleteCurrent-\(p.id)"
+        case .deletePast(let p):    return "deletePast-\(p.id)"
+        }
+    }
+}
+
+// MARK: – Section view
+struct WeeklyPrioritiesSection: View {
+    // ───── data & state ─────
     @Binding var priorities: [WeeklyPriority]
     @Binding var editMode:   EditMode
+    @Binding var listHeight: CGFloat
 
-    let accentColor:       Color
-    let isRemoveMode:      Bool
-    let onToggleRemoveMode: () -> Void
-    let onMove:             (IndexSet, Int) -> Void
-    let onCommit:           () -> Void
-    let onDelete:           (WeeklyPriority) -> Void
-    let addAction:          () -> Void
+    @State private var deleteAlert: WeeklyPriorityAlert?
+    @State private var showImportAlert = false
 
-    // Context about WHICH week we’re showing
-    let isThisWeek:             Bool     // true if displayed week == current week
-    let isPastWeek:             Bool     // true if displayed week < current week
-    let hasPreviousUnfinished:  Bool     // true if last week has any unfinished items
-    let importAction:           () -> Void   // perform the import
-    // ─────────────────────────────────────────────────────────────────
+    // ───── config / callbacks ─────
+    let accentColor:           Color
+    let isRemoveMode:          Bool
+    let onToggleRemoveMode:    () -> Void
+    let onMove:                (IndexSet, Int) -> Void
+    let onCommit:              () -> Void
+    let onDeleteConfirmed:     (WeeklyPriority) -> Void
+    let addAction:             () -> Void
 
-    /// Single source-of-truth for *all* confirmation alerts in this view
-    @State private var weekAlert: WeekViewAlert? = nil
+    // extra flags
+    let isThisWeek:            Bool
+    let isPastWeek:            Bool
+    let hasPreviousUnfinished: Bool
+    let importAction:          () -> Void
 
-    // ─────────────────────────────────────────
-    // MARK: – Body
-    // ─────────────────────────────────────────
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            Text("Weekly Priorities")
+                .font(.headline)
+                .foregroundColor(accentColor)
 
-            // ───── Section header ─────
-            HStack {
-                Text("Weekly Priorities")
-                    .font(.headline)
-                    .foregroundColor(accentColor)
-                Spacer()
-            }
-
-            // ───── Empty placeholder OR scrolling list ─────
+            // ─── list or placeholder ───
             if priorities.isEmpty {
-                Text("Please list your priorities for the week")
+                Text("Add some priorities for this week")
                     .foregroundColor(.white.opacity(0.7))
                     .italic()
-                    .padding(.vertical, 20)
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, 20)
                     .background(Color(.sRGB, white: 0.1, opacity: 1))
                     .cornerRadius(8)
             } else {
                 List {
-                    ForEach($priorities, id: \.id) { $priority in
-                        WeeklyPriorityRowView(
-                            title:       $priority.title,
-                            isCompleted: $priority.isCompleted,
-                            onToggle: {
-                                if isPastWeek {
-                                    weekAlert = .confirmModifyPastWeek(priority)
-                                } else {
-                                    priority.isCompleted.toggle()
-                                    onCommit()
+                    Section {
+                        ForEach($priorities) { $priority in
+                            WeeklyPriorityRowView(
+                                title:       $priority.title,
+                                isCompleted: $priority.isCompleted,
+                                onToggle: {
+                                    priority.isCompleted.toggle()   // flip the check-mark
+                                    onCommit()                      // persist
+                                },
+                                showDelete:  isRemoveMode,
+                                onDelete:    {
+                                    deleteAlert = isPastWeek
+                                        ? .deletePast(priority)
+                                        : .deleteCurrent(priority)
+                                },
+                                accentCyan:  accentColor,
+                                onCommit:    onCommit,
+                                isPastWeek:  isPastWeek
+                            )
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(.init(top: 4, leading: 0, bottom: 4, trailing: 0))
+                            .listRowSeparator(.hidden)
+                            .background(
+                                GeometryReader { geo in
+                                    Color.clear.preference(
+                                        key: WeeklyPriorityListHeightKey.self,
+                                        value: geo.size.height + 8
+                                    )
                                 }
-                            },
-                            showDelete:  isRemoveMode,
-                            onDelete: {
-                                if isPastWeek {
-                                    weekAlert = .confirmDeletePastWeek(priority)
-                                } else {
-                                    weekAlert = .confirmDeleteThisWeek(priority)
-                                }
-                            },
-                            accentCyan:  accentColor,
-                            onCommit:    onCommit,
-                            isPastWeek:  isPastWeek
-                        )
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                        .listRowSeparator(.hidden)
+                            )
+                        }
+                        .onMove(perform: onMove)
                     }
-                    .onMove(perform: onMove)
                 }
                 .listStyle(.plain)
                 .scrollDisabled(true)
                 .scrollContentBackground(.hidden)
+                .listRowSeparator(.hidden)
                 .listSectionSeparator(.hidden)
+                .background(Color.clear)
+                .frame(minHeight: max(listHeight,
+                                       CGFloat(priorities.count) * 60))
+                .onPreferenceChange(WeeklyPriorityListHeightKey.self) {
+                    listHeight = $0
+                }
                 .environment(\.editMode, $editMode)
-                .frame(minHeight: CGFloat(priorities.count) * 90)
-                .padding(.bottom, 20)
             }
 
-            // ───── Fixed Add / Remove-Done buttons ─────
+            // ─── Add / Remove controls ───
             HStack {
                 Button("Add Priority", action: addAction)
                     .font(.headline)
@@ -111,23 +130,24 @@ struct WeeklyPrioritiesSection: View {
                 Spacer()
 
                 if priorities.count > 0 {
-                    Button(isRemoveMode ? "Done" : "Remove Priority",
-                           action: onToggleRemoveMode)
-                        .font(.headline)
-                        .foregroundColor(.red)
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 16)
-                        .background(Color.black)
-                        .cornerRadius(8)
+                    Button(isRemoveMode ? "Done" : "Remove Priority") {
+                        onToggleRemoveMode()
+                    }
+                    .font(.headline)
+                    .foregroundColor(.red)
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 16)
+                    .background(Color.black)
+                    .cornerRadius(8)
                 }
             }
             .padding(.top, 8)
 
-            // ───── Import unfinished from last week (only for THIS week) ─────
+            // ─── Import unfinished prompt ───
             if isThisWeek && hasPreviousUnfinished {
                 HStack {
                     Button {
-                        weekAlert = .confirmImportUnfinished     // ← prompt first
+                        showImportAlert = true         // ask first
                     } label: {
                         Text("Import Unfinished from Last Week")
                             .font(.headline)
@@ -144,70 +164,38 @@ struct WeeklyPrioritiesSection: View {
         .padding()
         .background(Color.gray.opacity(0.3))
         .cornerRadius(8)
-
-        // ───── Single .alert handler ─────
-        .alert(item: $weekAlert) { alertCase in
-            switch alertCase {
-            case .confirmDeleteThisWeek(let pr):
+        // ─── deletion alerts ───
+        .alert(item: $deleteAlert) { alert in
+            switch alert {
+            case .deleteCurrent(let p):
                 return Alert(
                     title: Text("Delete Priority"),
-                    message: Text("Are you sure you want to delete “\(pr.title)” ?"),
-                    primaryButton: .destructive(Text("Delete")) { onDelete(pr) },
-                    secondaryButton: .cancel()
-                )
-
-            case .confirmModifyPastWeek(let pr):
-                return Alert(
-                    title: Text("Editing Past Week"),
-                    message: Text("This will modify a priority from a previous week. Continue?"),
-                    primaryButton: .destructive(Text("Yes")) {
-                        if let idx = priorities.firstIndex(where: { $0.id == pr.id }) {
-                            priorities[idx].isCompleted.toggle()
-                            onCommit()
-                        }
+                    message: Text("Delete “\(p.title)”?"),
+                    primaryButton: .destructive(Text("Delete")) {
+                        onDeleteConfirmed(p)
                     },
                     secondaryButton: .cancel()
                 )
-
-            case .confirmDeletePastWeek(let pr):
+            case .deletePast(let p):
                 return Alert(
                     title: Text("Delete From Past Week"),
-                    message: Text("This will permanently delete that past priority. Continue?"),
-                    primaryButton: .destructive(Text("Delete")) { onDelete(pr) },
+                    message: Text("You’re removing a priority from a previous week. Continue?"),
+                    primaryButton: .destructive(Text("Delete")) {
+                        onDeleteConfirmed(p)
+                    },
                     secondaryButton: .cancel()
-                )
-
-            case .confirmImportUnfinished:
-                return Alert(
-                    title: Text("Import Unfinished?"),
-                    message: Text("Copy all unfinished priorities from last week into this week?"),
-                    primaryButton: .destructive(Text("Cancel")),
-                    secondaryButton: .default(Text("Import")) { importAction() }
                 )
             }
         }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────
-// MARK: – Alert cases for WeeklyPrioritiesSection
-// ─────────────────────────────────────────────────────────────────
-enum WeekViewAlert: Identifiable {
-    case confirmDeleteThisWeek(WeeklyPriority)
-    case confirmModifyPastWeek(WeeklyPriority)
-    case confirmDeletePastWeek(WeeklyPriority)
-    case confirmImportUnfinished                         // NEW
-
-    var id: String {
-        switch self {
-        case .confirmDeleteThisWeek(let p):
-            return "confirmDeleteThisWeek-\(p.id)"
-        case .confirmModifyPastWeek(let p):
-            return "confirmModifyPastWeek-\(p.id)"
-        case .confirmDeletePastWeek(let p):
-            return "confirmDeletePastWeek-\(p.id)"
-        case .confirmImportUnfinished:
-            return "confirmImportUnfinished"
-        }
+        // ─── import confirmation alert ───
+        .alert("Import unfinished priorities from last week?",
+               isPresented: $showImportAlert,
+               actions: {
+                   Button("Import", role: .destructive) { importAction() }
+                   Button("Cancel", role: .cancel) { }
+               },
+               message: {
+                   Text("Any unfinished priorities from last week that don’t match an existing title will be added to this week.")
+               })
     }
 }

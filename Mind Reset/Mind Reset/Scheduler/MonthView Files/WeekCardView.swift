@@ -219,6 +219,8 @@ private struct WeekRow: View {
 
         HStack(spacing: 8) {
             TextEditor(text: $title)
+                .scrollContentBackground(.hidden)
+                .foregroundColor(.white) 
                 .font(.body)
                 .padding(.vertical, padV/2)
                 .padding(.horizontal, 8)

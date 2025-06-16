@@ -68,6 +68,7 @@ struct TimeBlockRow: View {
             TextField("Time", text: $localTime, onCommit: {
                 onCommit(block, localTime, nil)
             })
+            .textFieldStyle(.plain)
             .focused($isThisBlockFocused, equals: false)
             .font(.caption)
             .foregroundColor(.white)
@@ -101,6 +102,8 @@ struct TimeBlockRow: View {
 
                 // Actual editable field
                 TextEditor(text: $localTask)
+                    .scrollContentBackground(.hidden)
+                    .foregroundColor(.white) 
                     .focused($isThisBlockFocused)
                     .font(.caption)
                     .foregroundColor(.white)
@@ -830,6 +833,8 @@ private struct BufferedPriorityRow: View {
                         }
                     )
                 TextEditor(text: $localTitle)
+                    .scrollContentBackground(.hidden)
+                    .foregroundColor(.white)
                     .font(.body)
                     .padding(.vertical, padV)
                     .padding(.horizontal, padH)

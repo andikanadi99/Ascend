@@ -50,6 +50,8 @@ struct WeekDayPriorityRowView: View {
                                 value: geo.size.height)
                         })
                 TextEditor(text: $title)
+                    .scrollContentBackground(.hidden)
+                    .foregroundColor(.white)
                     .font(.body)
                     .padding(.vertical, padV).padding(.horizontal, padH)
                     .background(Color.black).cornerRadius(8)

@@ -60,6 +60,8 @@ struct WeeklyPriorityRowView: View {
 
                 // Editable field
                 TextEditor(text: $title)
+                    .scrollContentBackground(.hidden)
+                    .foregroundColor(.white) 
                     .font(.body)
                     .padding(.vertical, padV/2)
                     .padding(.leading,   4)

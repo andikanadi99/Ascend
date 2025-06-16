@@ -76,6 +76,10 @@ struct LoginView: View {
     @State private var showPassword = false
     @State private var currentNonce: String?
 
+    // two fields to focus
+    private enum Field { case email, password }
+    @FocusState private var focusedField: Field?
+
     private let backgroundBlack = Color.black
     private let neonCyan        = Color(red: 0, green: 1, blue: 1)
     private let fieldBG         = Color(red: 0.102, green: 0.102, blue: 0.102)
@@ -84,8 +88,6 @@ struct LoginView: View {
         ZStack {
             backgroundBlack
                 .ignoresSafeArea()
-                .contentShape(Rectangle())
-                .onTapGesture { hideLoginKeyboard() }
 
             VStack(spacing: 20) {
                 Image("AppFullWord")
@@ -95,8 +97,7 @@ struct LoginView: View {
                     .padding(.top, 10)
 
                 // Email
-                TextField("", text: $email, prompt: Text("Enter Your Email")
-                    .foregroundColor(.white.opacity(0.8)))
+                TextField("Enter Your Email", text: $email)
                     .keyboardType(.emailAddress)
                     .textContentType(.emailAddress)
                     .foregroundColor(.white)
@@ -106,17 +107,16 @@ struct LoginView: View {
                     .background(fieldBG)
                     .cornerRadius(8)
                     .padding(.horizontal)
+                    .focused($focusedField, equals: .email)
                     .onChange(of: email) { _ in session.auth_error = nil }
 
                 // Password
                 ZStack(alignment: .trailing) {
                     Group {
                         if showPassword {
-                            TextField("", text: $password, prompt: Text("Enter Your Password")
-                                .foregroundColor(.white.opacity(0.8)))
+                            TextField("Enter Your Password", text: $password)
                         } else {
-                            SecureField("", text: $password, prompt: Text("Enter Your Password")
-                                .foregroundColor(.white.opacity(0.8)))
+                            SecureField("Enter Your Password", text: $password)
                         }
                     }
                     .textContentType(.password)
@@ -124,6 +124,7 @@ struct LoginView: View {
                     .padding()
                     .background(fieldBG)
                     .cornerRadius(8)
+                    .focused($focusedField, equals: .password)
                     .onChange(of: password) { _ in session.auth_error = nil }
 
                     Button { showPassword.toggle() } label: {
@@ -187,6 +188,15 @@ struct LoginView: View {
             }
             .padding(.vertical)
             .navigationBarHidden(true)
+            // keyboard toolbar with Done
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        focusedField = nil
+                    }
+                }
+            }
         }
         .onAppear { session.auth_error = nil }
     }
@@ -270,7 +280,6 @@ struct LoginView: View {
     }
 
     // MARK: - Utilities
-
     private func isEmailValid(_ email: String) -> Bool {
         let pattern = "(?:[A-Z0-9a-z._%+-]+)@(?:[A-Za-z0-9-]+\\.)+[A-Za-z]{2,64}"
         return NSPredicate(format: "SELF MATCHES %@", pattern).evaluate(with: email)
@@ -312,18 +321,6 @@ private struct PrimaryButton: ButtonStyle {
     }
 }
 
-// MARK: - Hide Keyboard Helper
-#if canImport(UIKit)
-extension View {
-    func hideLoginKeyboard() {
-        UIApplication.shared.sendAction(
-            #selector(UIResponder.resignFirstResponder),
-            to: nil, from: nil, for: nil
-        )
-    }
-}
-#endif
-
 // MARK: - Preview
 struct LoginView_Previews: PreviewProvider {
     static var previews: some View {
@@ -334,4 +331,3 @@ struct LoginView_Previews: PreviewProvider {
         .preferredColorScheme(.dark)
     }
 }
-

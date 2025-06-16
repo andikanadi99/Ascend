@@ -53,6 +53,7 @@ struct WeekDayPriorityRowView: View {
                     .font(.body)
                     .padding(.vertical, padV).padding(.horizontal, padH)
                     .background(Color.black).cornerRadius(8)
+                    .opacity(isPast ? 0.6 : 1)
                     .frame(height: finalH)
                     .focused(focus)
                     .onChange(of: title) { _ in onCommit() }

@@ -111,18 +111,18 @@ struct SupportSettingsView: View {
                 .padding()
             }
         }
-        .contentShape(Rectangle())   // Make the entire ZStack respond to taps
-        .simultaneousGesture(
-            TapGesture().onEnded {
-                UIApplication.shared.sendAction(
-                    #selector(UIResponder.resignFirstResponder),
-                    to: nil,
-                    from: nil,
-                    for: nil
-                )
-            }
-        )
         // ───────────────────────────────────────────────────────────────────────────
+        .toolbar {
+            // This toolbar appears whenever *any* keyboard is up
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    // Clear every focus state
+                    isFeedbackFocused = false
+                    isIssueFocused    = false
+                }
+            }
+        }
         .navigationBarTitle("Support", displayMode: .inline)
         .preferredColorScheme(.dark)
         .alert(alertTitle, isPresented: $showAlert) {

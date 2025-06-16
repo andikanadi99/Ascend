@@ -1,4 +1,3 @@
-//
 //  WeekViewModel.swift
 //  Mind Reset
 //
@@ -49,7 +48,7 @@ final class WeekViewModel: ObservableObject {
             guard let self else { return }
 
             if let err {
-                self.errorMessage = err.localizedDescription
+                DispatchQueue.main.async { self.errorMessage = err.localizedDescription }
                 return
             }
             guard let snap, snap.exists else {
@@ -143,8 +142,10 @@ final class WeekViewModel: ObservableObject {
                 didChange = true
             }
             if didChange {
-                self.schedule = sched
-                self.updateWeeklySchedule()
+                Task { @MainActor in
+                    self.schedule = sched
+                    self.updateWeeklySchedule()
+                }
             }
         }
     }
@@ -163,13 +164,15 @@ final class WeekViewModel: ObservableObject {
     func moveWeeklyPriorities(indices: IndexSet, to newOffset: Int) {
         guard var s = schedule else { return }
         s.weeklyPriorities.move(fromOffsets: indices, toOffset: newOffset)
-        schedule = s; updateWeeklySchedule()
+        schedule = s
+        updateWeeklySchedule()
     }
     func toggleWeeklyPriorityCompletion(_ id: UUID) {
         guard var s = schedule,
               let idx = s.weeklyPriorities.firstIndex(where: { $0.id == id }) else { return }
         s.weeklyPriorities[idx].isCompleted.toggle()
-        schedule = s; updateWeeklySchedule()
+        schedule = s
+        updateWeeklySchedule()
     }
     func addNewPriority() {
         guard var s = schedule else { return }
@@ -177,13 +180,15 @@ final class WeekViewModel: ObservableObject {
             WeeklyPriority(id: UUID(), title: "New Priority",
                            progress: 0, isCompleted: false)
         )
-        schedule = s; updateWeeklySchedule()
+        schedule = s
+        updateWeeklySchedule()
     }
     func deletePriority(_ p: WeeklyPriority) {
         guard var s = schedule,
               let idx = s.weeklyPriorities.firstIndex(where: { $0.id == p.id }) else { return }
         s.weeklyPriorities.remove(at: idx)
-        schedule = s; updateWeeklySchedule()
+        schedule = s
+        updateWeeklySchedule()
     }
 
     // MARK: – DAY-LEVEL BINDINGS
@@ -226,17 +231,21 @@ final class WeekViewModel: ObservableObject {
           .getDocument(as: DaySchedule.self) { [weak self] result in
               guard let self else { return }
               let list = (try? result.get().priorities) ?? []
-              self.dayPriorityStorage[key] = list
-              self.dayPriorityStatus[key]  = (
-                  list.filter(\.isCompleted).count,
-                  list.count
-              )
+              DispatchQueue.main.async {
+                  self.dayPriorityStorage[key] = list
+                  self.dayPriorityStatus[key]  = (
+                      list.filter(\.isCompleted).count,
+                      list.count
+                  )
+              }
           }
     }
 
     private func persistDayPriorities(_ key: Date, _ list: [TodayPriority]) {
         guard let uid = Auth.auth().currentUser?.uid else { return }
-        dayPriorityStatus[key] = (list.filter(\.isCompleted).count, list.count)
+        DispatchQueue.main.async {
+            self.dayPriorityStatus[key] = (list.filter(\.isCompleted).count, list.count)
+        }
         updateDayPriorities(date: key, priorities: list, userId: uid)
     }
 

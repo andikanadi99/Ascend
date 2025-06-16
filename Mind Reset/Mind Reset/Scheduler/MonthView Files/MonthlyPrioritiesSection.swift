@@ -27,8 +27,7 @@ struct MonthlyPrioritiesSection: View {
     let addAction:        () -> Void
     let importAction:     () -> Void
 
-    // ── Single source for *all* alerts ────────────────
-    @State private var monthAlert: MonthViewAlert? = nil
+    @State private var monthAlert: MonthViewAlert?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -51,7 +50,6 @@ struct MonthlyPrioritiesSection: View {
                 List {
                     ForEach(priorities) { pr in
                         let bindings = binding(for: pr)
-
                         MonthlyPriorityRowView(
                             title:       bindings.title,
                             isCompleted: bindings.isCompleted,
@@ -64,11 +62,9 @@ struct MonthlyPrioritiesSection: View {
                             },
                             showDelete:  isRemoveMode,
                             onDelete: {
-                                if !isThisMonth {
-                                    monthAlert = .confirmDeletePast(pr)
-                                } else {
-                                    monthAlert = .confirmDeleteThisMonth(pr)
-                                }
+                                monthAlert = !isThisMonth
+                                    ? .confirmDeletePast(pr)
+                                    : .confirmDeleteThisMonth(pr)
                             },
                             accentCyan:  accentColor,
                             onCommit:    onCommit,
@@ -81,7 +77,7 @@ struct MonthlyPrioritiesSection: View {
                     .onMove(perform: onMove)
                 }
                 .listStyle(.plain)
-                .scrollDisabled(true)
+                .scrollDisabled(false)                         // ← was true
                 .scrollContentBackground(.hidden)
                 .background(Color.clear)
                 .frame(minHeight: CGFloat(priorities.count) * 90)

@@ -2,40 +2,86 @@
 //  DayCardView.swift
 //  Mind Reset
 //
+//  Scrollable when >4 priorities, smooth spring animation,
+//  matches WeekCardView style.
+//
 
 import SwiftUI
-import Foundation
+import Foundation   // TodayPriority
 
+// ─────────────────────────────────────────────────────────
+// MARK: – Alerts
+// ─────────────────────────────────────────────────────────
+enum DayCardAlert: Identifiable {
+    case confirmDeleteCurrent(TodayPriority)
+    case confirmModifyPast(TodayPriority)
+    case confirmDeletePast(TodayPriority)
+    case confirmAddPast
+
+    var id: String {
+        switch self {
+        case .confirmDeleteCurrent(let p): return "delCurr-\(p.id)"
+        case .confirmModifyPast(let p):   return "modPast-\(p.id)"
+        case .confirmDeletePast(let p):   return "delPast-\(p.id)"
+        case .confirmAddPast:             return "addPast"
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────
+// MARK: – DayCardView
+// ─────────────────────────────────────────────────────────
+@MainActor
 struct DayCardView: View {
-    // injected
     let accentColor: Color
     let day: Date
     @Binding var priorities: [TodayPriority]
     let priorityFocus: FocusState<Bool>.Binding
 
-    @EnvironmentObject private var weekVM: WeekViewModel
+    @EnvironmentObject private var weekVM:  WeekViewModel
     @EnvironmentObject private var session: SessionStore
 
-    // local UI
     @State private var isRemoveMode = false
     @State private var dayAlert: DayCardAlert?
-    @State private var pendingToggle: TodayPriority?
-    @State private var listHeight: CGFloat = 1       // dynamic list height
+    @State private var listHeight: CGFloat = 0
 
-    private let accentCyan = Color(red: 0, green: 1, blue: 1)
+    // appearance constants
+    private let accentCyan     = Color(red: 0, green: 1, blue: 1)
+    private let rowHeight: CGFloat     = 110    // approx per-row height
+    private let bottomInset: CGFloat   = 16     // spacing under last row
+    private let maxVisibleRows         = 4      // scroll after 4 rows
 
-    // ─────────────────────────────────────────
-    // MARK: – Body
-    // ─────────────────────────────────────────
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header
+            HStack {
+                Text(DateFormatter.localizedString(
+                    from: day,
+                    dateStyle: .full,
+                    timeStyle: .none
+                ))
+                .font(.headline)
+                .foregroundColor(.white)
+                Spacer()
+            }
+            .padding(.bottom, 4)
 
-            header
+            // Section title
+            Text("Today's Top Priority")
+                .font(.headline)
+                .foregroundColor(accentCyan)
 
-            // priorities list or placeholder
+            // Placeholder if empty
             if priorities.isEmpty {
-                placeholder
+                Text("Please list priorities for this day")
+                    .foregroundColor(.white.opacity(0.7))
+                    .italic()
+                    .padding(.vertical, 20)
+                    .frame(maxWidth: .infinity)
+                    .background(Color(.sRGB, white: 0.1, opacity: 1))
+                    .cornerRadius(8)
             } else {
+                // ScrollView + LazyVStack for crash-free dynamic layout
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         ForEach(priorities.indices, id: \.self) { idx in
@@ -48,7 +94,6 @@ struct DayCardView: View {
                                 focus:       priorityFocus,
                                 onToggle: {
                                     if isPast {
-                                        pendingToggle = pr
                                         dayAlert = .confirmModifyPast(pr)
                                     } else {
                                         priorities[idx].isCompleted.toggle()
@@ -65,178 +110,158 @@ struct DayCardView: View {
                                 onCommit:    savePatch,
                                 isPast:      isPast
                             )
+                            .padding(.horizontal, 0)
+                        }
+                        .onMove { from, to in
+                            withAnimation(.interactiveSpring(response: 0.3,
+                                                             dampingFraction: 0.7)) {
+                                priorities.move(fromOffsets: from, toOffset: to)
+                                savePatch()
+                            }
                         }
                     }
                     .padding(.vertical, 4)
                 }
-                .frame(minHeight: max(listHeight, CGFloat(priorities.count) * 60))
+                // constrain height to either content or maxVisibleRows
+                .frame(
+                    height: min(
+                        CGFloat(priorities.count) * rowHeight + bottomInset,
+                        CGFloat(maxVisibleRows) * rowHeight + bottomInset
+                    )
+                )
+                // ensure grows to fit content if fewer rows
+                .frame(minHeight: max(listHeight,
+                                      CGFloat(priorities.count) * rowHeight))
                 .onPreferenceChange(DayCardListHeightKey.self) { listHeight = $0 }
             }
 
-            controls
+            // Bottom buttons
+            HStack(spacing: 12) {
+                Button {
+                        if isPastDay() {
+                            dayAlert = .confirmAddPast
+                        } else {
+                            addPriority()
+                        }
+                    } label: {
+                        Text("Add Priority")
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                .styledAccent
+
+                Spacer()
+
+                if !priorities.isEmpty {
+                        Button {
+                            withAnimation(.easeInOut) { isRemoveMode.toggle() }
+                        } label: {
+                            Text(isRemoveMode ? "Done" : "Remove Priority")
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
+                        .styledRed
+                   }
+            }
         }
         .padding()
-        .background(Color.gray.opacity(0.2))
-        .cornerRadius(8)
-        .alert(item: $dayAlert, content: buildAlert)
+       .frame(maxWidth: .infinity, alignment: .leading)  
+       .background(Color.gray.opacity(0.3))
+       .cornerRadius(12)
+       .shadow(radius: 2)
+       .alert(item: $dayAlert, content: buildAlert)
     }
 
-    // ─────────────────────────────────────────
-    // MARK: – Controls row
-    // ─────────────────────────────────────────
-    private var controls: some View {
-        HStack {
-            Button("Add Priority") {
-                if isPastDay() {
-                    dayAlert = .confirmAddPast
-                } else {
-                    addPriority()
-                }
-            }
-            .font(.headline)
-            .foregroundColor(accentCyan)
-            .padding(.vertical, 8)
-            .padding(.horizontal, 16)
-            .background(Color.black)
-            .cornerRadius(8)
-
-            Spacer()
-
-            if !priorities.isEmpty {
-                Button(isRemoveMode ? "Done" : "Remove Priority") {
-                    isRemoveMode.toggle()
-                }
-                .font(.headline)
-                .foregroundColor(.red)
-                .padding(.vertical, 8)
-                .padding(.horizontal, 16)
-                .background(Color.black)
-                .cornerRadius(8)
-            }
-        }
-    }
-
-    // ─────────────────────────────────────────
-    // MARK: – Helper methods
-    // ─────────────────────────────────────────
+    // ───────────────────────────────────────────────
+    // MARK: – Helpers
+    // ───────────────────────────────────────────────
     private func isPastDay() -> Bool {
-        let today = Calendar.current.startOfDay(for: Date())
-        return Calendar.current.startOfDay(for: day) < today
+        let dayStart   = Calendar.current.startOfDay(for: day)
+        let todayStart = Calendar.current.startOfDay(for: Date())
+        return dayStart < todayStart
     }
 
     private func addPriority() {
         priorities.append(
-            TodayPriority(id: UUID(), title: "New Priority",
-                          progress: 0, isCompleted: false)
+            TodayPriority(id: UUID(),
+                          title: "New Priority",
+                          progress: 0,
+                          isCompleted: false)
         )
-        isRemoveMode = false
         savePatch()
     }
 
-    private func delete(_ pr: TodayPriority) {
-        priorities.removeAll { $0.id == pr.id }
-        if priorities.isEmpty { isRemoveMode = false }
-        savePatch()
-    }
-
-    /// Persist only the priorities array via WeekViewModel
     private func savePatch() {
         guard let uid = session.userModel?.id else { return }
-        weekVM.updateDayPriorities(date: day,
-                                   priorities: priorities,
-                                   userId: uid)
+        weekVM.updateDayPriorities(
+            date: day,
+            priorities: priorities,
+            userId: uid
+        )
     }
 
-    // Placeholder shown when list empty
-    private var placeholder: some View {
-        Text("Please list priorities for this day")
-            .foregroundColor(.white.opacity(0.7))
-            .italic()
-            .frame(maxWidth: .infinity, minHeight: 90)
-            .background(Color(.sRGB, white: 0.1, opacity: 1))
-            .cornerRadius(8)
-    }
-
-    // Header with weekday name + date
-    private var header: some View {
-        VStack(alignment: .leading) {
-            Text(dayOfWeek)
-                .font(.headline)
-                .foregroundColor(.white)
-            Text(formattedDate)
-                .font(.caption)
-                .foregroundColor(.white.opacity(0.7))
-        }
-        .padding(.bottom, 4)
-    }
-
-    private var dayOfWeek: String {
-        let f = DateFormatter(); f.dateFormat = "EEEE"
-        return f.string(from: day)
-    }
-    private var formattedDate: String {
-        let f = DateFormatter(); f.dateFormat = "M/d"
-        return f.string(from: day)
-    }
-
-    // Unified alert builder
     private func buildAlert(for alert: DayCardAlert) -> Alert {
         switch alert {
         case .confirmDeleteCurrent(let p):
             return Alert(
                 title: Text("Delete Priority"),
                 message: Text("Delete “\(p.title)”?"),
-                primaryButton: .destructive(Text("Delete")) { delete(p) },
+                primaryButton: .destructive(Text("Delete")) { _ = delete(p) },
                 secondaryButton: .cancel()
             )
-
         case .confirmModifyPast(let p):
             return Alert(
                 title: Text("Editing Past Day"),
-                message: Text("You’re changing a priority from a previous day. Continue?"),
+                message: Text("Change a past priority?"),
                 primaryButton: .destructive(Text("Yes")) {
-                    if let idx = priorities.firstIndex(where: { $0.id == p.id }) {
-                        priorities[idx].isCompleted.toggle()
+                    if let i = priorities.firstIndex(where: { $0.id == p.id }) {
+                        priorities[i].isCompleted.toggle()
                         savePatch()
                     }
                 },
                 secondaryButton: .cancel()
             )
-
         case .confirmDeletePast(let p):
             return Alert(
                 title: Text("Delete From Past Day"),
-                message: Text("You’re deleting a priority from a previous day. Continue?"),
-                primaryButton: .destructive(Text("Delete")) { delete(p) },
+                message: Text("Permanently delete past priority?"),
+                primaryButton: .destructive(Text("Delete")) { _ = delete(p) },
                 secondaryButton: .cancel()
             )
-
         case .confirmAddPast:
             return Alert(
                 title: Text("Add To Past Day"),
-                message: Text("You’re adding a priority to a previous day. Continue?"),
+                message: Text("Add a priority to a previous day?"),
                 primaryButton: .default(Text("Yes")) { addPriority() },
                 secondaryButton: .cancel()
             )
         }
     }
+
+    private func delete(_ p: TodayPriority) {
+        priorities.removeAll { $0.id == p.id }
+        savePatch()
+    }
 }
 
-// ─────────────────────────────────────────
-// MARK: – Alert enum
-// ─────────────────────────────────────────
-enum DayCardAlert: Identifiable {
-    case confirmDeleteCurrent(TodayPriority)
-    case confirmModifyPast(TodayPriority)
-    case confirmDeletePast(TodayPriority)
-    case confirmAddPast
-
-    var id: String {
-        switch self {
-        case .confirmDeleteCurrent(let p): return "deleteCurrent-\(p.id)"
-        case .confirmModifyPast(let p):   return "modifyPast-\(p.id)"
-        case .confirmDeletePast(let p):   return "deletePast-\(p.id)"
-        case .confirmAddPast:             return "addPast"
-        }
+// ───────────────────────────────────────────────
+// MARK: – Button style extensions
+// ───────────────────────────────────────────────
+private extension View {
+    var styledAccent: some View {
+        self.font(.headline)
+            .foregroundColor(Color(red: 0, green: 1, blue: 1))
+            .padding(.vertical, 8)
+            .padding(.horizontal, 16)
+            .background(Color.black)
+            .cornerRadius(8)
+    }
+    var styledRed: some View {
+        self.font(.headline)
+            .foregroundColor(.red)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 16)
+            .background(Color.black)
+            .cornerRadius(8)
     }
 }

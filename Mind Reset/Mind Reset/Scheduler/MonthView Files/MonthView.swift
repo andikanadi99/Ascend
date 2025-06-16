@@ -69,10 +69,10 @@ struct MonthView: View {
                     weekCardsSection
                 }
             }
-            .padding()
             .padding(.top, -20)
             .overlay(dayPopupOverlay)
         }
+        .scrollDismissesKeyboard(.immediately)
         .onAppear {
             loadAllMonthDataOnce()
             // Update “hasPreviousUnfinished” once the view appears
@@ -115,7 +115,9 @@ struct MonthView: View {
                 }
             }
             .padding(.horizontal)
+            .padding(.bottom, 280) 
         }
+        
     }
 
     /// A small wrapper that instantiates a WeekViewModel and drives WeekCardView
@@ -200,6 +202,7 @@ struct MonthView: View {
             accountCreationDate: accountCreationDate,
             accentColor: accentColor
         )
+        .padding(.top,25)
         .onChange(of: monthViewState.currentMonth) { _ in
             loadMonth()
             updateHasPreviousUnfinished()

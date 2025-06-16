@@ -106,24 +106,17 @@ struct HabitDetailView: View {
     // MARK: - Time functions and variables
     @State private var audioPlayer: AVAudioPlayer?
     private let hapticEngine = try? CHHapticEngine()
-    @State private var showRingerAlert = false          // drives the pop-up
-    @State private var ringerWorkItem: DispatchWorkItem? // lets us cancel the 30 s auto-stop
+    @State private var showRingerAlert = false
+    @State private var ringerWorkItem: DispatchWorkItem?
 
-    /// Start an endless loop of timer_loop.(mp3|wav)
     private func startLoopingSound() {
-        // Look first for mp3, then wav (in case you later switch formats)
         let url =
             Bundle.main.url(forResource: "timer_loop", withExtension: "mp3") ??
             Bundle.main.url(forResource: "timer_loop", withExtension: "wav")
-
-        guard let url else {           // double-check it’s in the bundle
-            print("⚠️ timer_loop sound not found in bundle")
-            return
-        }
-
+        guard let url else { print("⚠️ timer_loop not found"); return }
         do {
             audioPlayer = try AVAudioPlayer(contentsOf: url)
-            audioPlayer?.numberOfLoops = -1      // -1 = loop forever
+            audioPlayer?.numberOfLoops = -1
             audioPlayer?.prepareToPlay()
             audioPlayer?.play()
         } catch {
@@ -131,50 +124,40 @@ struct HabitDetailView: View {
         }
     }
 
-    /// Stop the loop and release the player
     private func stopLoopingSound() {
         audioPlayer?.stop()
         audioPlayer = nil
     }
 
-    /// Plays a short “timer done” sound that you’ve dropped into the app bundle
-    /// Play the chime once or in an infinite loop.
     private func playEndSound(loop: Bool = false) {
         guard let url = Bundle.main.url(forResource: "timer_done", withExtension: "wav") else {
-            AudioServicesPlaySystemSound(1005)      // tri-tone fallback
-            return
+            AudioServicesPlaySystemSound(1005); return
         }
         audioPlayer = try? AVAudioPlayer(contentsOf: url)
-        audioPlayer?.numberOfLoops = loop ? -1 : 0   // -1 = forever
+        audioPlayer?.numberOfLoops = loop ? -1 : 0
         audioPlayer?.prepareToPlay()
         audioPlayer?.play()
     }
 
-    /// Stop (and deallocate) the audio player.
     private func stopEndSound() {
         audioPlayer?.stop()
         audioPlayer = nil
     }
 
-    /// Fires a success-style haptic. Falls back to the legacy vibration if no Core Haptics.
     private func vibrate() {
         guard let engine = hapticEngine else {
             AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
             return
         }
-
-        let sharpTap = CHHapticEvent(eventType: .hapticTransient,
-                                     parameters: [],
-                                     relativeTime: 0)
-
+        let sharpTap = CHHapticEvent(eventType: .hapticTransient, parameters: [], relativeTime: 0)
         do {
             try engine.start()
             let pattern = try CHHapticPattern(events: [sharpTap], parameters: [])
-            let player  = try engine.makePlayer(with: pattern)
+            let player = try engine.makePlayer(with: pattern)
             try player.start(atTime: 0)
         } catch {
             print("⚠️ Haptic error:", error.localizedDescription)
-            AudioServicesPlaySystemSound(kSystemSoundID_Vibrate) // graceful fallback
+            AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
         }
     }
 
@@ -189,79 +172,44 @@ struct HabitDetailView: View {
         _editableTitle = State(initialValue: habit.wrappedValue.title)
         _editableDescription = State(initialValue: habit.wrappedValue.description)
         _goal = State(initialValue: habit.wrappedValue.goal)
-
-        // Initialize the new “editedCategory” and “editedMetricType” from the current habit
         let currentCategory = habit.wrappedValue.metricCategory
         _editedCategory = State(initialValue: currentCategory)
         _editedMetricType = State(initialValue: habit.wrappedValue.metricType)
     }
 
-
     // MARK: - Body
     var body: some View {
-        // ───────────────────────────────────────────────────────────────────────────
-        // Wrap the entire screen in a tappable area that will dismiss the keyboard.
-        // A simultaneousGesture ensures taps still go through to buttons, lists, etc.
         ZStack {
             mainContent
 
-            // Existing overlays (they float above everything else):
             if showDateRangeOverlay {
-                Color.white.opacity(0.9)
-                    .ignoresSafeArea()
-                dateRangeOverlayView
-                    .transition(.scale)
+                Color.white.opacity(0.9).ignoresSafeArea()
+                dateRangeOverlayView.transition(.scale)
             }
             if showMetricInput {
-                metricInputOverlay
-                    .transition(.opacity)
+                metricInputOverlay.transition(.opacity)
             }
             if showUnmarkConfirmation {
-                unmarkConfirmationOverlay
-                    .transition(.opacity)
+                unmarkConfirmationOverlay.transition(.opacity)
             }
             if showCustomDateRangeOverlay {
-                customDateRangeOverlayView
-                    .transition(.opacity)
+                customDateRangeOverlayView.transition(.opacity)
             }
             if customGraphOverlay {
-                customGraphView
-                    .transition(.opacity)
+                customGraphView.transition(.opacity)
             }
         }
-        .contentShape(Rectangle())   // Make the entire ZStack respond to taps
-        .simultaneousGesture(
-            TapGesture().onEnded {
-                UIApplication.shared.sendAction(
-                    #selector(UIResponder.resignFirstResponder),
-                    to: nil,
-                    from: nil,
-                    for: nil
-                )
-            }
-        )
-        // ───────────────────────────────────────────────────────────────────────────
-
-        // Alerts, banners, sheet, and lifecycle handlers:
         .alert(isPresented: $showAlert) {
-            Alert(
-                title: Text("Invalid Date Range"),
-                message: Text(alertMessage),
-                dismissButton: .default(Text("OK"))
-            )
+            Alert(title: Text("Invalid Date Range"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
         }
-        .alert("Timer Done",
-               isPresented: $showRingerAlert,
-               actions: {
-                   // Single button that stops the sound and closes the alert
-                   Button("Stop Sound", role: .cancel) {
-                       stopLoopingSound()
-                       ringerWorkItem?.cancel() // cancel the 30-second auto‐stop
-                   }
-               },
-               message: {
-                   Text("The ring will silence automatically after 30 seconds if you do nothing.")
-               })
+        .alert("Timer Done", isPresented: $showRingerAlert, actions: {
+            Button("Stop Sound", role: .cancel) {
+                stopLoopingSound()
+                ringerWorkItem?.cancel()
+            }
+        }, message: {
+            Text("The ring will silence automatically after 30 seconds if you do nothing.")
+        })
         .banner(message: "Note Saved!", isPresented: $showBanner)
         .sheet(isPresented: $showMetricsEditor) {
             MetricsEditorSheet(
@@ -269,28 +217,23 @@ struct HabitDetailView: View {
                 editedCategory: $editedCategory,
                 editedMetricType: $editedMetricType,
                 onSave: {
-                    // 1) Update the habit's category & type
                     var updated = habit
                     updated.metricCategory = editedCategory
                     updated.metricType = editedMetricType
-
-                    // 2) Push update through your ViewModel
                     viewModel.updateHabit(updated)
-                    // 3) Also update the binding so the UI refreshes
                     habit = updated
-
-                    // 4) Dismiss the sheet
                     showMetricsEditor = false
                 },
                 onCancel: {
-                    // Revert edits to match the current habit
                     editedCategory = habit.metricCategory
                     editedMetricType = habit.metricType
                     showMetricsEditor = false
                 }
             )
         }
-
+        .sheet(isPresented: $showPreviousNotes) {
+            PreviousNotesView(habitID: habit.id ?? "")
+        }
         .onAppear {
             guard let userId = session.current_user?.uid else { return }
             viewModel.fetchHabits(for: userId)
@@ -313,9 +256,6 @@ struct HabitDetailView: View {
                 countdownSeconds = selectedHours * 3600 + selectedMinutes * 60 + selectedSeconds
             }
         }
-        .sheet(isPresented: $showPreviousNotes) {
-            PreviousNotesView(habitID: habit.id ?? "")
-        }
     }
 
     // MARK: - Main Content
@@ -328,29 +268,27 @@ struct HabitDetailView: View {
                     topBarSection
 
                     TextEditor(text: $editableDescription)
-                      .focused($isDescriptionFocused)
-                      .foregroundColor(.white.opacity(0.8))
-                      .font(.subheadline)
-                      .disableAutocorrection(true)
-                      .scrollContentBackground(.hidden)
-                      .background(Color.black.opacity(0.2))
-                      .cornerRadius(8)
-                      .frame(minHeight: 50)
-                      .overlay(
-                        Group {
-                          if editableDescription.isEmpty {
-                            Text("Habit Description")
-                              .foregroundColor(.white.opacity(0.5))
-                              .padding(.horizontal, 15)
-                              .padding(.vertical, 2)
-                          }
-                        },
-                        alignment: .topLeading
-                      )
+                        .focused($isDescriptionFocused)
+                        .foregroundColor(.white.opacity(0.8))
+                        .font(.subheadline)
+                        .disableAutocorrection(true)
+                        .scrollContentBackground(.hidden)
+                        .background(Color.black.opacity(0.2))
+                        .cornerRadius(8)
+                        .frame(minHeight: 50)
+                        .overlay(
+                            Group {
+                                if editableDescription.isEmpty {
+                                    Text("Habit Description")
+                                        .foregroundColor(.white.opacity(0.5))
+                                        .padding(.horizontal, 15)
+                                        .padding(.vertical, 2)
+                                }
+                            }, alignment: .topLeading
+                        )
 
                     goalSection
 
-                    // Updated Tab Picker with a small black divider.
                     VStack(spacing: 4) {
                         Picker("Tabs", selection: $selectedTabIndex) {
                             Text("Progress").tag(0)
@@ -363,12 +301,11 @@ struct HabitDetailView: View {
                         .cornerRadius(8)
                         .padding(.horizontal, 10)
 
-                        // More visible black divider.
                         Rectangle()
-                            .fill(Color.black)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 4)
-                            .padding(.horizontal, 10)
+                          .fill(Color.black)
+                          .frame(maxWidth: .infinity)
+                          .frame(height: 4)
+                          .padding(.horizontal, 10)
                     }
 
                     Group {
@@ -381,7 +318,6 @@ struct HabitDetailView: View {
 
                     Spacer()
 
-                    // Display metric info.
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Metric Category:")
@@ -398,10 +334,8 @@ struct HabitDetailView: View {
                                 .foregroundColor(.white)
                             let metricText: String = {
                                 switch habit.metricType {
-                                case .predefined(let value):
-                                    return value
-                                case .custom(let value):
-                                    return value
+                                case .predefined(let value): return value
+                                case .custom(let value): return value
                                 }
                             }()
                             Text(metricText)
@@ -422,7 +356,7 @@ struct HabitDetailView: View {
                             .background(Color.yellow)
                             .cornerRadius(8)
                     }
-                    .padding(.bottom, 10)    // ← reduced padding here
+                    .padding(.bottom, 10)
 
                     Button {
                         if completedToday {
@@ -442,11 +376,11 @@ struct HabitDetailView: View {
                     }
                     .padding(.bottom, 30)
 
-
                     Spacer()
                 }
                 .padding()
             }
+            .scrollDismissesKeyboard(.immediately)
         }
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)

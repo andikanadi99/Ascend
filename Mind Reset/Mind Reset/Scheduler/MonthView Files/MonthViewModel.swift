@@ -83,43 +83,48 @@ final class MonthViewModel: ObservableObject {
         }
     }
 
-
+    
     // ─────────────────────────────────────────────────────────────────────────
     // MARK: – Day-level helpers (for popup)
     // ─────────────────────────────────────────────────────────────────────────
-    func saveDayPriorities(for date: Date, newPriorities: [TodayPriority]) {
+    
+    func patchDayPriorities(_ keyStr: String,
+                                    uid: String,
+                                    _ list: [TodayPriority]) {
+        let ref = db.collection("users")
+                    .document(uid)
+                    .collection("daySchedules")
+                    .document(keyStr)
+
+        // convert TodayPriority → [String:Any]
+        let dictArr = list.map { $0.asDictionary }   // relies on extension used elsewhere
+
+        ref.setData(["priorities": dictArr], merge: true)   // ⬅️ ONLY this field
+    }
+
+    
+    func saveDayPriorities(for date: Date,
+                           newPriorities: [TodayPriority]) {
         guard let uid = Auth.auth().currentUser?.uid else { return }
 
-        let key    = Calendar.current.startOfDay(for: date)
+        let key   = Calendar.current.startOfDay(for: date)
         let keyStr = Self.isoDay.string(from: key)
 
-        // ---------- 1. write the DaySchedule document ----------
-        try? db.collection("users")
-            .document(uid)
-            .collection("daySchedules")
-            .document(keyStr)
-            .setData(from: DaySchedule(
-                id:         keyStr,
-                userId:     uid,
-                date:       key,
-                wakeUpTime: Date(),
-                sleepTime:  Date(),
-                priorities: newPriorities,
-                timeBlocks: []
-            ), merge: true)
+        // 🔒 patch instead of overwriting whole DaySchedule
+        patchDayPriorities(keyStr, uid: uid, newPriorities)
 
-        // ---------- 2. update the per-day caches ----------
+        // ------- update caches & month doc exactly as before -------
         dayPriorityStorage[key] = newPriorities
         dayPriorityStatus[key]  = (newPriorities.filter(\.isCompleted).count,
                                    newPriorities.count)
 
-        // ---------- 3. also patch the MonthSchedule doc ----------
         if var sched = schedule {
             sched.dailyPrioritiesByDay[keyStr] = newPriorities
-            schedule = sched                    // triggers recomputeStatuses()
-            updateMonthSchedule()               // persist the month doc
+            schedule = sched
+            updateMonthSchedule()
         }
     }
+
 
 
 

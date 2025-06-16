@@ -1,6 +1,8 @@
-//
 //  WeekCardView.swift
 //  Mind Reset
+//
+//  Styled to match DayCardView (scrollable >4 rows, spring animation,
+//  flush-edge rows, identical button & card styling).
 //
 
 import SwiftUI
@@ -22,11 +24,19 @@ struct WeekCardView: View {
     let addAction: () -> Void
 
     @State private var alert: WeekAlert?
-    private let accentCyan = Color(red: 0, green: 1, blue: 1)
+
+    // ── visual constants (copied from DayCardView) ─────────
+    private let accentCyan     = Color(red: 0, green: 1, blue: 1)
+    private let perRowHeight: CGFloat = 110
+    private let bottomInset:   CGFloat = 16
+    private let maxVisibleRows = 4
+    
+    
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // ── Header ──────────────────────
+        VStack(alignment: .center, spacing: 12) {
+
+            // ── Header (same typography) ──────────────────────
             HStack {
                 Text(weekLabel)
                     .font(.headline)
@@ -35,41 +45,89 @@ struct WeekCardView: View {
             }
             .padding(.bottom, 4)
 
-            // ── Placeholder or list ─────────
+            // ── Placeholder or list ───────────────────────────
             if weeklyPriorities.isEmpty {
-                emptyPlaceholder
+                Text("No priorities this week")
+                    .foregroundColor(.white.opacity(0.7))
+                    .italic()
+                    .padding(.vertical, 20)
+                    .frame(maxWidth: .infinity)
+                    .background(Color(.sRGB, white: 0.1, opacity: 1))
+                    .cornerRadius(8)
             } else {
-                priorityList
+                List {
+                    ForEach(weeklyPriorities) { pr in
+                        let bind = binding(for: pr)
+
+                        WeekRow(
+                            title:       bind.title,
+                            isCompleted: bind.isCompleted,
+                            showDelete:  isRemoveMode,
+                            isPastWeek:  isPastWeek,
+                            accentCyan:  accentCyan,
+                            onToggle: {
+                                isPastWeek
+                                    ? (alert = .confirmTogglePast(pr))
+                                    : { onToggle(pr.id); onCommit() }()
+                            },
+                            onDeleteTap: { alert = .delete(pr) },
+                            onCommit:    onCommit
+                        )
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(.init(top: 4, leading: 0, bottom: 4, trailing: 0))
+                    }
+                    .onMove { from, to in
+                        withAnimation(.interactiveSpring(response: 0.3,
+                                                         dampingFraction: 0.7)) {
+                            weeklyPriorities.move(fromOffsets: from, toOffset: to)
+                            onCommit()
+                        }
+                    }
+                }
+                .id(isRemoveMode) // force redraw when mode toggles
+                .listStyle(.plain)
+                .scrollDisabled(weeklyPriorities.count <= maxVisibleRows)   // enable scroll only if needed
+                .scrollContentBackground(.hidden)
+                .environment(\.editMode, $editMode)
+                // height = min(total, maxVisible) + inset
+                .frame(
+                    height: min(
+                        CGFloat(weeklyPriorities.count) * perRowHeight + bottomInset,
+                        CGFloat(maxVisibleRows)         * perRowHeight + bottomInset
+                    )
+                )
             }
 
-            // ── Bottom buttons ──────────────
-            HStack {
+            // ── Bottom buttons (identical styling) ────────────
+            HStack(spacing: 12) {
+                // “Add Priority” (never wraps)
                 Button {
                     isPastWeek ? (alert = .confirmAddPast) : addAction()
                 } label: {
                     Text("Add Priority")
                         .lineLimit(1)
-                        .fixedSize()
+                        .fixedSize()          // keep on a single line
                 }
                 .styledAccent
 
-                Spacer(minLength: 8)
+                Spacer()
 
+                // “Remove / Done” (never wraps)
                 if !weeklyPriorities.isEmpty {
                     Button {
-                        withAnimation { isRemoveMode.toggle() }
+                        withAnimation(.easeInOut) { isRemoveMode.toggle() }
                     } label: {
                         Text(isRemoveMode ? "Done" : "Remove Priority")
                             .lineLimit(1)
-                            .fixedSize()
+                            .fixedSize()      // keep on a single line
                     }
                     .styledRed
                 }
             }
-            .padding(.top, 4)
         }
         .padding()
-        .background(Color.gray.opacity(0.2))
+        .background(Color.gray.opacity(0.3))
         .cornerRadius(12)
         .shadow(radius: 2)
         .alert(item: $alert, content: makeAlert)
@@ -89,52 +147,7 @@ struct WeekCardView: View {
         return weekStart < wk0
     }
 
-    // ───────────────────────── Empty state
-    private var emptyPlaceholder: some View {
-        Text("No priorities this week")
-            .foregroundColor(.white.opacity(0.7))
-            .italic()
-            .padding(.vertical, 20)
-            .frame(maxWidth: .infinity)
-            .background(Color(.sRGB, white: 0.1, opacity: 1))
-            .cornerRadius(8)
-    }
-
-    // ───────────────────────── List
-    private var priorityList: some View {
-        List {
-            ForEach(weeklyPriorities) { pr in
-                let bind = binding(for: pr)
-
-                WeekRow(
-                    title:        bind.title,
-                    isCompleted:  bind.isCompleted,
-                    showDelete:   isRemoveMode,
-                    isPastWeek:   isPastWeek,
-                    accentCyan:   accentCyan,
-                    onToggle: {
-                        isPastWeek
-                            ? (alert = .confirmTogglePast(pr))
-                            : { onToggle(pr.id); onCommit() }()
-                    },
-                    onDeleteTap:  { alert = .delete(pr) },
-                    onCommit:     onCommit
-                )
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-            }
-            .onMove(perform: move)
-        }
-        .id(isRemoveMode)                 // redraw when mode flips
-        .listStyle(.plain)
-        .scrollDisabled(true)
-        .scrollContentBackground(.hidden)
-        .environment(\.editMode, $editMode)
-        .frame(height: CGFloat(max(weeklyPriorities.count, 1)) * 100)  // ← 100 pt each
-        .padding(.bottom, 4)
-    }
-
-    // ───────────────────────── Alert builder
+    // ───────────────────────── Alerts
     private func makeAlert(for a: WeekAlert) -> Alert {
         switch a {
         case .delete(let p):
@@ -165,7 +178,7 @@ struct WeekCardView: View {
         }
     }
 
-    // ───────────────────────── Bindings & move
+    // ───────────────────────── Bindings & move helper
     private func binding(for p: WeeklyPriority)
       -> (title: Binding<String>, isCompleted: Binding<Bool>) {
         guard let i = weeklyPriorities.firstIndex(where: { $0.id == p.id })
@@ -181,13 +194,10 @@ struct WeekCardView: View {
             )
         )
     }
-    private func move(from off: IndexSet, to new: Int) {
-        weeklyPriorities.move(fromOffsets: off, toOffset: new); onCommit()
-    }
 }
 
 // ─────────────────────────────────────────────────────────
-// MARK: – Row
+// MARK: – Row (visually identical to WeekDayPriorityRowView)
 // ─────────────────────────────────────────────────────────
 private struct WeekRow: View {
     @Binding var title:       String
@@ -211,11 +221,11 @@ private struct WeekRow: View {
             TextEditor(text: $title)
                 .font(.body)
                 .padding(.vertical, padV/2)
-                .padding(.leading, 4)
+                .padding(.horizontal, 8)
                 .frame(height: h)
                 .background(Color.black)
                 .cornerRadius(8)
-                .disabled(isPastWeek)
+//                .disabled(isPastWeek)
                 .opacity(isPastWeek ? 0.6 : 1)
                 .onChange(of: title) { _ in onCommit() }
                 .overlay(
@@ -223,12 +233,13 @@ private struct WeekRow: View {
                         .background(
                             GeometryReader { g in
                                 Color.clear.preference(
-                                    key: TextHeightPreferenceKey.self,
+                                    key: TextHeightPref.self,
                                     value: g.size.height)
                             }
                         )
                 )
 
+            // trailing icon(s)
             if showDelete {
                 Button(role: .destructive, action: onDeleteTap) {
                     Image(systemName: "minus.circle")
@@ -250,17 +261,17 @@ private struct WeekRow: View {
                 )
             }
         }
-        .onPreferenceChange(TextHeightPreferenceKey.self) { measuredH = $0 }
+        .onPreferenceChange(TextHeightPref.self) { measuredH = $0 }
         .padding(4)
         .background(Color.black)
         .cornerRadius(8)
+        // NEW → keep the row centred horizontally inside the List / card
+        .frame(maxWidth: .infinity, alignment: .center)   // ← add this line
     }
 }
 
-// ─────────────────────────────────────────────────────────
-// MARK: – Height probe
-// ─────────────────────────────────────────────────────────
-private struct TextHeightPreferenceKey: PreferenceKey {
+// preference key for dynamic height
+private struct TextHeightPref: PreferenceKey {
     static var defaultValue: CGFloat = 50
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
@@ -285,12 +296,11 @@ private enum WeekAlert: Identifiable {
 }
 
 // ─────────────────────────────────────────────────────────
-// MARK: – Button styling helpers
+// MARK: – Button styling helpers (same as DayCardView)
 // ─────────────────────────────────────────────────────────
 private extension View {
     var styledAccent: some View {
-        self
-            .font(.headline)
+        self.font(.headline)
             .foregroundColor(Color(red: 0, green: 1, blue: 1))
             .padding(.vertical, 8)
             .padding(.horizontal, 16)
@@ -298,8 +308,7 @@ private extension View {
             .cornerRadius(8)
     }
     var styledRed: some View {
-        self
-            .font(.headline)
+        self.font(.headline)
             .foregroundColor(.red)
             .padding(.vertical, 8)
             .padding(.horizontal, 16)

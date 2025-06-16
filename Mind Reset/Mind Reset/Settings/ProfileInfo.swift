@@ -50,10 +50,23 @@ struct ProfileInfo: View {
                             VStack(spacing: 12) {
                                 TextField("Display Name", text: $updatedDisplayName)
                                     .focused($isDisplayNameFocused)
+                                    .submitLabel(.done)                 // ① tell the keyboard we want a “Done” key
+                                    .onSubmit {                         // ② dismiss on ⌨️ Done
+                                        isDisplayNameFocused = false
+                                    }
                                     .padding(8)
                                     .background(Color.gray.opacity(0.2))
                                     .cornerRadius(8)
                                     .foregroundColor(.white)
+                                    // ③ add a toolbar-based Done button for devices without a hardware key
+                                    .toolbar {
+                                        ToolbarItemGroup(placement: .keyboard) {
+                                            Spacer()                    // pushes the button to the trailing edge
+                                            Button("Done") {
+                                                isDisplayNameFocused = false
+                                            }
+                                        }
+                                    }
                             }
                         } else {
                             Text(user.displayName.isEmpty ? "No Display Name" : user.displayName)
@@ -177,17 +190,7 @@ struct ProfileInfo: View {
             }
             .background(Color.black.edgesIgnoringSafeArea(.all))
         }
-        .contentShape(Rectangle())   // Make the entire ZStack respond to taps
-        .simultaneousGesture(
-            TapGesture().onEnded {
-                UIApplication.shared.sendAction(
-                    #selector(UIResponder.resignFirstResponder),
-                    to: nil,
-                    from: nil,
-                    for: nil
-                )
-            }
-        )
+
         // ───────────────────────────────────────────────────────────────────────────
     }
 

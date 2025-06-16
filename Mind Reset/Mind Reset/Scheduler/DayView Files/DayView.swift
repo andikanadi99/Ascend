@@ -3,7 +3,7 @@
 //  Mind Reset
 //
 //  Created by Andika Yudhatrisna on 2/6/25.
-//  Last revised 06 Jun 2025
+//  Last revised 07 Jun 2025
 //
 
 import SwiftUI
@@ -21,6 +21,7 @@ enum DayViewAlert: Identifiable {
     case confirmImport
     case clear(TimeBlock)          // clear one block
     case clearAllBlocks            // clear every block in the day
+    case confirmSchedule(Date, Date) // confirm new wake/sleep
 
     var id: String {
         switch self {
@@ -31,6 +32,7 @@ enum DayViewAlert: Identifiable {
         case .confirmImport:              return "confirmImport"
         case .clear(let b):               return "clear-\(b.id)"
         case .clearAllBlocks:             return "clearAllBlocks"
+        case .confirmSchedule:            return "confirmSchedule"
         }
     }
 }
@@ -144,7 +146,11 @@ struct DayView: View {
     @FocusState private var isDayPriorityFocused: Bool
     @FocusState private var isDayTimeFocused:     Bool
     
-    @State private var priorityListHeight: CGFloat = 1
+    @State private var listHeight: CGFloat = 0
+
+    // Draft wake/sleep to avoid instantaneous re-render glitches
+    @State private var draftWake: Date = Date()
+    @State private var draftSleep: Date = Date()
 
     // Accent colour
     private let accentCyan = Color(red: 0, green: 1, blue: 1)
@@ -186,8 +192,7 @@ struct DayView: View {
                 timeBlocksSection           // contains “Clear All” button
                 Spacer()
             }
-            .padding()
-            .padding(.top, -20)
+                .padding(.top, 16)  
         }
         .scrollDismissesKeyboard(.immediately)
         .alert(item: $activeAlert, content: buildAlert)
@@ -198,11 +203,22 @@ struct DayView: View {
             DispatchQueue.main.async { updateYesterdayUnfinishedFlag() }
         }
         .onChange(of: dayViewState.selectedDate) { _ in
+            if let sched = viewModel.schedule {
+                draftWake = sched.wakeUpTime
+                draftSleep = sched.sleepTime
+            }
             viewModel.schedule = nil                    // reset before new day loads
             updateYesterdayUnfinishedFlag()
             loadScheduleIfNeeded()
         }
-        .onReceive(viewModel.$schedule) { sched in handleSchedulePublish(sched) }
+        .onReceive(viewModel.$schedule) { sched in
+            if let sched = sched {
+                // initialize drafts
+                draftWake = sched.wakeUpTime
+                draftSleep = sched.sleepTime
+            }
+            handleSchedulePublish(sched)
+        }
         .onReceive(session.$defaultWakeTime.combineLatest(session.$defaultSleepTime)) {
             wake, sleep in applyDefaultTimesIfNeeded(wake: wake, sleep: sleep)
         }
@@ -322,17 +338,17 @@ struct DayView: View {
                         }
                     }
                     .listStyle(.plain)
-                    .scrollDisabled(true)                 // outer ScrollView handles scrolling
+                    .scrollDisabled(true)
                     .scrollContentBackground(.hidden)
                     .listRowSeparator(.hidden)
                     .listSectionSeparator(.hidden)
                     .background(Color.clear)
                     .frame(minHeight: max(
-                        priorityListHeight,
-                        CGFloat(binding.wrappedValue.count) * 60
-                    ))
-                    .onPreferenceChange(PriorityListHeightPreferenceKey.self) {
-                        priorityListHeight = $0           // total row height from prefs
+                              listHeight,
+                              CGFloat(binding.wrappedValue.count) * 60       // 60-pt fallback/row
+                          ))
+                    .onPreferenceChange(PriorityListHeightPreferenceKey.self) { new in
+                        listHeight = new                                     // total of all rows
                     }
                     .environment(\.editMode, $editMode)
                     .padding(.bottom, 20)
@@ -389,69 +405,61 @@ struct DayView: View {
         .cornerRadius(8)
     }
 
-
     // ─────────────────────────────────────────
-    // MARK: – Wake / Sleep pickers
+    // MARK: – Wake / Sleep pickers + confirm
     // ─────────────────────────────────────────
     @ViewBuilder
     private var wakeSleepSection: some View {
         if let sched = viewModel.schedule {
             VStack(alignment: .leading, spacing: 8) {
+                Text("Wake & Sleep Times")
+                    .font(.headline)
+                    .foregroundColor(.white)
+
                 HStack {
                     VStack(alignment: .leading) {
-                        Text("Wake Up Time").foregroundColor(.white)
-                        DatePicker(
-                            "",
-                            selection: Binding(
-                                get: { sched.wakeUpTime },
-                                set: { new in
-                                    var t = sched; t.wakeUpTime = new
-                                    viewModel.schedule = t
-                                    viewModel.regenerateBlocks()
-                                }
-                            ),
-                            displayedComponents: .hourAndMinute
-                        )
-                        .focused($isDayTimeFocused)
-                        .labelsHidden()
-                        .environment(\.colorScheme, .dark)
-                        .padding(4)
-                        .background(Color.black)
-                        .cornerRadius(4)
+                        Text("Wake Up").foregroundColor(.white)
+                        DatePicker("", selection: $draftWake, displayedComponents: .hourAndMinute)
+                            .focused($isDayTimeFocused)
+                            .labelsHidden()
+                            .environment(\.colorScheme, .dark)
+                            .padding(4)
+                            .background(Color.black)
+                            .cornerRadius(4)
                     }
-
                     Spacer()
-
                     VStack(alignment: .leading) {
-                        Text("Sleep Time").foregroundColor(.white)
-                        DatePicker(
-                            "",
-                            selection: Binding(
-                                get: { sched.sleepTime },
-                                set: { new in
-                                    var t = sched; t.sleepTime = new
-                                    viewModel.schedule = t
-                                    viewModel.regenerateBlocks()
-                                }
-                            ),
-                            displayedComponents: .hourAndMinute
-                        )
-                        .focused($isDayTimeFocused)
-                        .labelsHidden()
-                        .environment(\.colorScheme, .dark)
-                        .padding(4)
-                        .background(Color.black)
-                        .cornerRadius(4)
+                        Text("Sleep").foregroundColor(.white)
+                        DatePicker("", selection: $draftSleep, displayedComponents: .hourAndMinute)
+                            .focused($isDayTimeFocused)
+                            .labelsHidden()
+                            .environment(\.colorScheme, .dark)
+                            .padding(4)
+                            .background(Color.black)
+                            .cornerRadius(4)
                     }
                 }
                 .padding()
                 .background(Color.gray.opacity(0.3))
                 .cornerRadius(8)
+
+                if draftWake != sched.wakeUpTime || draftSleep != sched.sleepTime {
+                    Button("Confirm Schedule") {
+                        activeAlert = .confirmSchedule(draftWake, draftSleep)
+                    }
+                    .font(.headline)
+                    .foregroundColor(accentCyan)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.black)
+                    .cornerRadius(8)
+                }
             }
         } else {
             Text("Loading times…").foregroundColor(.white)
         }
     }
+
 
     // ─────────────────────────────────────────
     // MARK: – Time blocks + “Clear All” button
@@ -460,21 +468,16 @@ struct DayView: View {
     private var timeBlocksSection: some View {
         if let sched = viewModel.schedule {
             VStack(spacing: 16) {
-
-                
-
-                // ——— Editable blocks ———
                 ForEach(sched.timeBlocks) { block in
                     HStack(spacing: 8) {
-
                         TimeBlockRow(block: block) { changedBlock, newTime, newTask in
                             updateBlock(changedBlock, time: newTime, task: newTask)
                             viewModel.updateDaySchedule()
                         }
-
                     }
-                }.id(refreshKey)
-                // ——— Clear-All button ———
+                }
+                .id(refreshKey)
+
                 if !sched.timeBlocks.isEmpty {
                     Button {
                         activeAlert = .clearAllBlocks
@@ -565,6 +568,24 @@ struct DayView: View {
                 primaryButton: .destructive(Text("Cancel")),
                 secondaryButton: .default(Text("Import")) { performImportUnfinished() }
             )
+
+        case .confirmSchedule(let newWake, let newSleep):
+            let wakeStr = DateFormatter.localizedString(from: newWake, dateStyle: .none, timeStyle: .short)
+            let sleepStr = DateFormatter.localizedString(from: newSleep, dateStyle: .none, timeStyle: .short)
+            return Alert(
+                title: Text("Confirm Schedule"),
+                message: Text("Set wake time to \(wakeStr) and sleep time to \(sleepStr)?"),
+                primaryButton: .default(Text("Yes")) {
+                    if var sched = viewModel.schedule {
+                        sched.wakeUpTime = newWake
+                        sched.sleepTime = newSleep
+                        viewModel.schedule = sched
+                        viewModel.regenerateBlocks()
+                        viewModel.updateDaySchedule()
+                    }
+                },
+                secondaryButton: .cancel()
+            )
         }
     }
 
@@ -573,18 +594,13 @@ struct DayView: View {
     // ─────────────────────────────────────────
     private func clearAllBlocks() {
         guard var sched = viewModel.schedule else { return }
-
-        // wipe every task string
         for idx in sched.timeBlocks.indices {
             sched.timeBlocks[idx].task = ""
         }
         viewModel.schedule = sched
         viewModel.updateDaySchedule()
-
-        // 🔑 trigger a view rebuild
         refreshKey = UUID()
     }
-
 
     private func clearBlock(_ block: TimeBlock) {
         guard var sched = viewModel.schedule,
@@ -704,9 +720,6 @@ struct DayView: View {
         viewModel.regenerateBlocks()
     }
 
-    // ─────────────────────────────────────────
-    // MARK: – Import unfinished helper
-    // ─────────────────────────────────────────
     private func performImportUnfinished() {
         guard let uid = session.userModel?.id else { return }
         guard let yesterday = Calendar.current.date(
@@ -768,7 +781,7 @@ private struct BufferedPriorityRow: View {
     let isPast:     Bool
 
     @State private var localTitle: String
-    @State private var measuredTextHeight: CGFloat = 0          // ← dynamic
+    @State private var measuredTextHeight: CGFloat = 0
 
     init(
         title: Binding<String>,
@@ -794,21 +807,17 @@ private struct BufferedPriorityRow: View {
     }
 
     var body: some View {
-        // Layout constants
         let minHeight: CGFloat = 50
-        let padV:      CGFloat = 12        // half of padTotal (24)
+        let padV:      CGFloat = 12
         let padH:      CGFloat = 8
         let finalHeight = max(measuredTextHeight + padV * 2, minHeight)
 
         HStack(spacing: 8) {
-            // ——— Auto-expanding text area ———
             ZStack(alignment: .topLeading) {
-
-                // Invisible twin → measures wrapped height
                 Text(localTitle)
                     .font(.body)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)        // ⚡️ wrap!
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.vertical, padV)
                     .padding(.horizontal, padH)
                     .opacity(0)
@@ -820,16 +829,15 @@ private struct BufferedPriorityRow: View {
                             )
                         }
                     )
-
-                // Actual editable field
                 TextEditor(text: $localTitle)
                     .font(.body)
                     .padding(.vertical, padV)
                     .padding(.horizontal, padH)
                     .background(Color.black)
                     .cornerRadius(8)
+                    .opacity(isPast ? 0.6 : 1)
                     .focused($isFocused)
-                    .frame(height: finalHeight)                          // 💡 dynamic
+                    .frame(height: finalHeight)
                     .onChange(of: isFocused) { foc in
                         if !foc {
                             title = localTitle
@@ -839,16 +847,14 @@ private struct BufferedPriorityRow: View {
             }
             .onPreferenceChange(TextHeightPreferenceKey.self) { measuredTextHeight = $0 }
 
-            // ——— Complete / delete buttons ———
             if !showDelete {
                 Button { onToggle() } label: {
-                    Group {
-                        if isCompleted { Image(systemName: "checkmark.circle.fill") }
-                        else if isPast { Image(systemName: "xmark.circle.fill") }
-                        else           { Image(systemName: "circle") }
-                    }
-                    .font(.title2)
-                    .foregroundColor(isCompleted ? accentCyan : (isPast ? .red : .gray))
+                    let icon = isCompleted
+                        ? "checkmark.circle.fill"
+                        : (isPast ? "xmark.circle.fill" : "circle")
+                    Image(systemName: icon)
+                        .font(.title2)
+                        .foregroundColor(isCompleted ? accentCyan : (isPast ? .red : .gray))
                 }
                 .buttonStyle(.plain)
                 .contentShape(Rectangle())
@@ -870,13 +876,11 @@ private struct BufferedPriorityRow: View {
         .cornerRadius(8)
         .background(
             GeometryReader { geo in
-                Color.clear
-                    .preference(
-                        key: PriorityListHeightPreferenceKey.self,
-                        value: geo.size.height + 8      // +8 for LazyVStack spacing
-                    )
+                Color.clear.preference(
+                    key: PriorityListHeightPreferenceKey.self,
+                    value: geo.size.height + 8
+                )
             }
         )
     }
 }
-

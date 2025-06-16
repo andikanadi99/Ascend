@@ -61,12 +61,21 @@ struct WeeklyPriorityRowView: View {
                 // Editable field
                 TextEditor(text: $title)
                     .font(.body)
-                    .padding(.vertical, padV)
-                    .padding(.horizontal, padH)
+                    .padding(.vertical, padV/2)
+                    .padding(.leading,   4)
+                    .padding(.trailing, 40)
+                    .frame(height: finalH)
                     .background(Color.black)
                     .cornerRadius(8)
-                    .frame(height: finalH)          // 💡 dynamic height
-                    .onChange(of: title) { _ in onCommit() }
+//                    .disabled(isPastWeek)                 // ← or -Month row uses isPast
+                    .opacity(isPastWeek ? 0.6 : 1)
+                    /// 🔑 DO -NOT- COMMIT INSIDE THE LAYOUT PASS.
+                    /// Dispatching pushes the state-mutation to the *next* run-loop turn,
+                    /// after SwiftUI finishes its current geometry pass — eliminating
+                    /// “Modifications to the layout engine” crashes.
+                    .onChange(of: title) { _ in
+                        DispatchQueue.main.async { onCommit() }
+                    }
             }
             .onPreferenceChange(TextHeightPreferenceKey.self) {
                 measuredTextHeight = $0

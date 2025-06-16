@@ -67,7 +67,8 @@ struct SchedulerView: View {
                     greetingBanner
                     segmentedPicker
                     contentArea
-                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
                     Spacer()
                 }
             }

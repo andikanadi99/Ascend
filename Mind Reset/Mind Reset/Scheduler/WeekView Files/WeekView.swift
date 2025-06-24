@@ -43,19 +43,21 @@ struct WeekView: View {
 
                     // Week navigation
                     WeekNavigationView(
-                        currentWeekStart: $weekViewState.currentWeekStart,
-                        accountCreationDate: session.userModel?.createdAt ?? Date(),
-                        accentColor: accentColor
-                    )
-                    .padding(.top, 35)
-                    .onChange(of: weekViewState.currentWeekStart) { _ in
-                        loadWeekSchedule()
-                        updateHasPreviousUnfinished()
-                    }
+                            currentWeekStart: $weekViewState.currentWeekStart,
+                            accountCreationDate: session.userModel?.createdAt ?? Date(),
+                            accentColor: accentColor
+                        )
+                        .environmentObject(weekViewState)          // ⬅️ provide the state object
+                        .padding(.top, 35)
+                        .onChange(of: weekViewState.currentWeekStart) { _ in
+                            loadWeekSchedule()
+                            updateHasPreviousUnfinished()
+                        }
+
 
                     // Weekly priorities
                     if viewModel.schedule != nil {
-                        let thisWeekStart = WeekViewState.startOfCurrentWeek(Date())
+                        let thisWeekStart = WeekViewState.startOfWeek(for: Date())
                         let displayedWeekStart = weekViewState.currentWeekStart
                         let isThisWeek = Calendar.current.isDate(
                             thisWeekStart,
@@ -137,7 +139,7 @@ struct WeekView: View {
         let now = Date()
         let last = UserDefaults.standard.object(forKey: "LastActiveTime") as? Date ?? now
         if now.timeIntervalSince(last) > 1800 {
-            weekViewState.currentWeekStart = WeekViewState.startOfCurrentWeek(now)
+            weekViewState.currentWeekStart = WeekViewState.startOfWeek(for: now)
         }
         UserDefaults.standard.set(now, forKey: "LastActiveTime")
 
@@ -155,8 +157,8 @@ struct WeekView: View {
             return
         }
 
-        let thisWeekStart = WeekViewState.startOfCurrentWeek(Date())
-        let displayedWeekStart = weekViewState.currentWeekStart
+        let thisWeekStart = WeekViewState.startOfWeek(for: Date())
+        let displayedWeekStart = WeekViewState.startOfWeek(for: weekViewState.currentWeekStart)
         let isThisWeek = Calendar.current.isDate(
             thisWeekStart,
             equalTo: displayedWeekStart,

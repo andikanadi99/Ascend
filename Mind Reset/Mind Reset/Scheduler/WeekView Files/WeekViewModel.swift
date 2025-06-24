@@ -1,6 +1,7 @@
-//  WeekViewModel.swift
-//  Mind Reset
+// WeekViewModel.swift
+// Mind Reset
 //
+
 
 import SwiftUI
 import FirebaseFirestore
@@ -10,63 +11,164 @@ import Combine
 @MainActor
 final class WeekViewModel: ObservableObject {
 
-    // ───────── WEEK-LEVEL MODEL ─────────
+    // ───────── WEEK-MODEL ─────────
     @Published var schedule: WeeklySchedule?
     @Published var errorMessage: String?
 
-    // ───────── PER-DAY PRIORITIES ───────
-    @Published var dayPriorityStorage: [Date:[TodayPriority]] = [:]   // key = start-of-day
+    // ───────── PER-DAY STORAGE ────
+    @Published var dayPriorityStorage: [Date:[TodayPriority]] = [:]
     @Published var dayPriorityStatus : [Date:(done: Int, total: Int)] = [:]
 
-    // ───────── Firestore plumbing ───────
+    // ───────── Firestore plumbing ─
     private let db = Firestore.firestore()
     private var listener: ListenerRegistration?
-    private let decodeQ  = DispatchQueue(label: "week-decode", qos: .userInitiated)
+    private let decodeQ = DispatchQueue(label: "week-decode", qos: .userInitiated)
 
-    /// ID formatter shared with DaySchedule
+    /// yyyy-MM-dd string (anchor docID)
     static let iso: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return f
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f
     }()
 
     deinit { listener?.remove() }
 
-    // MARK: – LOAD WEEK + 7 DAYS
+    // MARK: – LOAD / LISTEN / MIGRATE
+    @MainActor
     func loadWeeklySchedule(for startOfWeek: Date, userId uid: String) {
+        // Remove any previous listener
         listener?.remove()
 
+        // Normalize to midnight and compute IDs
         let weekStart = Calendar.current.startOfDay(for: startOfWeek)
         let docID     = Self.iso.string(from: weekStart)
+        let isoKey    = WeeklySchedule.isoYearWeekString(from: weekStart)
 
-        let ref = db.collection("users")
-                    .document(uid)
-                    .collection("weekSchedules")
-                    .document(docID)
+        let colRef    = db
+            .collection("users")
+            .document(uid)
+            .collection("weekSchedules")
+        let targetRef = colRef.document(docID)
 
-        listener = ref.addSnapshotListener(includeMetadataChanges: false) { [weak self] snap, err in
-            guard let self else { return }
-
-            if let err {
-                DispatchQueue.main.async { self.errorMessage = err.localizedDescription }
+        // 1️⃣ Listen for a document at the new anchor
+        listener = targetRef.addSnapshotListener(includeMetadataChanges: false) { [weak self] snap, err in
+            guard let self = self else { return }
+            if let err = err {
+                self.errorMessage = err.localizedDescription
                 return
             }
-            guard let snap, snap.exists else {
-                self.createDefaultWeekSchedule(startOfWeek: weekStart, userId: uid)
+
+            // If it exists at the new anchor, decode and patch if needed
+            if let snap = snap, snap.exists {
+                self.handleSnapshot(snap,
+                                    expectedWeekStart: weekStart,
+                                    uid: uid)
                 return
             }
 
-            self.decodeQ.async {
-                guard let model = try? snap.data(as: WeeklySchedule.self) else { return }
+            // 2️⃣ Not found at new anchor → query by ISO-week key
+            colRef
+              .whereField("isoYearWeek", isEqualTo: isoKey)
+              .getDocuments { qs, _ in
+                if let doc = qs?.documents.first,
+                   var oldSched = try? doc.data(as: WeeklySchedule.self) {
+                    self.migrate(oldDoc: oldSched,
+                                 to: targetRef,
+                                 weekStart: weekStart,
+                                 isoKey: isoKey,
+                                 uid: uid)
+                    return
+                }
+
+                // 3️⃣ ISO query empty → fallback ±6-day async scan
                 Task { @MainActor in
-                    self.schedule = model
-                    self.fetchSevenDaySchedules(from: weekStart, uid: uid)
+                    for offset in -6...6 where offset != 0 {
+                        let candDate = Calendar.current.date(
+                            byAdding: .day,
+                            value: offset,
+                            to: weekStart
+                        )!
+                        let candID = Self.iso.string(from: candDate)
+                        do {
+                            let snap = try await colRef
+                                .document(candID)
+                                .getDocument()
+                            if snap.exists,
+                               var oldSched = try? snap.data(as: WeeklySchedule.self) {
+                                self.migrate(oldDoc: oldSched,
+                                             to: targetRef,
+                                             weekStart: weekStart,
+                                             isoKey: isoKey,
+                                             uid: uid)
+                                return
+                            }
+                        } catch {
+                            // ignore missing doc or decode failure
+                        }
+                    }
+
+                    // 4️⃣ Still nothing → create a fresh default schedule
+                    self.createDefaultWeekSchedule(
+                        startOfWeek: weekStart,
+                        userId: uid
+                    ) {
+                        self.fetchSevenDaySchedules(
+                            from: weekStart,
+                            uid: uid
+                        )
+                    }
                 }
             }
         }
     }
 
-    // MARK: – SAVE ENTIRE WEEK DOC
+
+    /// Handle a live snapshot found at the desired anchor; patches legacy docs.
+    private func handleSnapshot(_ snap: DocumentSnapshot,
+                                expectedWeekStart: Date,
+                                uid: String) {
+        decodeQ.async {
+            guard var model = try? snap.data(as: WeeklySchedule.self) else { return }
+
+            // Upgrade legacy docs (missing new fields) once
+            var needsPatch = false
+            if model.anchorWeekday == nil {
+                model.anchorWeekday = Calendar.current.firstWeekday
+                needsPatch = true
+            }
+            if model.isoYearWeek == nil {
+                model.isoYearWeek = WeeklySchedule.isoYearWeekString(from: expectedWeekStart)
+                needsPatch = true
+            }
+            if needsPatch {
+                try? snap.reference.setData(from: model, merge: true)
+            }
+
+            Task { @MainActor in
+                self.schedule = model
+                self.fetchSevenDaySchedules(from: expectedWeekStart, uid: uid)
+            }
+        }
+    }
+
+    /// Copy an old-anchor doc into the new anchor location.
+    private func migrate(oldDoc old: WeeklySchedule,
+                         to target: DocumentReference,
+                         weekStart: Date,
+                         isoKey: String,
+                         uid: String) {
+        var sched = old
+        sched.id            = target.documentID
+        sched.startOfWeek   = weekStart
+        sched.anchorWeekday = Calendar.current.firstWeekday
+        sched.isoYearWeek   = isoKey
+
+        try? target.setData(from: sched)
+        Task { @MainActor in
+            self.schedule = sched
+            self.fetchSevenDaySchedules(from: weekStart, uid: uid)
+        }
+    }
+
+    // MARK: – SAVE ENTIRE WEEK
     func updateWeeklySchedule() {
         guard let s = schedule, let id = s.id else { return }
         try? db.collection("users")
@@ -77,33 +179,24 @@ final class WeekViewModel: ObservableObject {
     }
 
     // MARK: – FETCH UNFINISHED WEEKLY PRIORITIES
-    func fetchUnfinishedWeeklyPriorities(
-        for weekStart: Date,
-        userId: String,
-        completion: @escaping ([WeeklyPriority]) -> Void
-    ) {
+    func fetchUnfinishedWeeklyPriorities(for weekStart: Date,
+                                         userId: String,
+                                         completion: @escaping ([WeeklyPriority])->Void) {
         let docID = Self.iso.string(from: Calendar.current.startOfDay(for: weekStart))
         db.collection("users")
           .document(userId)
           .collection("weekSchedules")
           .document(docID)
-          .getDocument { snap, err in
-              if let err {
-                  print("⚠️ fetchUnfinishedWeeklyPriorities:", err)
-                  DispatchQueue.main.async { completion([]) }
-                  return
-              }
-              guard let snap, snap.exists,
-                    let sched = try? snap.data(as: WeeklySchedule.self) else {
-                  DispatchQueue.main.async { completion([]) }
-                  return
-              }
-              let unfinished = sched.weeklyPriorities.filter { !$0.isCompleted }
-              DispatchQueue.main.async { completion(unfinished) }
+          .getDocument { snap, _ in
+            guard let snap, snap.exists,
+                  let sched = try? snap.data(as: WeeklySchedule.self) else {
+                completion([]); return
+            }
+            completion(sched.weeklyPriorities.filter { !$0.isCompleted })
           }
     }
 
-    // MARK: – PATCH-ONLY DAY PRIORITY SAVE
+    // MARK: – PATCH DAY PRIORITIES
     func updateDayPriorities(date: Date,
                              priorities: [TodayPriority],
                              userId: String) {
@@ -112,86 +205,69 @@ final class WeekViewModel: ObservableObject {
           .document(userId)
           .collection("daySchedules")
           .document(docID)
-          .updateData([
-              "priorities": priorities.map { $0.asDictionary }
-          ]) { err in
-              if let err { print("⚠️ Day patch failed:", err) }
-          }
+          .updateData(["priorities": priorities.map { $0.asDictionary }])
     }
 
-    // MARK: – IMPORT UNFINISHED FROM LAST WEEK
-    func importUnfinishedFromLastWeek(to currentWeekStart: Date, userId: String) {
+    // MARK: – IMPORT LAST WEEK’S UNFINISHED
+    func importUnfinishedFromLastWeek(to currentWeekStart: Date, userId uid: String) {
         let cal = Calendar.current
-        let lastWeekStart = cal.startOfDay(
-            for: cal.date(byAdding: .weekOfYear, value: -1, to: currentWeekStart)!
-        )
-
-        fetchUnfinishedWeeklyPriorities(for: lastWeekStart,
-                                        userId: userId) { [weak self] unfinished in
-            guard let self, var sched = self.schedule else { return }
-            let existing = Set(sched.weeklyPriorities.map(\.title))
-            var didChange = false
-
+        let lastWeekStart = cal.date(byAdding: .weekOfYear, value: -1, to: currentWeekStart)!
+        fetchUnfinishedWeeklyPriorities(for: lastWeekStart, userId: uid) { [weak self] unfinished in
+            guard let self, var s = self.schedule else { return }
+            let existing = Set(s.weeklyPriorities.map(\.title))
+            var changed = false
             for item in unfinished where !existing.contains(item.title) {
-                sched.weeklyPriorities.append(
+                s.weeklyPriorities.append(
                     WeeklyPriority(id: UUID(),
                                    title: item.title,
                                    progress: 0,
                                    isCompleted: false)
                 )
-                didChange = true
+                changed = true
             }
-            if didChange {
-                Task { @MainActor in
-                    self.schedule = sched
-                    self.updateWeeklySchedule()
-                }
+            if changed {
+                self.schedule = s
+                self.updateWeeklySchedule()
             }
         }
     }
 
-    // MARK: – WEEK-LEVEL CRUD (titles)
+    // MARK: – WEEK-LEVEL CRUD / Bindings
     var weeklyPrioritiesBinding: Binding<[WeeklyPriority]> {
         Binding(
             get: { self.schedule?.weeklyPriorities ?? [] },
-            set: { new in
+            set: { newVal in
                 guard var s = self.schedule else { return }
-                s.weeklyPriorities = new
+                s.weeklyPriorities = newVal
                 self.schedule = s
-            }
-        )
+            })
     }
-    func moveWeeklyPriorities(indices: IndexSet, to newOffset: Int) {
+
+    func moveWeeklyPriorities(indices: IndexSet, to offs: Int) {
         guard var s = schedule else { return }
-        s.weeklyPriorities.move(fromOffsets: indices, toOffset: newOffset)
-        schedule = s
-        updateWeeklySchedule()
+        s.weeklyPriorities.move(fromOffsets: indices, toOffset: offs)
+        schedule = s; updateWeeklySchedule()
     }
     func toggleWeeklyPriorityCompletion(_ id: UUID) {
         guard var s = schedule,
-              let idx = s.weeklyPriorities.firstIndex(where: { $0.id == id }) else { return }
-        s.weeklyPriorities[idx].isCompleted.toggle()
-        schedule = s
-        updateWeeklySchedule()
+              let i = s.weeklyPriorities.firstIndex(where: { $0.id == id }) else { return }
+        s.weeklyPriorities[i].isCompleted.toggle()
+        schedule = s; updateWeeklySchedule()
     }
     func addNewPriority() {
         guard var s = schedule else { return }
-        s.weeklyPriorities.append(
-            WeeklyPriority(id: UUID(), title: "New Priority",
-                           progress: 0, isCompleted: false)
-        )
-        schedule = s
-        updateWeeklySchedule()
+        s.weeklyPriorities.append(.init(id: UUID(), title: "New Priority",
+                                        progress: 0, isCompleted: false))
+        schedule = s; updateWeeklySchedule()
     }
     func deletePriority(_ p: WeeklyPriority) {
         guard var s = schedule,
-              let idx = s.weeklyPriorities.firstIndex(where: { $0.id == p.id }) else { return }
-        s.weeklyPriorities.remove(at: idx)
-        schedule = s
-        updateWeeklySchedule()
+              let i = s.weeklyPriorities.firstIndex(of: p) else { return }
+        s.weeklyPriorities.remove(at: i)
+        schedule = s; updateWeeklySchedule()
     }
 
-    // MARK: – DAY-LEVEL BINDINGS
+    // MARK: – DAY-LEVEL Bindings
     func prioritiesBinding(for day: Date) -> Binding<[TodayPriority]> {
         let key = Calendar.current.startOfDay(for: day)
         return Binding(
@@ -199,8 +275,7 @@ final class WeekViewModel: ObservableObject {
             set: { new in
                 self.dayPriorityStorage[key] = new
                 self.persistDayPriorities(key, new)
-            }
-        )
+            })
     }
     func intentionBinding(for day: Date) -> Binding<String> {
         Binding(
@@ -209,15 +284,14 @@ final class WeekViewModel: ObservableObject {
                 guard var s = self.schedule else { return }
                 s.dailyIntentions[self.shortKey(for: day)] = new
                 self.schedule = s
-            }
-        )
+            })
     }
 
-    // MARK: – FETCH SEVEN DAY DOCS
+    // MARK: – FETCH 7 DAY DOCS
     private func fetchSevenDaySchedules(from weekStart: Date, uid: String) {
         let cal = Calendar.current
-        for offset in 0..<7 {
-            if let day = cal.date(byAdding: .day, value: offset, to: weekStart) {
+        for offs in 0..<7 {
+            if let day = cal.date(byAdding: .day, value: offs, to: weekStart) {
                 fetchDaySchedule(for: day, uid: uid)
             }
         }
@@ -225,88 +299,61 @@ final class WeekViewModel: ObservableObject {
     private func fetchDaySchedule(for day: Date, uid: String) {
         let key   = Calendar.current.startOfDay(for: day)
         let docID = Self.iso.string(from: key)
-
         db.collection("users").document(uid)
           .collection("daySchedules").document(docID)
-          .getDocument(as: DaySchedule.self) { [weak self] result in
-              guard let self else { return }
-              let list = (try? result.get().priorities) ?? []
-              DispatchQueue.main.async {
-                  self.dayPriorityStorage[key] = list
-                  self.dayPriorityStatus[key]  = (
-                      list.filter(\.isCompleted).count,
-                      list.count
-                  )
-              }
+          .getDocument(as: DaySchedule.self) { [weak self] res in
+            guard let self else { return }
+            let list = (try? res.get().priorities) ?? []
+            self.dayPriorityStorage[key] = list
+            self.dayPriorityStatus[key]  = (list.filter(\.isCompleted).count, list.count)
           }
     }
-
     private func persistDayPriorities(_ key: Date, _ list: [TodayPriority]) {
         guard let uid = Auth.auth().currentUser?.uid else { return }
-        DispatchQueue.main.async {
-            self.dayPriorityStatus[key] = (list.filter(\.isCompleted).count, list.count)
-        }
+        dayPriorityStatus[key] = (list.filter(\.isCompleted).count, list.count)
         updateDayPriorities(date: key, priorities: list, userId: uid)
     }
 
-    // MARK: – COPY PREVIOUS WEEK
-    func copyPreviousWeek(to date: Date, userId: String) {
-        let cal = Calendar.current
-        guard let prev = cal.date(byAdding: .weekOfYear, value: -1, to: date) else { return }
-
-        let prevID   = Self.iso.string(from: cal.startOfDay(for: prev))
-        let targetID = Self.iso.string(from: cal.startOfDay(for: date))
-
-        let prevRef = db.collection("users")
-                        .document(userId)
-                        .collection("weekSchedules")
-                        .document(prevID)
-
-        let targetRef = db.collection("users")
-                          .document(userId)
-                          .collection("weekSchedules")
-                          .document(targetID)
-
-        prevRef.getDocument { snap, _ in
-            guard let snap, snap.exists,
-                  var source = try? snap.data(as: WeeklySchedule.self) else { return }
-            source.id = targetID
-            source.startOfWeek = cal.startOfDay(for: date)
-            try? targetRef.setData(from: source)
-            Task { @MainActor in self.schedule = source }
-        }
-    }
-
-    // MARK: – UTILITIES & DEFAULT SEED
+    // MARK: – UTILITIES
     private func shortKey(for date: Date) -> String {
         let f = DateFormatter(); f.dateFormat = "E"
         return f.string(from: date)
     }
 
-    private func createDefaultWeekSchedule(startOfWeek: Date, userId: String) {
+    // MARK: – DEFAULT BLANK WEEK CREATOR
+    private func createDefaultWeekSchedule(startOfWeek: Date,
+                                           userId uid: String,
+                                           completion: @escaping ()->Void) {
         let docID = Self.iso.string(from: startOfWeek)
-        let days  = Calendar.current.shortWeekdaySymbols
+        let isoKey = WeeklySchedule.isoYearWeekString(from: startOfWeek)
 
-        var intentions  = [String:String]()
-        var todoBuckets = [String:[ToDoItem]]()        // assume ToDoItem exists
-        for d in days {
-            intentions[d]  = ""
-            todoBuckets[d] = []
+        var intentions = [String:String]()
+        var buckets    = [String:[ToDoItem]]()
+        let cal = Calendar.current
+        for offs in 0..<7 {
+            let day = cal.date(byAdding: .day, value: offs, to: startOfWeek)!
+            let label = shortKey(for: day)
+            intentions[label] = ""
+            buckets[label]    = []
         }
 
         let fresh = WeeklySchedule(
-            id: docID,
-            userId: userId,
-            startOfWeek: startOfWeek,
+            id:            docID,
+            userId:        uid,
+            startOfWeek:   startOfWeek,
+            anchorWeekday: Calendar.current.firstWeekday,
             weeklyPriorities: [],
-            dailyIntentions: intentions,
-            dailyToDoLists: todoBuckets
+            dailyIntentions:  intentions,
+            dailyToDoLists:   buckets
         )
 
-        try? db.collection("users").document(userId)
-              .collection("weekSchedules").document(docID)
+        try? db.collection("users")
+              .document(uid)
+              .collection("weekSchedules")
+              .document(docID)
               .setData(from: fresh)
 
-        self.schedule = fresh
+        schedule = fresh
+        completion()
     }
 }

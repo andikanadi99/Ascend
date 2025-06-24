@@ -1,17 +1,17 @@
-//
-//  WeekNavigationView.swift
-//  Ascento
-//
-//  Created by Andika Yudhatrisna on 5/27/25.
-//
-
+// WeekNavigationView.swift
+// Ascento
 
 import SwiftUI
 
+
 struct WeekNavigationView: View {
+
     @Binding var currentWeekStart: Date
     let accountCreationDate: Date
     let accentColor: Color
+
+    @EnvironmentObject private var weekViewState: WeekViewState
+    private let cal = Calendar.current
 
     var body: some View {
         HStack {
@@ -19,11 +19,16 @@ struct WeekNavigationView: View {
                 Image(systemName: "chevron.left")
                     .foregroundColor(canGoBack ? .white : .gray)
             }
+            .disabled(!canGoBack)
+
             Spacer()
+
             Text(weekRangeString())
                 .font(.headline)
                 .foregroundColor(isCurrentWeek ? accentColor : .white)
+
             Spacer()
+
             Button { goForward() } label: {
                 Image(systemName: "chevron.right")
                     .foregroundColor(.white)
@@ -32,52 +37,58 @@ struct WeekNavigationView: View {
         .padding()
         .background(Color.gray.opacity(0.3))
         .cornerRadius(8)
+        .onAppear { updateAnchor() }
     }
 
-    private var isCurrentWeek: Bool {
-        Calendar.current.isDate(currentWeekStart,
-                                equalTo: Date(),
-                                toGranularity: .weekOfYear)
-    }
-
-    private var canGoBack: Bool {
-        let prev = Calendar.current.date(byAdding: .weekOfYear,
-                                         value: -1,
-                                         to: currentWeekStart)!
-        return prev >= startOfWeek(for: accountCreationDate)
-    }
+    // MARK: – Actions
 
     private func goBack() {
-        guard canGoBack,
-              let prev = Calendar.current.date(byAdding: .weekOfYear,
-                                               value: -1,
-                                               to: currentWeekStart)
-        else { return }
-        currentWeekStart = prev
+        weekViewState.weekOffset -= 1
+        updateAnchor()
     }
 
     private func goForward() {
-        if let next = Calendar.current.date(byAdding: .weekOfYear,
-                                            value: 1,
-                                            to: currentWeekStart) {
-            currentWeekStart = next
-        }
+        weekViewState.weekOffset += 1
+        updateAnchor()
     }
+
+    /// Recompute `currentWeekStart` from the single source: today + offset weeks.
+    private func updateAnchor() {
+        let refDate = cal.date(
+            byAdding: .weekOfYear,
+            value: weekViewState.weekOffset,
+            to: Date()
+        )!
+        currentWeekStart = WeekViewState.startOfWeek(for: refDate)
+    }
+
+    // MARK: – Guards
+
+    private var canGoBack: Bool {
+        // Compute the candidate for offset-1
+        let prevDate = cal.date(
+            byAdding: .weekOfYear,
+            value: weekViewState.weekOffset - 1,
+            to: Date()
+        )!
+        let prevAnchor = WeekViewState.startOfWeek(for: prevDate)
+        let earliest   = WeekViewState.startOfWeek(for: accountCreationDate)
+        return prevAnchor >= earliest
+    }
+
+    private var isCurrentWeek: Bool {
+        cal.isDate(
+            currentWeekStart,
+            equalTo: Date(),
+            toGranularity: .weekOfYear
+        )
+    }
+
+    // MARK: – Label
 
     private func weekRangeString() -> String {
-        let cal = Calendar.current
-        let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear],
-                                       from: currentWeekStart)
-        let start = cal.date(from: comps)!
-        let end   = cal.date(byAdding: .day, value: 6, to: start)!
-        let fmt   = DateFormatter(); fmt.dateFormat = "M/d"
-        return "Week of \(fmt.string(from: start)) – \(fmt.string(from: end))"
-    }
-
-    private func startOfWeek(for date: Date) -> Date {
-        var cal = Calendar.current; cal.firstWeekday = 1
-        let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear],
-                                       from: date)
-        return cal.date(from: comps)!
+        let fmt = DateFormatter(); fmt.dateFormat = "M/d"
+        let end = cal.date(byAdding: .day, value: 6, to: currentWeekStart)!
+        return "Week of \(fmt.string(from: currentWeekStart)) – \(fmt.string(from: end))"
     }
 }

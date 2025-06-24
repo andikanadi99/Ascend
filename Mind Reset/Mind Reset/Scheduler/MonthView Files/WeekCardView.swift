@@ -135,16 +135,32 @@ struct WeekCardView: View {
 
     // ───────────────────────── Header helpers
     private var weekLabel: String {
-        let f = DateFormatter(); f.dateFormat = "MMM d"
-        let s = f.string(from: weekStart)
-        let e = Calendar.current.date(byAdding: .day, value: 6, to: weekStart)!
-        return "\(s) – \(f.string(from: e))"
+        // read 0…6 from UserDefaults, where 0=Sunday, 1=Monday, …, 6=Saturday
+        let idx = UserDefaults.standard.integer(forKey: "weekStartIndex")
+        var cal = Calendar.current
+        cal.firstWeekday = idx + 1
+
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+
+        // anchor to the true first day of this week
+        let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: weekStart)
+        guard let anchor = cal.date(from: comps) else { return "" }
+        let end = cal.date(byAdding: .day, value: 6, to: anchor)!
+
+        return "\(f.string(from: anchor)) – \(f.string(from: end))"
     }
+
     private var isPastWeek: Bool {
-        let wk0 = Calendar.current.date(
-            from: Calendar.current.dateComponents([.yearForWeekOfYear, .weekOfYear],
-                                                  from: Date()))!
-        return weekStart < wk0
+        // build “start of this week” using the same firstWeekday
+        let idx = UserDefaults.standard.integer(forKey: "weekStartIndex")
+        var cal = Calendar.current
+        cal.firstWeekday = idx + 1
+
+        let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())
+        guard let todayAnchor = cal.date(from: comps) else { return false }
+
+        return weekStart < todayAnchor
     }
 
     // ───────────────────────── Alerts

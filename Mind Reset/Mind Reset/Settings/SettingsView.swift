@@ -2,6 +2,13 @@
 //  Mind Reset.
 //
 //  Created by Andika Yudhatrisna on 2/6/25.
+
+
+// SettingsView.swift
+// Mind Reset.
+//
+// Created by Andika Yudhatrisna on 2/6/25.
+
 import SwiftUI
 
 struct SettingsView: View {
@@ -32,6 +39,10 @@ struct SettingsView: View {
             Section(header: Text("App Settings").foregroundColor(accentCyan)) {
                 NavigationLink(destination: NotificationPreferencesView()) {
                     Label("Notification Preferences", systemImage: "bell.fill")
+                        .foregroundColor(.white)
+                }
+                NavigationLink(destination: RegionalSettingsView()) {
+                    Label("Regional Settings", systemImage: "globe")
                         .foregroundColor(.white)
                 }
             }
@@ -84,10 +95,9 @@ struct SettingsView: View {
     }
 }
 
-// ───────── Preview
 struct SettingsView_Previews: PreviewProvider {
     static var previews: some View {
-        NavigationStack {               // preview with a nav container
+        NavigationStack {
             SettingsView()
                 .environmentObject(SessionStore())
         }

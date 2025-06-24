@@ -495,3 +495,36 @@ extension HabitViewModel {
             .eraseToAnyPublisher()
     }
 }
+
+extension HabitViewModel {
+    /// Returns a user‑friendly question string tailored to the habit’s metric.
+    /// Matches the logic previously embedded in `HabitDetailView.metricPrompt()`.
+    func metricPrompt(for habit: Habit) -> String {
+        switch habit.metricType {
+        case .predefined(let value):
+            let lower = value.lowercased()
+            switch true {
+            case lower.contains("minute"):
+                return "How many minutes did you meditate today?"
+            case lower.contains("mile"):
+                return "How many miles did you run today?"
+            case lower.contains("page"):
+                return "How many pages did you read today?"
+            case lower.contains("rep"):
+                return "How many reps did you complete today?"
+            case lower.contains("step"):
+                return "How many steps did you take today?"
+            case lower.contains("calorie"):
+                return "How many calories did you burn/consume today?"
+            case lower.contains("hour"):
+                return "How many hours did you sleep today?"
+            case lower.contains("completed") || habit.metricCategory == .completion:
+                return "Were you able to complete the task? (Enter 1 for Yes, 0 for No)"
+            default:
+                return "Enter today's \(value.lowercased()) value:"
+            }
+        case .custom(let customValue):
+            return "Enter today's \(customValue.lowercased()) value:"
+        }
+    }
+}

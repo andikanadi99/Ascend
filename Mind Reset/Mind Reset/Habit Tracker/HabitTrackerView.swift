@@ -33,6 +33,12 @@ struct HabitTrackerView: View {
     @State private var isLoaded                 = false
     @State private var cancellables             = Set<AnyCancellable>()
 
+    // Overlay state for parent-level prompts
+    @State private var selectedHabit: Habit? = nil
+    @State private var showMetricInput = false
+    @State private var showUnmarkConfirmation = false
+    @State private var metricInput = ""
+
     // ───────────────────────────────────── Theme
     private let backgroundBlack = Color.black
     private let accentCyan      = Color(red: 0, green: 1, blue: 1)
@@ -63,97 +69,106 @@ struct HabitTrackerView: View {
 
     // ───────────────────────────────────── Body
     var body: some View {
-        NavigationView {
-            ZStack {
-                backgroundBlack.ignoresSafeArea()
+            NavigationView {
+                ZStack {
+                    backgroundBlack.ignoresSafeArea()
 
-                Group {
-                    if isLoaded {
-                        VStack(alignment: .leading, spacing: 16) {
-                            // Top greeting
-                            Text(dailyGreeting)
-                                .font(.title)
-                                .fontWeight(.heavy)
+                    Group {
+                        if isLoaded {
+                            VStack(alignment: .leading, spacing: 16) {
+                                Text(dailyGreeting)
+                                    .font(.title)
+                                    .fontWeight(.heavy)
+                                    .foregroundColor(.white)
+                                    .shadow(color: .white.opacity(0.8), radius: 4)
+
+                                Text(dailyQuote)
+                                    .font(.subheadline)
+                                    .foregroundColor(accentCyan)
+
+                                Spacer(minLength: 0)
+
+                                habitList
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.bottom, 8)
+
+                                Spacer(minLength: 0)
+                            }
+                            .padding()
+                        } else {
+                            ProgressView("Loading habits…")
                                 .foregroundColor(.white)
-                                .shadow(color: .white.opacity(0.8), radius: 4)
-
-                            Text(dailyQuote)
-                                .font(.subheadline)
-                                .foregroundColor(accentCyan)
-
-                            // Spacer pushes list downward to centre it vertically
-                            Spacer(minLength: 0)
-
-                            // Habit list (vertically centred)
-                            habitList
-                                .frame(maxWidth: .infinity)
-                                .padding(.bottom, 8)
-
-                            // Matching spacer below list
-                            Spacer(minLength: 0)
                         }
-                        .padding()
-                    } else {
-                        ProgressView("Loading habits…")
-                            .foregroundColor(.white)
+                    }
+
+                    // Floating add button
+                    addButtonOverlay
+
+                    // Parent-level overlays
+                    if showMetricInput {
+                        metricInputOverlay
+                    }
+                    if showUnmarkConfirmation {
+                        unmarkConfirmationOverlay
                     }
                 }
-
-                // Floating add button
-                addButtonOverlay
-            }
-            .sheet(isPresented: $showingAddHabit) {
-                AddHabitView(viewModel: viewModel)
-                    .environmentObject(session)
-                    .environmentObject(viewModel)
-            }
-            .alert(isPresented: $showingDeleteAlert) { deleteAlert }
-            .onAppear(perform: fetchHabitsIfNeeded)
-            .onReceive(
-                Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
-            ) { _ in
-                withAnimation { isLoaded = viewModel.defaultsLoaded }
+                .sheet(isPresented: $showingAddHabit) {
+                    AddHabitView(viewModel: viewModel)
+                        .environmentObject(session)
+                        .environmentObject(viewModel)
+                }
+                .alert(isPresented: $showingDeleteAlert) { deleteAlert }
+                .onAppear(perform: fetchHabitsIfNeeded)
+                .onReceive(
+                    Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+                ) { _ in
+                    withAnimation { isLoaded = viewModel.defaultsLoaded }
+                }
             }
         }
-    }
 
-    // ───────────────────────── Habit list
-    private var habitList: some View {
-        List {
-            ForEach(Array(viewModel.habits.enumerated()), id: \.element.id) { (idx, habit) in
-                let finished = habit.dailyRecords.contains {
-                    Calendar.current.isDate($0.date, inSameDayAs: Date()) &&
-                    (($0.value ?? 0) > 0)
-                }
+        // ───────────────────────── Habit list
+        private var habitList: some View {
+            List {
+                ForEach(Array(viewModel.habits.enumerated()), id: \.element.id) { (idx, habit) in
+                    let finished = viewModel.isHabitCompleted(habit, on: Date())
 
-                NavigationLink {
-                    HabitDetailView(
-                        habit: Binding(
-                            get: { viewModel.habits[idx] },
-                            set: { viewModel.habits[idx] = $0 }
+                    NavigationLink {
+                        HabitDetailView(
+                            habit: Binding(
+                                get: { viewModel.habits[idx] },
+                                set: { viewModel.habits[idx] = $0 }
+                            )
                         )
-                    )
-                } label: {
-                    HabitRow(
-                        habit: habit,
-                        completedToday: finished,
-                        accentCyan: accentCyan,
-                        onDelete: { h in
-                            habitToDelete = h
-                            showingDeleteAlert = true
-                        }
-                    )
+                    } label: {
+                        HabitRow(
+                            habit: habit,
+                            completedToday: finished,
+                            accentCyan: accentCyan,
+                            onDelete: { h in
+                                habitToDelete = h
+                                showingDeleteAlert = true
+                            },
+                            onToggle: {
+                                selectedHabit = habit
+                                if finished {
+                                    showUnmarkConfirmation = true
+                                } else {
+                                    metricInput = ""
+                                    showMetricInput = true
+                                }
+                            }
+                        )
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
+                .onMove { idx, new in viewModel.moveHabits(indices: idx, to: new) }
             }
-            .onMove { idx, new in viewModel.moveHabits(indices: idx, to: new) }
+            .environment(\.editMode, $editMode)
+            .listStyle(.plain)
+            .background(backgroundBlack)
         }
-        .environment(\.editMode, $editMode)
-//        .scrollDisabled(true)
-        .listStyle(.plain)
-        .background(backgroundBlack)
-    }
 
     // ───────────────────────── Floating “+”
     private var addButtonOverlay: some View {
@@ -197,7 +212,81 @@ struct HabitTrackerView: View {
             viewModel.setupDefaultHabitsIfNeeded(for: uid)
         }
     }
-}
+    // ───────────────────────── Complete prompt overlay
+    @ViewBuilder
+    private var metricInputOverlay: some View {
+        if let habit = selectedHabit {
+            VStack(spacing: 16) {
+                Text(viewModel.metricPrompt(for: habit))
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.white)
+
+                TextField("Enter a number", text: $metricInput)
+                    .keyboardType(.numberPad)
+                    .padding()
+                    .background(Color.white.opacity(0.2))
+                    .cornerRadius(8)
+                    .foregroundColor(.white)
+
+                HStack {
+                    Button("Cancel") {
+                        withAnimation { showMetricInput = false }
+                    }
+                    .foregroundColor(.red)
+
+                    Spacer()
+
+                    Button("OK") {
+                        guard
+                            let habit = selectedHabit,
+                            let uid = session.current_user?.uid
+                        else { return }
+                        viewModel.toggleHabitCompletion(habit, userId: uid)
+                        withAnimation { showMetricInput = false }
+                    }
+                    .foregroundColor(.green)
+                }
+            }
+            .padding()
+            .frame(width: 300)
+            .background(Color.black.opacity(0.9))
+            .cornerRadius(12)
+            .shadow(radius: 8)
+        }
+        // When selectedHabit is nil, this produces no view
+    }
+
+        // ───────────────────────── Unmark confirmation overlay
+        private var unmarkConfirmationOverlay: some View {
+            VStack(spacing: 16) {
+                Text("Are you sure you want to unmark this habit as done?")
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.white)
+                HStack {
+                    Button("Cancel") {
+                        withAnimation { showUnmarkConfirmation = false }
+                    }
+                    .foregroundColor(.red)
+                    Spacer()
+                    Button("OK") {
+                        if let habit = selectedHabit,
+                           let uid = session.current_user?.uid {
+                            viewModel.toggleHabitCompletion(habit, userId: uid)
+                        }
+                        withAnimation { showUnmarkConfirmation = false }
+                    }
+                    .foregroundColor(.green)
+                }
+            }
+            .padding()
+            .frame(width: 300)
+            .background(Color.black.opacity(0.9))
+            .cornerRadius(12)
+            .shadow(radius: 8)
+        }
+    }
 
 // ─────────────────────────────────────────────────────────
 // MARK: – HabitRow (read-only check icon + trash)
@@ -207,10 +296,10 @@ private struct HabitRow: View {
     let completedToday: Bool
     let accentCyan: Color
     let onDelete: (Habit) -> Void
+    let onToggle: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
-            // Title & goal
             VStack(alignment: .leading, spacing: 4) {
                 Text(habit.title)
                     .font(.headline)
@@ -219,16 +308,17 @@ private struct HabitRow: View {
                     .font(.subheadline)
                     .foregroundColor(.white.opacity(0.7))
             }
-
             Spacer()
+            Button(action: onToggle) {
+                Image(systemName: completedToday ? "checkmark.circle.fill" : "circle")
+                    .font(.headline)
+                    .foregroundColor(completedToday ? .green : accentCyan)
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(Text(completedToday ? "Mark as incomplete" : "Mark as complete"))
+            .accessibilityHint(Text("Double-tap to toggle today’s completion status"))
 
-            // Completion icon (read-only)
-            Image(systemName: completedToday ? "checkmark.circle.fill" : "circle")
-                .font(.headline)
-                .foregroundColor(completedToday ? .green : accentCyan)
-                .frame(width: 30, height: 30)
-
-            // Trash
             Button(role: .destructive) { onDelete(habit) } label: {
                 Image(systemName: "trash")
                     .foregroundColor(.red)

@@ -34,42 +34,52 @@ final class WeekViewModel: ObservableObject {
     // MARK: – LOAD / LISTEN / MIGRATE
     @MainActor
     func loadWeeklySchedule(for startOfWeek: Date, userId uid: String) {
-        // Remove any previous listener
+
+        // ── Clean up any previous listener
         listener?.remove()
 
-        // Normalize to midnight and compute IDs
+        // ── Normalise anchor + document IDs
         let weekStart = Calendar.current.startOfDay(for: startOfWeek)
         let docID     = Self.iso.string(from: weekStart)
         let isoKey    = WeeklySchedule.isoYearWeekString(from: weekStart)
 
-        let colRef    = db
-            .collection("users")
-            .document(uid)
-            .collection("weekSchedules")
+        let colRef    = db.collection("users")
+                          .document(uid)
+                          .collection("weekSchedules")
         let targetRef = colRef.document(docID)
 
-        // 1️⃣ Listen for a document at the new anchor
+        // ─────────────────────────────────────────────────────────────
+        // 1️⃣ LISTEN at the *canonical* anchor for this week
+        // ─────────────────────────────────────────────────────────────
         listener = targetRef.addSnapshotListener(includeMetadataChanges: false) { [weak self] snap, err in
             guard let self = self else { return }
-            if let err = err {
-                self.errorMessage = err.localizedDescription
+
+            if let err {
+                DispatchQueue.main.async { self.errorMessage = err.localizedDescription }
                 return
             }
 
-            // If it exists at the new anchor, decode and patch if needed
-            if let snap = snap, snap.exists {
-                self.handleSnapshot(snap,
-                                    expectedWeekStart: weekStart,
-                                    uid: uid)
+            // ── Case A – Document exists exactly where we expect it ──
+            if let snap, snap.exists {
+                // Decode on a background queue, repair missing `id`, then publish
+                self.decodeQ.async {
+                    guard var sched = try? snap.data(as: WeeklySchedule.self) else { return }
+                    if sched.id == nil { sched.id = docID }      // auto-repair
+                    Task { @MainActor in
+                        self.schedule = sched
+                        self.fetchSevenDaySchedules(from: weekStart, uid: uid)
+                    }
+                }
                 return
             }
 
-            // 2️⃣ Not found at new anchor → query by ISO-week key
-            colRef
-              .whereField("isoYearWeek", isEqualTo: isoKey)
-              .getDocuments { qs, _ in
-                if let doc = qs?.documents.first,
-                   var oldSched = try? doc.data(as: WeeklySchedule.self) {
+            // ─────────────────────────────────────────────────────────
+            // 2️⃣ FALL-BACK SEARCH by `isoYearWeek`  (older misplaced docs)
+            // ─────────────────────────────────────────────────────────
+            colRef.whereField("isoYearWeek", isEqualTo: isoKey)
+                  .getDocuments { qs, _ in
+                if let stray = qs?.documents.first,
+                   var oldSched = try? stray.data(as: WeeklySchedule.self) {
                     self.migrate(oldDoc: oldSched,
                                  to: targetRef,
                                  weekStart: weekStart,
@@ -78,47 +88,41 @@ final class WeekViewModel: ObservableObject {
                     return
                 }
 
-                // 3️⃣ ISO query empty → fallback ±6-day async scan
+                // ─────────────────────────────────────────────────────
+                // 3️⃣ LAST-CHANCE ±6-DAY SCAN around the anchor
+                // ─────────────────────────────────────────────────────
                 Task { @MainActor in
                     for offset in -6...6 where offset != 0 {
-                        let candDate = Calendar.current.date(
-                            byAdding: .day,
-                            value: offset,
-                            to: weekStart
-                        )!
-                        let candID = Self.iso.string(from: candDate)
+                        let candDate = Calendar.current.date(byAdding: .day,
+                                                             value: offset,
+                                                             to: weekStart)!
+                        let candID   = Self.iso.string(from: candDate)
                         do {
-                            let snap = try await colRef
-                                .document(candID)
-                                .getDocument()
-                            if snap.exists,
-                               var oldSched = try? snap.data(as: WeeklySchedule.self) {
-                                self.migrate(oldDoc: oldSched,
+                            let straySnap = try await colRef.document(candID).getDocument()
+                            if straySnap.exists,
+                               var straySched = try? straySnap.data(as: WeeklySchedule.self) {
+                                self.migrate(oldDoc: straySched,
                                              to: targetRef,
                                              weekStart: weekStart,
                                              isoKey: isoKey,
                                              uid: uid)
                                 return
                             }
-                        } catch {
-                            // ignore missing doc or decode failure
-                        }
+                        } catch { /* ignore & continue loop */ }
                     }
 
-                    // 4️⃣ Still nothing → create a fresh default schedule
-                    self.createDefaultWeekSchedule(
-                        startOfWeek: weekStart,
-                        userId: uid
-                    ) {
-                        self.fetchSevenDaySchedules(
-                            from: weekStart,
-                            uid: uid
-                        )
+                    // ───────────────────────────────────────────────
+                    // 4️⃣ Nothing found → create a brand-new week doc
+                    // ───────────────────────────────────────────────
+                    self.createDefaultWeekSchedule(startOfWeek: weekStart,
+                                                   userId: uid) {
+                        self.fetchSevenDaySchedules(from: weekStart, uid: uid)
                     }
                 }
             }
         }
     }
+
 
 
     /// Handle a live snapshot found at the desired anchor; patches legacy docs.
@@ -170,13 +174,22 @@ final class WeekViewModel: ObservableObject {
 
     // MARK: – SAVE ENTIRE WEEK
     func updateWeeklySchedule() {
-        guard let s = schedule, let id = s.id else { return }
+        guard var s = schedule else { return }
+
+        // 1️⃣ Auto-repair: some older docs were saved without an `id`
+        if s.id == nil {
+            s.id = Self.iso.string(from: Calendar.current.startOfDay(for: s.startOfWeek))
+            schedule = s                       // write back to the @Published copy
+        }
+
+        // 2️⃣ Persist
         try? db.collection("users")
               .document(s.userId)
               .collection("weekSchedules")
-              .document(id)
+              .document(s.id!)                 // now guaranteed non-nil
               .setData(from: s, merge: true)
     }
+
 
     // MARK: – FETCH UNFINISHED WEEKLY PRIORITIES
     func fetchUnfinishedWeeklyPriorities(for weekStart: Date,

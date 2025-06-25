@@ -10,6 +10,8 @@ import SwiftUI
 import Combine
 import UIKit
 
+
+
 // ───────────────────────────────────────────────
 // MARK: - Alerts
 // ───────────────────────────────────────────────
@@ -50,6 +52,8 @@ struct TimeBlockRow: View {
 
     // Tracks the dynamic height of the task editor
     @State private var measuredTaskHeight: CGFloat = 0
+    
+
 
     init(
         block: TimeBlock,
@@ -137,6 +141,8 @@ struct DayView: View {
     @EnvironmentObject var session: SessionStore
     @EnvironmentObject var dayViewState: DayViewState
     @StateObject private var viewModel = DayViewModel()
+    
+    @AppStorage("dateFormatStyle") private var dateFormatStyle: String = "MM/dd/yyyy"
 
     // Local UI state
     @State private var activeAlert: DayViewAlert?
@@ -154,6 +160,7 @@ struct DayView: View {
     // Draft wake/sleep to avoid instantaneous re-render glitches
     @State private var draftWake: Date = Date()
     @State private var draftSleep: Date = Date()
+    @State private var dateFormatVersion = UUID()
 
     // Accent colour
     private let accentCyan = Color(red: 0, green: 1, blue: 1)
@@ -173,7 +180,8 @@ struct DayView: View {
 
     // Quick flags
     private var dateString: String {
-        let f = DateFormatter(); f.dateStyle = .full
+        let f = DateFormatter()
+        f.dateFormat = dateFormatStyle    // use the user’s setting
         return f.string(from: dayViewState.selectedDate)
     }
     private var isToday: Bool { Calendar.current.isDateInToday(dayViewState.selectedDate) }
@@ -228,6 +236,9 @@ struct DayView: View {
         .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
             loadScheduleIfNeeded()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .dateFormatChanged)) { _ in
+                    dateFormatVersion = UUID()          // force view refresh
+                }
     }
 
     // ─────────────────────────────────────────

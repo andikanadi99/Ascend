@@ -1,4 +1,3 @@
-//
 //  DayCardView.swift
 //  Mind Reset
 //
@@ -41,6 +40,8 @@ struct DayCardView: View {
     @EnvironmentObject private var weekVM:  WeekViewModel
     @EnvironmentObject private var session: SessionStore
 
+    @AppStorage("dateFormatStyle") private var dateFormatStyle: String = "MM/dd/yyyy" // ← new
+
     @State private var isRemoveMode = false
     @State private var dayAlert: DayCardAlert?
     @State private var listHeight: CGFloat = 0
@@ -55,13 +56,9 @@ struct DayCardView: View {
         VStack(alignment: .leading, spacing: 12) {
             // Header
             HStack {
-                Text(DateFormatter.localizedString(
-                    from: day,
-                    dateStyle: .full,
-                    timeStyle: .none
-                ))
-                .font(.headline)
-                .foregroundColor(.white)
+                Text("\(weekdayString(day)), \(formattedDate(day))")
+                    .font(.headline)
+                    .foregroundColor(.white)
                 Spacer()
             }
             .padding(.bottom, 4)
@@ -165,7 +162,7 @@ struct DayCardView: View {
             }
         }
         .padding()
-       .frame(maxWidth: .infinity, alignment: .leading)  
+       .frame(maxWidth: .infinity, alignment: .leading)
        .background(Color.gray.opacity(0.3))
        .cornerRadius(12)
        .shadow(radius: 2)
@@ -175,6 +172,17 @@ struct DayCardView: View {
     // ───────────────────────────────────────────────
     // MARK: – Helpers
     // ───────────────────────────────────────────────
+    private func weekdayString(_ date: Date) -> String {
+        let df = DateFormatter()
+        df.dateFormat = "EEEE"   // full weekday name
+        return df.string(from: date)
+    }
+    private func formattedDate(_ date: Date) -> String {
+        let df = DateFormatter()
+        df.dateFormat = dateFormatStyle
+        return df.string(from: date)
+    }
+
     private func isPastDay() -> Bool {
         let dayStart   = Calendar.current.startOfDay(for: day)
         let todayStart = Calendar.current.startOfDay(for: Date())

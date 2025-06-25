@@ -42,7 +42,7 @@ struct SettingsView: View {
                         .foregroundColor(.white)
                 }
                 NavigationLink(destination: RegionalSettingsView()) {
-                    Label("Regional Settings", systemImage: "globe")
+                    Label("Date & Time Preferences", systemImage: "globe")
                         .foregroundColor(.white)
                 }
             }

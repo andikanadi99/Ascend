@@ -5,6 +5,7 @@
 //  Created by Andika Yudhatrisna on 11/21/24.
 //
 
+
 import SwiftUI
 import FirebaseCore
 import FirebaseFirestore
@@ -20,7 +21,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     func application(
         _ application: UIApplication,
-        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil
     ) -> Bool {
 
         // 1️⃣  Firebase bootstrap
@@ -36,10 +37,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // ——— OPTIONAL EMULATOR SECTION (leave commented for production) ———
         /*
         #if DEBUG
-        // Auth emulator
         Auth.auth().useEmulator(withHost: "localhost", port: 9099)
 
-        // Firestore emulator
         let fdb = Firestore.firestore()
         var fSettings            = fdb.settings
         fSettings.host           = "localhost:8080"
@@ -47,14 +46,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         fSettings.isSSLEnabled   = false
         fdb.settings             = fSettings
 
-        // Functions emulator
         Functions.functions().useEmulator(withHost: "localhost", port: 5001)
         #endif
         */
 
         // 2️⃣  Firestore on-device cache (production)
-        var prodSettings                   = FirestoreSettings()
-        prodSettings.isPersistenceEnabled  = true
+        var prodSettings                  = FirestoreSettings()
+        prodSettings.isPersistenceEnabled = true
         if #available(iOS 17, *) {
             prodSettings.cacheSettings =
                 PersistentCacheSettings(sizeBytes: NSNumber(value: 20 * 1024 * 1024))
@@ -63,9 +61,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
         // 3️⃣  Local-notification permissions
         _ = NotificationDelegate.shared
-        UNUserNotificationCenter.current().requestAuthorization(
-            options: [.alert, .sound, .badge]
-        ) { _, _ in }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
 
         return true
     }
@@ -76,8 +72,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey : Any] = [:]
     ) -> Bool {
-        // Pass the URL to the GIDSignIn instance and return the result.
-        return GIDSignIn.sharedInstance.handle(url)
+        GIDSignIn.sharedInstance.handle(url)
     }
 }
 
@@ -97,6 +92,7 @@ struct Mind_ResetApp: App {
     @StateObject private var dayViewState   = DayViewState()
     @StateObject private var weekViewState  = WeekViewState()
     @StateObject private var monthViewState = MonthViewState()
+    @StateObject private var regional       = AppRegionalSettings()   // ← NEW
 
     private let persistenceController = PersistenceController.shared
 
@@ -105,11 +101,15 @@ struct Mind_ResetApp: App {
             ContentView()
                 .environment(\.managedObjectContext,
                              persistenceController.container.viewContext)
+
+                // Global environment objects
                 .environmentObject(session)
                 .environmentObject(habitViewModel)
                 .environmentObject(dayViewState)
                 .environmentObject(weekViewState)
                 .environmentObject(monthViewState)
+                .environmentObject(regional)             // ← NEW
         }
     }
 }
+

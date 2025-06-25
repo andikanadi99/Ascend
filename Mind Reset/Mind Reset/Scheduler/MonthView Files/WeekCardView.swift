@@ -17,6 +17,7 @@ struct WeekCardView: View {
     @Binding var weeklyPriorities: [WeeklyPriority]
     @Binding var editMode:         EditMode
     @Binding var isRemoveMode:     Bool
+    @AppStorage("dateFormatStyle") private var dateFormatStyle: String = "MM/dd/yyyy"
 
     let onToggle:  (_ id: UUID) -> Void
     let onDelete:  (_ p: WeeklyPriority) -> Void
@@ -135,20 +136,25 @@ struct WeekCardView: View {
 
     // ───────────────────────── Header helpers
     private var weekLabel: String {
-        // read 0…6 from UserDefaults, where 0=Sunday, 1=Monday, …, 6=Saturday
+        // determine the user’s first‐weekday (0=Sun…6=Sat)
         let idx = UserDefaults.standard.integer(forKey: "weekStartIndex")
         var cal = Calendar.current
         cal.firstWeekday = idx + 1
 
-        let f = DateFormatter()
-        f.dateFormat = "MMM d"
-
-        // anchor to the true first day of this week
+        // compute the true start-of-week anchor
         let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: weekStart)
         guard let anchor = cal.date(from: comps) else { return "" }
+
+        // end is 6 days later
         let end = cal.date(byAdding: .day, value: 6, to: anchor)!
 
-        return "\(f.string(from: anchor)) – \(f.string(from: end))"
+        // format both dates using the global preference
+        let f = DateFormatter()
+        f.dateFormat = dateFormatStyle
+        let startStr = f.string(from: anchor)
+        let endStr   = f.string(from: end)
+
+        return "\(startStr) – \(endStr)"
     }
 
     private var isPastWeek: Bool {

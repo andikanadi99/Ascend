@@ -1,8 +1,8 @@
 // WeekNavigationView.swift
 // Ascento
 
-import SwiftUI
 
+import SwiftUI
 
 struct WeekNavigationView: View {
 
@@ -11,6 +11,7 @@ struct WeekNavigationView: View {
     let accentColor: Color
 
     @EnvironmentObject private var weekViewState: WeekViewState
+    @AppStorage("dateFormatStyle") private var dateFormatStyle: String = "MM/dd/yyyy"  // ← new
     private let cal = Calendar.current
 
     var body: some View {
@@ -87,8 +88,10 @@ struct WeekNavigationView: View {
     // MARK: – Label
 
     private func weekRangeString() -> String {
-        let fmt = DateFormatter(); fmt.dateFormat = "M/d"
+        let fmt = DateFormatter()
+        fmt.dateFormat = dateFormatStyle    // ← use the global pattern
         let end = cal.date(byAdding: .day, value: 6, to: currentWeekStart)!
         return "Week of \(fmt.string(from: currentWeekStart)) – \(fmt.string(from: end))"
     }
 }
+

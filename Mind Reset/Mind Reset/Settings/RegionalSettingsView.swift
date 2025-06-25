@@ -11,33 +11,39 @@ struct RegionalSettingsView: View {
     // ───────── Environment
     @Environment(\.dismiss) private var dismiss
 
-    // ───────── Persisted (current) values
+    // ───────── Persisted values
+    /// Legacy key for “Week begins on”
     private let currentWeekStartIndex: Int =
-        UserDefaults.standard.integer(forKey: "weekStartIndex")       // 0…6
+        UserDefaults.standard.integer(forKey: "weekStartIndex")   // 0…6
 
-    private let currentDateStyleRaw: String =
-        UserDefaults.standard.string(forKey: "dateFormatStyle") ?? "MM/dd/yyyy"
+    /// Reactive, app-wide date format preference
+    
+    @AppStorage("dateFormatStyle") private var dateFormatStyle: String = {
+        // If they’ve never set one, fall back to locale default:
+        let saved = UserDefaults.standard.string(forKey: "dateFormatStyle")
+        return saved ?? defaultDatePattern()
+    }()
 
     // ───────── Local UI state
     @State private var pendingWeekStartIndex: Int
-    @State private var pendingDateStyleRaw:   String
-
-    @State private var sheetInitialIndex:     Int = 0                 // remembers value on sheet open
-    @State private var showWeekStartPicker    = false
-    @State private var showConfirmWeekSave    = false
+    @State private var sheetInitialIndex = 0
+    @State private var showWeekStartPicker = false
+    @State private var showConfirmWeekSave = false
 
     // ───────── Constants
-    private let daysOfWeek = Calendar.current.weekdaySymbols          // Sun…Sat
+    private let daysOfWeek = Calendar.current.weekdaySymbols    // ["Sunday",…,"Saturday"]
     private let dateStyles  = [
-        "MM/dd/yyyy",         // US
-        "dd/MM/yyyy",         // UK / EU
-        "yyyy-MM-dd"          // ISO
+        "MM/dd/yyyy",         // U.S. numeric
+        "dd/MM/yyyy",         // U.K. / EU numeric
+        "yyyy-MM-dd",         // ISO-8601 numeric
+        "MMMM d, yyyy"        // Verbose: “June 25, 2025”
     ]
 
     // ───────── Init
     init() {
-        _pendingWeekStartIndex = State(initialValue: currentWeekStartIndex)
-        _pendingDateStyleRaw   = State(initialValue: currentDateStyleRaw)
+        _pendingWeekStartIndex = State(
+            initialValue: UserDefaults.standard.integer(forKey: "weekStartIndex")
+        )
     }
 
     // ═════════════════════════════════════════════════════════════
@@ -45,14 +51,13 @@ struct RegionalSettingsView: View {
     // ═════════════════════════════════════════════════════════════
     var body: some View {
         Form {
-
-            // ── Week starts on … ───────────────────────────────
+            // ── Week begins on … ───────────────────────────────
             Section("Week begins on") {
                 Button {
                     showWeekStartPicker.toggle()
                 } label: {
                     HStack {
-                        Text(daysOfWeek[pendingWeekStartIndex])        // live preview
+                        Text(daysOfWeek[pendingWeekStartIndex])
                         Spacer()
                         Image(systemName: "chevron.right")
                             .foregroundColor(.gray)
@@ -73,7 +78,8 @@ struct RegionalSettingsView: View {
 
                         HStack {
                             Button("Cancel") {
-                                pendingWeekStartIndex = sheetInitialIndex   // ← roll back
+                                // Roll back to original if cancelled
+                                pendingWeekStartIndex = sheetInitialIndex
                                 showWeekStartPicker = false
                             }
                             .foregroundColor(.red)
@@ -91,13 +97,16 @@ struct RegionalSettingsView: View {
                     }
                     .padding()
                     .presentationDetents([.height(320)])
-                    .onAppear { sheetInitialIndex = pendingWeekStartIndex } // remember current value
+                    .onAppear {
+                        // Remember starting value for cancel rollback
+                        sheetInitialIndex = pendingWeekStartIndex
+                    }
                 }
             }
 
             // ── Date-format style ───────────────────────────────
             Section("Date format") {
-                Picker("Preferred format", selection: $pendingDateStyleRaw) {
+                Picker("Preferred format", selection: $dateFormatStyle) {
                     ForEach(dateStyles, id: \.self) { fmt in
                         Text(sampleDate(for: fmt)).tag(fmt)
                     }
@@ -105,10 +114,10 @@ struct RegionalSettingsView: View {
                 .pickerStyle(.inline)
             }
 
-            // ── Save & Close ───────────────────────────────────
+            // ── Done ────────────────────────────────────────────
             Section {
                 Button("Done") {
-                    persistChanges()
+                    // dateFormatStyle is auto-saved via @AppStorage
                     dismiss()
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -125,33 +134,30 @@ struct RegionalSettingsView: View {
             Button("Apply change", role: .destructive) {
                 applyWeekStartChange()
             }
-            Button("Cancel", role: .cancel) {          // ← update this closure
-                pendingWeekStartIndex = currentWeekStartIndex   // roll back preview
+            Button("Cancel", role: .cancel) {
+                // Roll back if user aborts
+                pendingWeekStartIndex = currentWeekStartIndex
             }
         }
-
     }
 
     // ═════════════════════════════════════════════════════════════
     // MARK: – Helpers
     // ═════════════════════════════════════════════════════════════
-    private func persistChanges() {
-        // Date-format style
-        if pendingDateStyleRaw != currentDateStyleRaw {
-            UserDefaults.standard.set(pendingDateStyleRaw, forKey: "dateFormatStyle")
-        }
-        // Week-start saved separately in applyWeekStartChange()
-    }
-
-    /// Called only after user confirmed the warning dialog
     private func applyWeekStartChange() {
-        let newIdx = pendingWeekStartIndex          // 0…6
+        let newIdx = pendingWeekStartIndex  // 0…6
 
-        // 1️⃣ legacy single key (legacy code still reads this)
+        // 1️⃣ Legacy single‐value key for backward compatibility
         UserDefaults.standard.set(newIdx, forKey: "weekStartIndex")
 
-        // 2️⃣ append to history + broadcast
+        // 2️⃣ Append to history & notify WeekViewState
         WeekViewState.appendChange(newIndex: newIdx)
+    }
+    
+    private static func defaultDatePattern() -> String {
+        let region = Locale.current.regionCode ?? "US"
+        // U.S. users get MM/dd/yyyy; everyone else dd/MM/yyyy
+        return (region == "US") ? "MM/dd/yyyy" : "dd/MM/yyyy"
     }
 
     private func sampleDate(for pattern: String) -> String {

@@ -3,6 +3,7 @@
 //  Mind Reset
 //
 
+
 import Foundation
 import FirebaseFirestore
 
@@ -62,9 +63,27 @@ struct TodayPriority: Identifiable, Codable, Equatable {
     }
 }
 
-/// Hourly block in the daily schedule.
+/// A time-block in the daily schedule, with explicit start and end.
 struct TimeBlock: Identifiable, Codable {
     var id: UUID
-    var time: String   // “7:00 AM”
-    var task: String
+    var start: Date      // precise block start
+    var end: Date        // precise block end
+    var task: String     // description of the block
+
+    /// Legacy-read computed label such as “7:00 AM”
+    var time: String {
+        TimeBlock.timeFormatter.string(from: start)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, start, end, task
+    }
+
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        return f
+    }()
 }
+
+

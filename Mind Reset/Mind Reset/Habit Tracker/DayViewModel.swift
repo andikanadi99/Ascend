@@ -123,10 +123,13 @@ class DayViewModel: ObservableObject {
 
         // ── 1. Map "label" → original text, tolerate duplicates ─────────
         let taskByLabel = Dictionary(
-            oldSchedule.timeBlocks.map { ($0.time, $0.task) },
-            uniquingKeysWith: { first, _ in first }          // keep first duplicate
+            oldSchedule.timeBlocks.map {
+                // generate the same “h:mm a” label you’ll use below
+                let lbl = DayViewModel.timeFormatter.string(from: $0.start)
+                return (lbl, $0.task)
+            },
+            uniquingKeysWith: { first, _ in first }
         )
-
         // ── 2. Determine bounds and rounding info ───────────────────────
         let wake  = oldSchedule.wakeUpTime
         let sleep = oldSchedule.sleepTime
@@ -147,31 +150,35 @@ class DayViewModel: ObservableObject {
 
         // a) Exact wake-slot *only* if wake time has minutes > 0
         if wakeMinutes != 0 && wake <= sleepCorrected {
-            blocks.append(
-                TimeBlock(id: UUID(),
-                          time: label(wake),
-                          task: taskByLabel[label(wake)] ?? "")
-            )
-        }
+                let slotEnd = cal.date(byAdding: .hour, value: 1, to: wake)!
+                blocks.append(
+                    TimeBlock(id: UUID(),
+                              start: wake,
+                              end:   slotEnd,
+                              task:  taskByLabel[label(wake)] ?? "")
+                )
+            }
 
-        // b) Start cursor at the next full hour (or same hour if minutes == 0)
-        let hourOnly = cal.date(
-            from: cal.dateComponents([.year, .month, .day, .hour], from: wake)
-        )!
-        var cursor = (wakeMinutes == 0)
-            ? hourOnly
-            : cal.date(byAdding: .hour, value: 1, to: hourOnly)!
+            // b) Start cursor at the next full hour (or same hour if minutes == 0)
+            let hourOnly = cal.date(
+                from: cal.dateComponents([.year, .month, .day, .hour], from: wake)
+            )!
+            var cursor = (wakeMinutes == 0)
+                ? hourOnly
+                : cal.date(byAdding: .hour, value: 1, to: hourOnly)!
 
-        // c) March hour-by-hour until sleep
-        while cursor <= sleepCorrected {
-            let lbl = label(cursor)
-            blocks.append(
-                TimeBlock(id: UUID(),
-                          time: lbl,
-                          task: taskByLabel[lbl] ?? "")
-            )
-            cursor = cal.date(byAdding: .hour, value: 1, to: cursor)!
-        }
+            // c) March hour-by-hour until sleep
+            while cursor <= sleepCorrected {
+                let lbl = label(cursor)
+                let slotEnd = cal.date(byAdding: .hour, value: 1, to: cursor)!
+                blocks.append(
+                    TimeBlock(id: UUID(),
+                              start: cursor,
+                              end:   slotEnd,
+                              task:  taskByLabel[lbl] ?? "")
+                )
+                cursor = slotEnd
+            }
 
         // ── 4. Publish and persist ──────────────────────────────────────
         var updated = oldSchedule
@@ -193,7 +200,36 @@ class DayViewModel: ObservableObject {
         updateDaySchedule()
     }
 
+    // ─────────────────────────────────────────────────────────
+    // MARK: – Timeline integration
+    // ─────────────────────────────────────────────────────────
+    /// Formatter for converting a TimelineBlock’s start Date
+    /// into our “HH:mm” labels.
+    private static let timelineFormatter: DateFormatter = {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "HH:mm"
+        return fmt
+    }()
 
+    /// Called by your DayTimelineHost when the user drops a new block.
+    /// Converts its `start` into an “HH:mm” string, appends a new
+    /// TimeBlock, and persists to Firestore.
+    func appendTimelineBlock(_ tb: TimelineBlock) {
+        guard var sched = schedule else { return }
+        sched.timeBlocks.append(
+            TimeBlock(
+                id:    tb.id,
+                start: tb.start,
+                end:   tb.end,
+                task:  ""
+            )
+        )
+        // publish & persist
+        DispatchQueue.main.async {
+            self.schedule = sched
+            self.updateDaySchedule()
+        }
+    }
 
     // MARK: – Reorder priorities
     func movePriorities(indices: IndexSet, to newOffset: Int) {
@@ -205,26 +241,9 @@ class DayViewModel: ObservableObject {
 
     // MARK: — Helpers
     private func generateTimeBlocks(from start: Date, to end: Date) -> [TimeBlock] {
-        var blocks: [TimeBlock] = []
-        let cal = Calendar.current
-
-        // If end ≤ start, assume next day
-        let correctedEnd: Date = {
-            if end <= start {
-                return cal.date(byAdding: .day, value: 1, to: end)!
-            } else {
-                return end
-            }
-        }()
-        
-        var current = start
-        while current <= correctedEnd {
-            let label = DayViewModel.timeFormatter.string(from: current)
-            blocks.append(TimeBlock(id: UUID(), time: label, task: ""))
-            guard let next = cal.date(byAdding: .hour, value: 1, to: current) else { break }
-            current = next
-        }
-        return blocks
+        // We intentionally return an empty array.
+        // All blocks will be created by the user through the timeline UI.
+        return []
     }
 
 
@@ -274,9 +293,10 @@ class DayViewModel: ObservableObject {
             // 1) Deep‐copy timeBlocks:
             let newTimeBlocks: [TimeBlock] = sourceSchedule.timeBlocks.map { oldBlock in
                 TimeBlock(
-                    id: UUID(),               // NEW UUID
-                    time: oldBlock.time,
-                    task: oldBlock.task
+                    id:    UUID(),
+                    start: oldBlock.start,
+                    end:   oldBlock.end,
+                    task:  oldBlock.task
                 )
             }
 

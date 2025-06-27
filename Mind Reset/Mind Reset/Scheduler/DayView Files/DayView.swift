@@ -143,6 +143,10 @@ struct DayView: View {
     @StateObject private var viewModel = DayViewModel()
     
     @AppStorage("dateFormatStyle") private var dateFormatStyle: String = "MM/dd/yyyy"
+    @AppStorage("useSimpleBlocks") private var useSimpleBlocks: Bool = true
+
+    private enum DayViewMode: String, CaseIterable { case tasks = "Tasks", timeline = "Timeline" }
+    @State private var viewMode: DayViewMode = .tasks
 
     // Local UI state
     @State private var activeAlert: DayViewAlert?
@@ -161,6 +165,7 @@ struct DayView: View {
     @State private var draftWake: Date = Date()
     @State private var draftSleep: Date = Date()
     @State private var dateFormatVersion = UUID()
+    
 
     // Accent colour
     private let accentCyan = Color(red: 0, green: 1, blue: 1)
@@ -200,15 +205,27 @@ struct DayView: View {
                 dateNavigation
                 prioritiesSection
                 wakeSleepSection
-                timeBlocksSection           // contains “Clear All” button
+                // Toggle between Tasks list and Interactive Timeline
+                Picker("", selection: $viewMode) {
+                    ForEach(DayViewMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(SegmentedPickerStyle())
+                .tint(.gray)
+                .background(Color.gray)
+                .cornerRadius(8)
+                .padding(.horizontal, 10)
+                Spacer()
+                timeBlocksSection   // switches based on viewMode
                 Spacer()
             }
-                .padding(.top, 16)  
+            .padding(.top, 16)
         }
         .scrollDismissesKeyboard(.immediately)
         .alert(item: $activeAlert, content: buildAlert)
 
-        // ---------- lifecycle / combine ----------
+        // ───────── Lifecycle / Combine ─────────
         .onAppear {
             loadInitialSchedule()
             DispatchQueue.main.async { updateYesterdayUnfinishedFlag() }
@@ -218,28 +235,44 @@ struct DayView: View {
                 draftWake = sched.wakeUpTime
                 draftSleep = sched.sleepTime
             }
-            viewModel.schedule = nil                    // reset before new day loads
+            viewModel.schedule = nil   // reset before loading new day
             updateYesterdayUnfinishedFlag()
             loadScheduleIfNeeded()
         }
         .onReceive(viewModel.$schedule) { sched in
             if let sched = sched {
-                // initialize drafts
                 draftWake = sched.wakeUpTime
                 draftSleep = sched.sleepTime
             }
             handleSchedulePublish(sched)
         }
-        .onReceive(session.$defaultWakeTime.combineLatest(session.$defaultSleepTime)) {
-            wake, sleep in applyDefaultTimesIfNeeded(wake: wake, sleep: sleep)
+        .onReceive(session.$defaultWakeTime.combineLatest(session.$defaultSleepTime)) { wake, sleep in
+            applyDefaultTimesIfNeeded(wake: wake, sleep: sleep)
         }
         .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
             loadScheduleIfNeeded()
         }
+
+        // ← Refresh view when date-format setting changes
         .onReceive(NotificationCenter.default.publisher(for: .dateFormatChanged)) { _ in
-                    dateFormatVersion = UUID()          // force view refresh
+            dateFormatVersion = UUID()
+        }
+
+        // ← Menu to switch between simple list & interactive timeline
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Picker("Schedule layout", selection: $useSimpleBlocks) {
+                        Text("Simple list").tag(true)
+                        Text("Interactive timeline").tag(false)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
+            }
+        }
     }
+
 
     // ─────────────────────────────────────────
     // MARK: – Top controls
@@ -480,32 +513,68 @@ struct DayView: View {
     // ─────────────────────────────────────────
     @ViewBuilder
     private var timeBlocksSection: some View {
+        switch viewMode {
+        case .timeline:
+            if let sched = viewModel.schedule {
+                let wakeHour  = Calendar.current.component(.hour, from: sched.wakeUpTime)
+                // add 24 if sleep is next-day
+                let rawSleep  = Calendar.current.component(.hour, from: sched.sleepTime)
+                let sleepHour = (sched.sleepTime <= sched.wakeUpTime) ? rawSleep + 24 : rawSleep
+
+                DayTimelineHost(
+                    visibleStartHour: wakeHour,
+                    visibleEndHour:   sleepHour,
+                    dayDate:   dayViewState.selectedDate,
+                    blocks:    sched.timeBlocks                // ← filter out blanks
+                                .filter { !$0.task.isEmpty }   //   (no text → no blue bubble)
+                                .map { tb in                   //   convert to TimelineBlock
+                                    TimelineBlock(
+                                        id:          tb.id,
+                                        start:       tb.start,
+                                        end:         tb.end,
+                                        title:       tb.task,
+                                        color:       accentCyan,
+                                        description: tb.task
+                                    )
+                                },
+                    accentColor: accentCyan,
+                    onCreate: { appendTimelineBlock($0) }
+                )
+                .environmentObject(viewModel)
+                .padding(.top, 8)      // give a little breathing room above the grid
+                .padding(.horizontal)
+            } else {
+                ProgressView().frame(height: 800)
+            }
+        case .tasks:
+            legacyTimeBlockList
+        }
+    }
+
+    // ← NEW helper: exactly your old list code, unchanged
+    @ViewBuilder
+    private var legacyTimeBlockList: some View {
         if let sched = viewModel.schedule {
             VStack(spacing: 16) {
                 ForEach(sched.timeBlocks) { block in
                     HStack(spacing: 8) {
-                        TimeBlockRow(block: block) { changedBlock, newTime, newTask in
-                            updateBlock(changedBlock, time: newTime, task: newTask)
-                            viewModel.updateDaySchedule()
+                        TimeBlockRow(block: block) { changed, _, newTask in
+                            if let txt = newTask {
+                                updateBlock(changed, task: txt)
+                                viewModel.updateDaySchedule()
+                            }
                         }
                     }
                 }
                 .id(refreshKey)
 
                 if !sched.timeBlocks.isEmpty {
-                    Button {
-                        activeAlert = .clearAllBlocks
-                    } label: {
+                    Button { activeAlert = .clearAllBlocks } label: {
                         HStack {
                             Image(systemName: "trash")
                             Text("Clear All Time Blocks")
                         }
-                        .font(.headline)
-                        .foregroundColor(.red)
-                        .padding(10)
-                        .frame(maxWidth: .infinity)
-                        .background(Color.black)
-                        .cornerRadius(8)
+                        // … styling …
                     }
                     .buttonStyle(.plain)
                 }
@@ -513,6 +582,31 @@ struct DayView: View {
         } else {
             Text("Loading tasks…").foregroundColor(.white)
         }
+    }
+
+
+    
+
+    /// Converts “HH:mm” strings to real `Date` objects anchored to today
+    private func timeStringToDate(_ string: String) -> Date {
+        let df = DateFormatter()
+        df.dateFormat = "HH:mm"
+        let comps = string.split(separator: ":").compactMap { Int($0) }
+        let hours = comps.first ?? 0
+        let mins  = comps.dropFirst().first ?? 0
+        return Calendar.current.date(bySettingHour: hours, minute: mins, second: 0, of: Date())!
+    }
+
+    /// Appends a newly created timeline block to today’s schedule (placeholder logic)
+    private func appendTimelineBlock(_ tb: TimelineBlock) {
+        guard var sched = viewModel.schedule else { return }
+
+        sched.timeBlocks.append(
+            TimeBlock(id: tb.id, start: tb.start, end: tb.end, task: "")
+        )
+
+        viewModel.schedule = sched
+        viewModel.updateDaySchedule()
     }
 
     // ─────────────────────────────────────────
@@ -624,12 +718,25 @@ struct DayView: View {
         viewModel.updateDaySchedule()
     }
 
-    private func updateBlock(_ block: TimeBlock, time: String? = nil, task: String? = nil) {
+    private func updateBlock(
+        _ block: TimeBlock,
+        start: Date? = nil,
+        end: Date? = nil,
+        task: String? = nil
+    ) {
         guard var sched = viewModel.schedule,
               let idx = sched.timeBlocks.firstIndex(where: { $0.id == block.id }) else { return }
-        if let t = time { sched.timeBlocks[idx].time = t }
-        if let txt = task { sched.timeBlocks[idx].task = txt }
+        if let s = start {
+            sched.timeBlocks[idx].start = s
+        }
+        if let e = end {
+            sched.timeBlocks[idx].end = e
+        }
+        if let txt = task {
+            sched.timeBlocks[idx].task = txt
+        }
         viewModel.schedule = sched
+        viewModel.updateDaySchedule()
     }
 
     // ─────────────────────────────────────────

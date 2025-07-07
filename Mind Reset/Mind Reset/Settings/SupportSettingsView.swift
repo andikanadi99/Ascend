@@ -50,7 +50,7 @@ struct SupportSettingsView: View {
                             .cornerRadius(8)
                             .foregroundColor(.white)
                             .overlay(
-                                Group {
+                                SwiftUI.Group {
                                     if feedbackMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                         Text("Your thoughts…")
                                             .foregroundColor(.white.opacity(0.6))
@@ -85,7 +85,7 @@ struct SupportSettingsView: View {
                             .cornerRadius(8)
                             .foregroundColor(.white)
                             .overlay(
-                                Group {
+                                SwiftUI.Group {
                                     if issueMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                         Text("Describe the issue…")
                                             .foregroundColor(.white.opacity(0.6))

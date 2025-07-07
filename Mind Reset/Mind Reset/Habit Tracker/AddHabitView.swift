@@ -109,7 +109,7 @@ struct AddHabitView: View {
                                 .cornerRadius(8)
                                 .frame(minHeight: 100)
                                 .overlay(
-                                    Group {
+                                    SwiftUI.Group {
                                         if habitDescription.isEmpty {
                                             Text("Enter Habit Description")
                                                 .foregroundColor(.white.opacity(0.8))

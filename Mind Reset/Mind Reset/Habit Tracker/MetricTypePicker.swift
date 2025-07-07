@@ -93,7 +93,7 @@ extension MetricType {
 // MARK: - Preview
 struct MetricTypePicker_Previews: PreviewProvider {
     static var previews: some View {
-        Group {
+        SwiftUI.Group {
             // Preview for a predefined category (e.g. Time Metrics)
             MetricTypePicker(
                 category: .time,

@@ -5,67 +5,69 @@
 //  Created by Andika Yudhatrisna on 6/26/25.
 //
 
-
 import SwiftUI
 
-/// A pop-up editor for creating or editing a time block.
-/// Allows setting title, all-day toggle, start/end, color and description.
+/// A bottom-sheet style editor for adding or editing a timeline block.
+/// Exposes four editable fields: title, time range, colour, description.
 struct BlockEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
-    @State private var title: String
-    @State private var isAllDay: Bool
-    @State private var startDate: Date
-    @State private var endDate: Date
-    @State private var color: Color
-    @State private var description: String
+    /// Two-way binding to the draft block we’re editing.
+    @Binding var draft: TimelineBlock
 
-    /// Called when the user taps "Save" with the updated block.
-    let onSave: (_ id: UUID, _ title: String, _ isAllDay: Bool, _ start: Date, _ end: Date, _ color: Color, _ description: String) -> Void
-    private let blockID: UUID
-
-    init(
-        id: UUID = UUID(),
-        title: String = "",
-        isAllDay: Bool = false,
-        start: Date = Date(),
-        end: Date = Calendar.current.date(byAdding: .hour, value: 1, to: Date()) ?? Date(),
-        color: Color = .blue,
-        description: String = "",
-        onSave: @escaping (_ id: UUID, _ title: String, _ isAllDay: Bool, _ start: Date, _ end: Date, _ color: Color, _ description: String) -> Void
-    ) {
-        self.blockID = id
-        _title = State(initialValue: title)
-        _isAllDay = State(initialValue: isAllDay)
-        _startDate = State(initialValue: start)
-        _endDate = State(initialValue: end)
-        _color = State(initialValue: color)
-        _description = State(initialValue: description)
-        self.onSave = onSave
-    }
+    /// Callback when the user taps **Save**.
+    let onSave: (TimelineBlock) -> Void
 
     var body: some View {
         NavigationView {
             Form {
+                // ───────── 1. Title
                 Section(header: Text("Title")) {
-                    TextField("Enter title", text: $title)
+                    TextField("Enter title",
+                              text: Binding(
+                                  get: { draft.title ?? "" },
+                                  set: { draft.title = $0 }
+                              ))
                 }
-                Section {
-                    Toggle("All-day", isOn: $isAllDay)
+
+                // ───────── 2. Time range
+                Section(header: Text("Time")) {
+                    DatePicker("Start",
+                               selection: Binding(
+                                   get: { draft.start },
+                                   set: { draft.start = $0 }
+                               ),
+                               displayedComponents: .hourAndMinute)
+
+                    DatePicker("End",
+                               selection: Binding(
+                                   get: { draft.end },
+                                   set: { draft.end = $0 }
+                               ),
+                               displayedComponents: .hourAndMinute)
                 }
-                Section(header: Text("Start & End")) {
-                    DatePicker("Start", selection: $startDate, displayedComponents: isAllDay ? .date : [.date, .hourAndMinute])
-                    DatePicker("End",   selection: $endDate,   displayedComponents: isAllDay ? .date : [.date, .hourAndMinute])
-                }
+
+                // ───────── 3. Colour
                 Section(header: Text("Color")) {
-                    ColorPicker("Block color", selection: $color, supportsOpacity: false)
+                    ColorPicker("Block color",
+                                selection: Binding(
+                                    get: { draft.color.swiftUIColor },
+                                    set: { draft.color = RGBAColor(color: $0) }
+                                ),
+                                supportsOpacity: false)
                 }
+
+                // ───────── 4. Description
                 Section(header: Text("Description")) {
-                    TextEditor(text: $description)
-                        .frame(minHeight: 80)
+                    TextEditor(text: Binding(
+                        get: { draft.description ?? "" },
+                        set: { draft.description = $0 }
+                    ))
+                    .frame(minHeight: 80)
                 }
             }
-            .navigationTitle(blockID != nil ? "Edit Block" : "New Block")
+            .navigationTitle(draft.title?.isEmpty ?? true ? "New Block"
+                                                          : "Edit Block")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -73,12 +75,35 @@ struct BlockEditorView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        onSave(blockID, title, isAllDay, startDate, endDate, color, description)
+                        onSave(draft)
                         dismiss()
                     }
-                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || endDate < startDate)
+                    .disabled(!draft.isValid ||
+                              (draft.title?.trimmingCharacters(in: .whitespaces)
+                                            .isEmpty ?? true))
                 }
             }
         }
     }
 }
+
+#if DEBUG
+struct BlockEditorView_Previews: PreviewProvider {
+    static var previews: some View {
+        BlockEditorView(
+            draft: .constant(
+                TimelineBlock(
+                    start: Date(),
+                    end: Calendar.current.date(byAdding: .hour, value: 1, to: Date())!,
+                    title: "",
+                    description: "",
+                    color: .accentColor
+                )
+            ),
+            onSave: { _ in }
+        )
+    }
+}
+#endif
+
+

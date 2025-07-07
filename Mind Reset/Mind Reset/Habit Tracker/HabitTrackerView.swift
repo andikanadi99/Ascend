@@ -73,7 +73,7 @@ struct HabitTrackerView: View {
                 ZStack {
                     backgroundBlack.ignoresSafeArea()
 
-                    Group {
+                    SwiftUI.Group {
                         if isLoaded {
                             VStack(alignment: .leading, spacing: 16) {
                                 Text(dailyGreeting)

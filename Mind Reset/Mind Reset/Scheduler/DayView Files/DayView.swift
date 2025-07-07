@@ -169,6 +169,7 @@ struct DayView: View {
 
     // Accent colour
     private let accentCyan = Color(red: 0, green: 1, blue: 1)
+    let darkCyan = Color(red: 0, green: 0.8, blue: 0.8)
 
     // Helper binding to today’s priorities array
     private var prioritiesBinding: Binding<[TodayPriority]>? {
@@ -199,77 +200,76 @@ struct DayView: View {
     // MARK: – Main view hierarchy
     // ─────────────────────────────────────────
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                copyButton
-                dateNavigation
-                prioritiesSection
-                wakeSleepSection
-                // Toggle between Tasks list and Interactive Timeline
-                Picker("", selection: $viewMode) {
-                    ForEach(DayViewMode.allCases, id: \.self) { mode in
-                        Text(mode.rawValue).tag(mode)
+        ZStack {
+            // ────────────────── MAIN CONTENT ──────────────────
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    copyButton
+                    dateNavigation
+                    prioritiesSection
+                    wakeSleepSection
+
+                    Picker("", selection: $viewMode) {
+                        ForEach(DayViewMode.allCases, id: \.self) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .tint(.gray)
+                    .background(Color.gray)
+                    .cornerRadius(8)
+                    .padding(.horizontal, 10)
+
+                    Spacer()
+                    timeBlocksSection
+                    Spacer()
                 }
-                .pickerStyle(SegmentedPickerStyle())
-                .tint(.gray)
-                .background(Color.gray)
-                .cornerRadius(8)
-                .padding(.horizontal, 10)
-                Spacer()
-                timeBlocksSection   // switches based on viewMode
-                Spacer()
+                .padding(.top, 16)
             }
-            .padding(.top, 16)
-        }
-        .scrollDismissesKeyboard(.immediately)
-        .alert(item: $activeAlert, content: buildAlert)
-
-        // ───────── Lifecycle / Combine ─────────
-        .onAppear {
-            loadInitialSchedule()
-            DispatchQueue.main.async { updateYesterdayUnfinishedFlag() }
-        }
-        .onChange(of: dayViewState.selectedDate) { _ in
-            if let sched = viewModel.schedule {
-                draftWake = sched.wakeUpTime
-                draftSleep = sched.sleepTime
+            .scrollDismissesKeyboard(.immediately)
+            .alert(item: $activeAlert, content: buildAlert)
+            .onAppear {
+                loadInitialSchedule()
+                DispatchQueue.main.async { updateYesterdayUnfinishedFlag() }
             }
-            viewModel.schedule = nil   // reset before loading new day
-            updateYesterdayUnfinishedFlag()
-            loadScheduleIfNeeded()
-        }
-        .onReceive(viewModel.$schedule) { sched in
-            if let sched = sched {
-                draftWake = sched.wakeUpTime
-                draftSleep = sched.sleepTime
+            .onChange(of: dayViewState.selectedDate) { _ in
+                if let s = viewModel.schedule {
+                    draftWake  = s.wakeUpTime
+                    draftSleep = s.sleepTime
+                }
+                viewModel.schedule = nil
+                updateYesterdayUnfinishedFlag()
+                loadScheduleIfNeeded()
             }
-            handleSchedulePublish(sched)
-        }
-        .onReceive(session.$defaultWakeTime.combineLatest(session.$defaultSleepTime)) { wake, sleep in
-            applyDefaultTimesIfNeeded(wake: wake, sleep: sleep)
-        }
-        .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
-            loadScheduleIfNeeded()
-        }
-
-        // ← Refresh view when date-format setting changes
-        .onReceive(NotificationCenter.default.publisher(for: .dateFormatChanged)) { _ in
-            dateFormatVersion = UUID()
-        }
-
-        // ← Menu to switch between simple list & interactive timeline
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Picker("Schedule layout", selection: $useSimpleBlocks) {
-                        Text("Simple list").tag(true)
-                        Text("Interactive timeline").tag(false)
+            .onReceive(viewModel.$schedule) { sched in
+                if let s = sched {
+                    draftWake  = s.wakeUpTime
+                    draftSleep = s.sleepTime
+                }
+                handleSchedulePublish(sched)
+            }
+            .onReceive(
+                session.$defaultWakeTime.combineLatest(session.$defaultSleepTime)
+            ) { w, s in
+                applyDefaultTimesIfNeeded(wake: w, sleep: s)
+            }
+            .onReceive(
+                Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+            ) { _ in loadScheduleIfNeeded() }
+            .onReceive(
+                NotificationCenter.default.publisher(for: .dateFormatChanged)
+            ) { _ in dateFormatVersion = UUID() }
+            .navigationBarItems(
+                trailing:
+                    Menu {
+                        Picker("Schedule layout", selection: $useSimpleBlocks) {
+                            Text("Simple list").tag(true)
+                            Text("Interactive timeline").tag(false)
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                     }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-            }
+            )
         }
     }
 
@@ -507,7 +507,14 @@ struct DayView: View {
         }
     }
 
-
+    // Helper in DayView to remove a block:
+    private func deleteTimelineBlock(_ blk: TimelineBlock) {
+        guard var sched = viewModel.schedule else { return }
+        sched.timeBlocks.removeAll { $0.id == blk.id }
+        viewModel.schedule = sched
+        viewModel.updateDaySchedule()
+    }
+    
     // ─────────────────────────────────────────
     // MARK: – Time blocks + “Clear All” button
     // ─────────────────────────────────────────
@@ -516,40 +523,41 @@ struct DayView: View {
         switch viewMode {
         case .timeline:
             if let sched = viewModel.schedule {
-                let wakeHour  = Calendar.current.component(.hour, from: sched.wakeUpTime)
-                // add 24 if sleep is next-day
-                let rawSleep  = Calendar.current.component(.hour, from: sched.sleepTime)
-                let sleepHour = (sched.sleepTime <= sched.wakeUpTime) ? rawSleep + 24 : rawSleep
-
                 DayTimelineHost(
-                    visibleStartHour: wakeHour,
-                    visibleEndHour:   sleepHour,
-                    dayDate:   dayViewState.selectedDate,
-                    blocks:    sched.timeBlocks                // ← filter out blanks
-                                .filter { !$0.task.isEmpty }   //   (no text → no blue bubble)
-                                .map { tb in                   //   convert to TimelineBlock
-                                    TimelineBlock(
-                                        id:          tb.id,
-                                        start:       tb.start,
-                                        end:         tb.end,
-                                        title:       tb.task,
-                                        color:       accentCyan,
-                                        description: tb.task
-                                    )
-                                },
-                    accentColor: accentCyan,
-                    onCreate: { appendTimelineBlock($0) }
+                    dayDate:          dayViewState.selectedDate,
+                    visibleStartHour: Calendar.current.component(.hour, from: sched.wakeUpTime),
+                    visibleEndHour:   {
+                        let raw = Calendar.current.component(.hour, from: sched.sleepTime)
+                        return sched.sleepTime <= sched.wakeUpTime ? raw + 24 : raw
+                    }(),
+                    blocks: sched.timeBlocks
+                             .filter { !$0.task.isEmpty }
+                             .map { tb in
+                                 TimelineBlock(
+                                     id:          tb.id,
+                                     start:       tb.start,
+                                     end:         tb.end,
+                                     title:       tb.task,
+                                     description: tb.task,
+                                     color:       darkCyan
+                                 )
+                             },
+                    accentColor:   RGBAColor(color: darkCyan),
+                    onDraftSaved:     { newBlock in appendTimelineBlock(newBlock) },
+                    onDeleteBlock:    { doomed in deleteTimelineBlock(doomed) }
                 )
                 .environmentObject(viewModel)
-                .padding(.top, 8)      // give a little breathing room above the grid
-                .padding(.horizontal)
+                .padding(.top, 8)
             } else {
-                ProgressView().frame(height: 800)
+                ProgressView()
+                    .frame(height: 800)
             }
+
         case .tasks:
             legacyTimeBlockList
         }
     }
+
 
     // ← NEW helper: exactly your old list code, unchanged
     @ViewBuilder
@@ -602,12 +610,18 @@ struct DayView: View {
         guard var sched = viewModel.schedule else { return }
 
         sched.timeBlocks.append(
-            TimeBlock(id: tb.id, start: tb.start, end: tb.end, task: "")
+            TimeBlock(
+                id:    tb.id,
+                start: tb.start,
+                end:   tb.end,
+                task:  tb.title ?? ""     // ← preserve the entered title
+            )
         )
 
         viewModel.schedule = sched
         viewModel.updateDaySchedule()
     }
+
 
     // ─────────────────────────────────────────
     // MARK: – Alerts

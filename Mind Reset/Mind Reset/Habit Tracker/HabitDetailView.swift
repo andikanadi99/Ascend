@@ -277,7 +277,7 @@ struct HabitDetailView: View {
                         .cornerRadius(8)
                         .frame(minHeight: 50)
                         .overlay(
-                            Group {
+                            SwiftUI.Group {
                                 if editableDescription.isEmpty {
                                     Text("Habit Description")
                                         .foregroundColor(.white.opacity(0.5))
@@ -308,7 +308,7 @@ struct HabitDetailView: View {
                           .padding(.horizontal, 10)
                     }
 
-                    Group {
+                    SwiftUI.Group {
                         switch selectedTabIndex {
                         case 0: progressTab
                         case 1: focusTab

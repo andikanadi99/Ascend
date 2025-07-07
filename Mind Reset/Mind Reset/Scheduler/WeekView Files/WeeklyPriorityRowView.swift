@@ -89,15 +89,20 @@ struct WeeklyPriorityRowView: View {
                     onToggle()
                     onCommit()
                 } label: {
-                    Group {
-                        if isCompleted { Image(systemName: "checkmark.circle.fill") }
-                        else if isPastWeek { Image(systemName: "xmark.circle.fill") }
-                        else { Image(systemName: "circle") }
-                    }
-                    .font(.title2)
-                    .foregroundColor(
-                        isCompleted ? accentCyan : (isPastWeek ? .red : .gray)
-                    )
+                    SwiftUI.Group {
+                               if isCompleted {
+                                   Image(systemName: "checkmark.circle.fill")
+                               } else if isPastWeek {
+                                   Image(systemName: "xmark.circle.fill")
+                               } else {
+                                   Image(systemName: "circle")
+                               }
+                           }
+                           .font(.title2)
+                           .foregroundColor(
+                               isCompleted ? accentCyan
+                                           : (isPastWeek ? .red : .gray)
+                           )
                 }
                 .buttonStyle(.borderless)
                 .padding(.trailing, 8)

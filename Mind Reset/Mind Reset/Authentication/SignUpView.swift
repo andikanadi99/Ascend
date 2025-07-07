@@ -107,18 +107,22 @@ struct SignUpView: View {
                                placeholder: String,
                                show: Binding<Bool>) -> some View {
         ZStack(alignment: .trailing) {
-            Group {
+            // 1) Use SwiftUI.Group so we get the view-builder, not your model type alias
+            SwiftUI.Group {
                 if show.wrappedValue {
-                    TextField("", text: binding,
+                    TextField("",
+                              text: binding,
                               prompt: Text(placeholder)
-                                .foregroundColor(.white.opacity(0.8)))
+                                        .foregroundColor(SwiftUI.Color.white.opacity(0.8)))
+                        .foregroundColor(SwiftUI.Color.white)    // set text color
                 } else {
-                    SecureField("", text: binding,
+                    SecureField("",
+                                text: binding,
                                 prompt: Text(placeholder)
-                                  .foregroundColor(.white.opacity(0.8)))
+                                          .foregroundColor(SwiftUI.Color.white.opacity(0.8)))
+                        .foregroundColor(SwiftUI.Color.white)
                 }
             }
-            .foregroundColor(.white)
             .padding()
             .background(fieldBG)
             .cornerRadius(8)
@@ -131,6 +135,7 @@ struct SignUpView: View {
                     .padding(.trailing, 15)
             }
         }
+
         .padding(.horizontal)
     }
 

@@ -188,19 +188,21 @@ private struct PasswordFieldWithToggle: View {
 
     var body: some View {
         HStack {
-            Group {
+            // qualify Group so we get SwiftUI’s, not TimelineOverlapLayout.Group
+            SwiftUI.Group {
                 if reveal {
                     TextField(title, text: $text)
                         .textContentType(.password)
                         .autocapitalization(.none)
+                        .foregroundColor(Color.white)   // qualify Color for clarity
                 } else {
                     SecureField(title, text: $text)
                         .textContentType(.password)
+                        .foregroundColor(Color.white)
                 }
             }
-            .foregroundColor(.white)
 
-            Button { reveal.toggle() } label: {
+            Button(action: { reveal.toggle() }) {
                 Image(systemName: reveal ? "eye.slash.fill" : "eye.fill")
                     .foregroundColor(.gray)
             }

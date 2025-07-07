@@ -67,7 +67,7 @@ struct WeekDayPriorityRowView: View {
                     onToggle()
                     onCommit()
                 } label: {
-                    Group {
+                    SwiftUI.Group {
                         if isCompleted { Image(systemName: "checkmark.circle.fill") }
                         else if isPast  { Image(systemName: "xmark.circle.fill") }
                         else            { Image(systemName: "circle") }

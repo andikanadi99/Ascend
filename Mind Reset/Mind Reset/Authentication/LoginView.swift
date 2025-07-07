@@ -112,7 +112,7 @@ struct LoginView: View {
 
                 // Password
                 ZStack(alignment: .trailing) {
-                    Group {
+                    SwiftUI.Group {
                         if showPassword {
                             TextField("Enter Your Password", text: $password)
                         } else {

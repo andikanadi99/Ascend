@@ -12,7 +12,7 @@ struct ContentView: View {
 
     var body: some View {
         NavigationView {
-            Group {
+            SwiftUI.Group {
                 if session.current_user != nil {
                     MainTabView()
                 } else {

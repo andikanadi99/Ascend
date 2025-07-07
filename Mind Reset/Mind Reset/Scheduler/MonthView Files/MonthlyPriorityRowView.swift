@@ -62,7 +62,7 @@ struct MonthlyPriorityRowView: View {
                         onToggle()
                         onCommit()
                     }) {
-                        Group {
+                        SwiftUI.Group {
                             if isCompleted {
                                 Image(systemName: "checkmark.circle.fill")
                             } else if isPastMonth {

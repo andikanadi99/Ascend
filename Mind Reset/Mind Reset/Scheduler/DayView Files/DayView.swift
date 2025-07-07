@@ -21,114 +21,21 @@ enum DayViewAlert: Identifiable {
     case confirmModifyPast(TodayPriority)
     case confirmDeletePast(TodayPriority)
     case confirmImport
-    case clear(TimeBlock)          // clear one block
-    case clearAllBlocks            // clear every block in the day
+    case clearTimeline
     case confirmSchedule(Date, Date) // confirm new wake/sleep
 
     var id: String {
         switch self {
-        case .copy:                       return "copy"
-        case .delete(let p):              return "delete-\(p.id)"
-        case .confirmModifyPast(let p):   return "confirmPast-\(p.id)"
-        case .confirmDeletePast(let p):   return "confirmDeletePast-\(p.id)"
-        case .confirmImport:              return "confirmImport"
-        case .clear(let b):               return "clear-\(b.id)"
-        case .clearAllBlocks:             return "clearAllBlocks"
-        case .confirmSchedule:            return "confirmSchedule"
+        case .copy:              return "copy"
+        case .clearTimeline:     return "clearTimeline"      // ← just a String
+        case .delete(let p):     return "delete-\(p.id)"
+        case .confirmModifyPast(let p): return "confirmPast-\(p.id)"
+        case .confirmDeletePast(let p): return "confirmDeletePast-\(p.id)"
+        case .confirmImport:     return "confirmImport"
+        case .confirmSchedule:   return "confirmSchedule"
         }
     }
-}
 
-// ───────────────────────────────────────────────
-// MARK: - Time-block row
-// ───────────────────────────────────────────────
-struct TimeBlockRow: View {
-    let block: TimeBlock
-    let onCommit: (_ block: TimeBlock, _ newTime: String?, _ newTask: String?) -> Void
-
-    @State private var localTime: String
-    @State private var localTask: String
-    @FocusState private var isThisBlockFocused: Bool
-
-    // Tracks the dynamic height of the task editor
-    @State private var measuredTaskHeight: CGFloat = 0
-    
-
-
-    init(
-        block: TimeBlock,
-        onCommit: @escaping (_ block: TimeBlock, _ newTime: String?, _ newTask: String?) -> Void
-    ) {
-        self.block = block
-        self.onCommit = onCommit
-        _localTime  = State(initialValue: block.time)
-        _localTask  = State(initialValue: block.task)
-    }
-
-    var body: some View {
-        HStack(spacing: 8) {
-
-            // ——— Time field ———
-            TextField("Time", text: $localTime, onCommit: {
-                onCommit(block, localTime, nil)
-            })
-            .textFieldStyle(.plain)
-            .focused($isThisBlockFocused, equals: false)
-            .font(.caption)
-            .foregroundColor(.white)
-            .frame(width: 80)
-            .padding(8)
-            .background(Color.black.opacity(0.5))
-            .cornerRadius(8)
-
-            // ——— Auto-expanding task field ———
-            let minHeight: CGFloat = 50
-            let padV:      CGFloat = 8
-            let padH:      CGFloat = 8
-            let finalHeight = max(measuredTaskHeight + padV * 2, minHeight)
-
-            ZStack(alignment: .topLeading) {
-
-                // Invisible twin → measures intrinsic height
-                Text(localTask)
-                    .font(.caption)
-                    .padding(.vertical, padV)
-                    .padding(.horizontal, padH)
-                    .opacity(0)
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear.preference(
-                                key: TextHeightPreferenceKey.self,
-                                value: geo.size.height
-                            )
-                        }
-                    )
-
-                // Actual editable field
-                TextEditor(text: $localTask)
-                    .scrollContentBackground(.hidden)
-                    .foregroundColor(.white) 
-                    .focused($isThisBlockFocused)
-                    .font(.caption)
-                    .foregroundColor(.white)
-                    .scrollContentBackground(.hidden)
-                    .padding(.vertical, padV)
-                    .padding(.horizontal, padH)
-                    .background(Color.black.opacity(0.5))
-                    .cornerRadius(8)
-                    .frame(height: finalHeight)          // 💡 dynamic height
-                    .onChange(of: isThisBlockFocused) { foc in
-                        if !foc { onCommit(block, nil, localTask) }
-                    }
-            }
-            .onPreferenceChange(TextHeightPreferenceKey.self) { measuredTaskHeight = $0 }
-
-            Spacer()
-        }
-        .padding(8)
-        .background(Color.gray.opacity(0.3))
-        .cornerRadius(8)
-    }
 }
 
 
@@ -144,9 +51,6 @@ struct DayView: View {
     
     @AppStorage("dateFormatStyle") private var dateFormatStyle: String = "MM/dd/yyyy"
     @AppStorage("useSimpleBlocks") private var useSimpleBlocks: Bool = true
-
-    private enum DayViewMode: String, CaseIterable { case tasks = "Tasks", timeline = "Timeline" }
-    @State private var viewMode: DayViewMode = .tasks
 
     // Local UI state
     @State private var activeAlert: DayViewAlert?
@@ -173,14 +77,15 @@ struct DayView: View {
 
     // Helper binding to today’s priorities array
     private var prioritiesBinding: Binding<[TodayPriority]>? {
-        guard let sched = viewModel.schedule else { return nil }
+        guard let sched = viewModel.scheduleMeta else { return nil }
         return Binding(
             get:  { sched.priorities },
             set: { arr in
                 var tmp = sched
                 tmp.priorities = arr
-                viewModel.schedule = tmp
-            }
+                viewModel.scheduleMeta = tmp
+                viewModel.pushMeta()
+              }
         )
     }
 
@@ -201,75 +106,82 @@ struct DayView: View {
     // ─────────────────────────────────────────
     var body: some View {
         ZStack {
-            // ────────────────── MAIN CONTENT ──────────────────
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 16) {
-                    copyButton
-                    dateNavigation
-                    prioritiesSection
-                    wakeSleepSection
-
-                    Picker("", selection: $viewMode) {
-                        ForEach(DayViewMode.allCases, id: \.self) { mode in
-                            Text(mode.rawValue).tag(mode)
-                        }
+            if viewModel.isLoadingDay {
+                ProgressView("Loading…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(.systemBackground).opacity(0.8))
+            } else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        dateNavigation
+                        prioritiesSection
+                        wakeSleepSection
+                        Spacer()
+                        copyBar
+                        timeBlocksSection
+                        Spacer()
                     }
-                    .pickerStyle(.segmented)
-                    .tint(.gray)
-                    .background(Color.gray)
-                    .cornerRadius(8)
-                    .padding(.horizontal, 10)
-
-                    Spacer()
-                    timeBlocksSection
-                    Spacer()
+                    .padding(.top, 16)
                 }
-                .padding(.top, 16)
-            }
-            .scrollDismissesKeyboard(.immediately)
-            .alert(item: $activeAlert, content: buildAlert)
-            .onAppear {
-                loadInitialSchedule()
-                DispatchQueue.main.async { updateYesterdayUnfinishedFlag() }
-            }
-            .onChange(of: dayViewState.selectedDate) { _ in
-                if let s = viewModel.schedule {
-                    draftWake  = s.wakeUpTime
-                    draftSleep = s.sleepTime
+                .scrollDismissesKeyboard(.immediately)
+                .alert(item: $activeAlert, content: buildAlert)
+                .onAppear {
+                    loadInitialSchedule()
+                    DispatchQueue.main.async { updateYesterdayUnfinishedFlag() }
                 }
-                viewModel.schedule = nil
-                updateYesterdayUnfinishedFlag()
-                loadScheduleIfNeeded()
-            }
-            .onReceive(viewModel.$schedule) { sched in
-                if let s = sched {
-                    draftWake  = s.wakeUpTime
-                    draftSleep = s.sleepTime
-                }
-                handleSchedulePublish(sched)
-            }
-            .onReceive(
-                session.$defaultWakeTime.combineLatest(session.$defaultSleepTime)
-            ) { w, s in
-                applyDefaultTimesIfNeeded(wake: w, sleep: s)
-            }
-            .onReceive(
-                Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
-            ) { _ in loadScheduleIfNeeded() }
-            .onReceive(
-                NotificationCenter.default.publisher(for: .dateFormatChanged)
-            ) { _ in dateFormatVersion = UUID() }
-            .navigationBarItems(
-                trailing:
-                    Menu {
-                        Picker("Schedule layout", selection: $useSimpleBlocks) {
-                            Text("Simple list").tag(true)
-                            Text("Interactive timeline").tag(false)
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
+                .onChange(of: dayViewState.selectedDate) { _ in
+                    if let s = viewModel.scheduleMeta {
+                        draftWake  = s.wakeUpTime
+                        draftSleep = s.sleepTime
                     }
-            )
+                    updateYesterdayUnfinishedFlag()
+                    if let uid = session.userModel?.id {
+                        viewModel.loadDay(for: dayViewState.selectedDate, userId: uid)
+                    }
+                }
+                .onReceive(viewModel.$scheduleMeta) { sched in
+                    if let s = sched {
+                        draftWake  = s.wakeUpTime
+                        draftSleep = s.sleepTime
+                    }
+                }
+                .onReceive(
+                    session.$defaultWakeTime.combineLatest(session.$defaultSleepTime)
+                ) { w, s in
+                    applyDefaultTimesIfNeeded(wake: w, sleep: s)
+                }
+                .onReceive(
+                    Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+                ) { _ in loadScheduleIfNeeded() }
+                .onReceive(
+                    NotificationCenter.default.publisher(for: .dateFormatChanged)
+                ) { _ in dateFormatVersion = UUID() }
+                .navigationBarItems(
+                    trailing:
+                        Menu {
+                            Picker("Schedule layout", selection: $useSimpleBlocks) {
+                                Text("Simple list").tag(true)
+                                Text("Interactive timeline").tag(false)
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                )
+            }
+        }
+    }
+    
+    private func clearTodayTimeline() {
+        guard let uid = session.userModel?.id else { return }
+        viewModel.deleteAllBlocks(
+          for: dayViewState.selectedDate,
+          userId: uid
+        ) {
+          // reload to pick up empty state
+          viewModel.loadDay(
+            for: dayViewState.selectedDate,
+            userId: uid
+          )
         }
     }
 
@@ -277,15 +189,24 @@ struct DayView: View {
     // ─────────────────────────────────────────
     // MARK: – Top controls
     // ─────────────────────────────────────────
-    private var copyButton: some View {
-        HStack {
+    private var copyBar: some View {
+        HStack(spacing: 12) {
             Spacer()
-            Button("Copy Previous Day") { activeAlert = .copy }
-                .font(.headline)
-                .foregroundColor(accentCyan)
-                .padding(.horizontal, 8)
-                .background(Color.black)
-                .cornerRadius(8)
+
+            Button("Copy Yesterday") {
+                activeAlert = .copy
+            }
+            .font(.headline)
+            .foregroundColor(accentCyan)
+            .padding(.horizontal, 8)
+            .background(Color.black)
+            .cornerRadius(8)
+
+            Button("Clear Today") {
+                activeAlert = .clearTimeline
+            }
+            .foregroundColor(.red)
+
             Spacer()
         }
     }
@@ -358,7 +279,7 @@ struct DayView: View {
                                         if past {
                                             activeAlert = .confirmModifyPast(priority)
                                         } else {
-                                            viewModel.updateDaySchedule()
+                                            viewModel.pushMeta()
                                         }
                                     },
                                     isPast: past
@@ -380,7 +301,7 @@ struct DayView: View {
                             }
                             .onMove { idx, new in
                                 binding.wrappedValue.move(fromOffsets: idx, toOffset: new)
-                                viewModel.updateDaySchedule()
+                                viewModel.pushMeta()
                             }
                         }
                     }
@@ -457,7 +378,7 @@ struct DayView: View {
     // ─────────────────────────────────────────
     @ViewBuilder
     private var wakeSleepSection: some View {
-        if let sched = viewModel.schedule {
+        if let sched = viewModel.scheduleMeta {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Wake & Sleep Times")
                     .font(.headline)
@@ -506,150 +427,74 @@ struct DayView: View {
             Text("Loading times…").foregroundColor(.white)
         }
     }
-
-    // Helper in DayView to remove a block:
-    private func deleteTimelineBlock(_ blk: TimelineBlock) {
-        guard var sched = viewModel.schedule else { return }
-        sched.timeBlocks.removeAll { $0.id == blk.id }
-        viewModel.schedule = sched
-        viewModel.updateDaySchedule()
-    }
     
     // ─────────────────────────────────────────
     // MARK: – Time blocks + “Clear All” button
     // ─────────────────────────────────────────
     @ViewBuilder
     private var timeBlocksSection: some View {
-        switch viewMode {
-        case .timeline:
-            if let sched = viewModel.schedule {
-                DayTimelineHost(
-                    dayDate:          dayViewState.selectedDate,
-                    visibleStartHour: Calendar.current.component(.hour, from: sched.wakeUpTime),
-                    visibleEndHour:   {
-                        let raw = Calendar.current.component(.hour, from: sched.sleepTime)
-                        return sched.sleepTime <= sched.wakeUpTime ? raw + 24 : raw
-                    }(),
-                    blocks: sched.timeBlocks
-                             .filter { !$0.task.isEmpty }
-                             .map { tb in
-                                 TimelineBlock(
-                                     id:          tb.id,
-                                     start:       tb.start,
-                                     end:         tb.end,
-                                     title:       tb.task,
-                                     description: tb.task,
-                                     color:       darkCyan
-                                 )
-                             },
-                    accentColor:   RGBAColor(color: darkCyan),
-                    onDraftSaved:     { newBlock in appendTimelineBlock(newBlock) },
-                    onDeleteBlock:    { doomed in deleteTimelineBlock(doomed) }
-                )
-                .environmentObject(viewModel)
-                .padding(.top, 8)
-            } else {
-                ProgressView()
-                    .frame(height: 800)
-            }
-
-        case .tasks:
-            legacyTimeBlockList
-        }
-    }
-
-
-    // ← NEW helper: exactly your old list code, unchanged
-    @ViewBuilder
-    private var legacyTimeBlockList: some View {
-        if let sched = viewModel.schedule {
-            VStack(spacing: 16) {
-                ForEach(sched.timeBlocks) { block in
-                    HStack(spacing: 8) {
-                        TimeBlockRow(block: block) { changed, _, newTask in
-                            if let txt = newTask {
-                                updateBlock(changed, task: txt)
-                                viewModel.updateDaySchedule()
-                            }
-                        }
-                    }
-                }
-                .id(refreshKey)
-
-                if !sched.timeBlocks.isEmpty {
-                    Button { activeAlert = .clearAllBlocks } label: {
-                        HStack {
-                            Image(systemName: "trash")
-                            Text("Clear All Time Blocks")
-                        }
-                        // … styling …
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        } else {
-            Text("Loading tasks…").foregroundColor(.white)
-        }
-    }
-
-
-    
-
-    /// Converts “HH:mm” strings to real `Date` objects anchored to today
-    private func timeStringToDate(_ string: String) -> Date {
-        let df = DateFormatter()
-        df.dateFormat = "HH:mm"
-        let comps = string.split(separator: ":").compactMap { Int($0) }
-        let hours = comps.first ?? 0
-        let mins  = comps.dropFirst().first ?? 0
-        return Calendar.current.date(bySettingHour: hours, minute: mins, second: 0, of: Date())!
-    }
-
-    /// Appends a newly created timeline block to today’s schedule (placeholder logic)
-    private func appendTimelineBlock(_ tb: TimelineBlock) {
-        guard var sched = viewModel.schedule else { return }
-
-        sched.timeBlocks.append(
-            TimeBlock(
-                id:    tb.id,
-                start: tb.start,
-                end:   tb.end,
-                task:  tb.title ?? ""     // ← preserve the entered title
+        // Always show the interactive timeline using the refactored VM
+        if let sched = viewModel.scheduleMeta {
+            DayTimelineHost(
+                dayDate:          dayViewState.selectedDate,
+                visibleStartHour: Calendar.current.component(.hour, from: sched.wakeUpTime),
+                visibleEndHour:   {
+                    let raw = Calendar.current.component(.hour, from: sched.sleepTime)
+                    return sched.sleepTime <= sched.wakeUpTime ? raw + 24 : raw
+                }(),
+                blocks:           viewModel.blocks,
+                accentColor:      RGBAColor(color: darkCyan),
+                onDraftSaved:     { blk in viewModel.upsertBlock(blk) },
+                onDeleteBlock:    { blk in viewModel.deleteBlock(id: blk.id) }
             )
-        )
-
-        viewModel.schedule = sched
-        viewModel.updateDaySchedule()
+            .environmentObject(viewModel)
+            .padding(.top, 8)
+        } else {
+            ProgressView()
+                .frame(height: 800)
+        }
     }
-
+    
+    private func copyPreviousDayTimeline() {
+        guard let uid = session.userModel?.id else { return }
+        // 1) merge blocks, then…
+        viewModel.copyPreviousDayBlocks(
+          to: dayViewState.selectedDate,
+          userId: uid
+        ) { addedCount in
+          // 2) once done, re-load to pick up the new docs
+          viewModel.loadDay(
+            for: dayViewState.selectedDate,
+            userId: uid
+          )
+          print("Copied \(addedCount) new blocks from yesterday")
+        }
+    }
 
     // ─────────────────────────────────────────
     // MARK: – Alerts
     // ─────────────────────────────────────────
     private func buildAlert(for alert: DayViewAlert) -> Alert {
         switch alert {
-        case .clearAllBlocks:
-            return Alert(
-                title: Text("Reset All Time Blocks?"),
-                message: Text("This will delete every task in today’s schedule."),
-                primaryButton: .destructive(Text("Clear All")) { clearAllBlocks() },
-                secondaryButton: .cancel()
-            )
 
-        case .clear(let block):
-            return Alert(
-                title: Text("Clear this time block?"),
-                message: Text("Remove “\(block.time)”’s text?"),
-                primaryButton: .destructive(Text("Clear")) { clearBlock(block) },
-                secondaryButton: .cancel()
-            )
-
+        case .clearTimeline:
+                return Alert(
+                  title: Text("Clear Today’s Timeline?"),
+                  message: Text("This removes every block for the selected day."),
+                  primaryButton: .destructive(Text("Clear")) {
+                    clearTodayTimeline()     // ← now correctly scoped
+                  },
+                  secondaryButton: .cancel()
+                )
+            
         case .copy:
             return Alert(
-                title: Text("Confirm Copy"),
-                message: Text("Copy previous day's schedule?"),
-                primaryButton: .destructive(Text("Copy")) { copyPreviousDay() },
-                secondaryButton: .cancel()
+              title: Text("Confirm Copy"),
+              message: Text("Copy previous day's **timeline** only?"),
+              primaryButton: .destructive(Text("Copy")) {
+                  copyPreviousDayTimeline()
+              },
+              secondaryButton: .cancel()
             )
 
         case .delete(let p):
@@ -665,11 +510,11 @@ struct DayView: View {
                 title: Text("Editing Past Day"),
                 message: Text("Change the status of a past priority?"),
                 primaryButton: .destructive(Text("Yes")) {
-                    if var sched = viewModel.schedule,
+                    if var sched = viewModel.scheduleMeta,
                        let idx = sched.priorities.firstIndex(where: { $0.id == p.id }) {
                         sched.priorities[idx].isCompleted.toggle()
-                        viewModel.schedule = sched
-                        viewModel.updateDaySchedule()
+                        viewModel.scheduleMeta = sched
+                        viewModel.pushMeta()
                     }
                 },
                 secondaryButton: .cancel()
@@ -698,12 +543,11 @@ struct DayView: View {
                 title: Text("Confirm Schedule"),
                 message: Text("Set wake time to \(wakeStr) and sleep time to \(sleepStr)?"),
                 primaryButton: .default(Text("Yes")) {
-                    if var sched = viewModel.schedule {
-                        sched.wakeUpTime = newWake
-                        sched.sleepTime = newSleep
-                        viewModel.schedule = sched
-                        viewModel.regenerateBlocks()
-                        viewModel.updateDaySchedule()
+                    if var sched = viewModel.scheduleMeta {
+                          sched.wakeUpTime = newWake
+                          sched.sleepTime  = newSleep
+                          viewModel.scheduleMeta = sched
+                          viewModel.pushMeta()
                     }
                 },
                 secondaryButton: .cancel()
@@ -712,73 +556,25 @@ struct DayView: View {
     }
 
     // ─────────────────────────────────────────
-    // MARK: – Time-block helpers
-    // ─────────────────────────────────────────
-    private func clearAllBlocks() {
-        guard var sched = viewModel.schedule else { return }
-        for idx in sched.timeBlocks.indices {
-            sched.timeBlocks[idx].task = ""
-        }
-        viewModel.schedule = sched
-        viewModel.updateDaySchedule()
-        refreshKey = UUID()
-    }
-
-    private func clearBlock(_ block: TimeBlock) {
-        guard var sched = viewModel.schedule,
-              let idx = sched.timeBlocks.firstIndex(where: { $0.id == block.id }) else { return }
-        sched.timeBlocks[idx].task = ""
-        viewModel.schedule = sched
-        viewModel.updateDaySchedule()
-    }
-
-    private func updateBlock(
-        _ block: TimeBlock,
-        start: Date? = nil,
-        end: Date? = nil,
-        task: String? = nil
-    ) {
-        guard var sched = viewModel.schedule,
-              let idx = sched.timeBlocks.firstIndex(where: { $0.id == block.id }) else { return }
-        if let s = start {
-            sched.timeBlocks[idx].start = s
-        }
-        if let e = end {
-            sched.timeBlocks[idx].end = e
-        }
-        if let txt = task {
-            sched.timeBlocks[idx].task = txt
-        }
-        viewModel.schedule = sched
-        viewModel.updateDaySchedule()
-    }
-
-    // ─────────────────────────────────────────
     // MARK: – Priority helpers
     // ─────────────────────────────────────────
     private func addPriority() {
-        guard var sched = viewModel.schedule else { return }
-        sched.priorities.append(
-            TodayPriority(id: UUID(), title: "New Priority", progress: 0)
-        )
-        viewModel.schedule = sched
-        viewModel.updateDaySchedule()
+        guard var sched = viewModel.scheduleMeta else { return }
+        sched.priorities.append(TodayPriority(id: UUID(), title: "New Priority", progress: 0))
+        viewModel.scheduleMeta = sched
+        viewModel.pushMeta()
         isRemoveMode = false
     }
 
     private func deletePriority(_ p: TodayPriority) {
-        guard var sched = viewModel.schedule,
+        guard var sched = viewModel.scheduleMeta,
               let idx = sched.priorities.firstIndex(where: { $0.id == p.id }) else { return }
         sched.priorities.remove(at: idx)
-        viewModel.schedule = sched
-        viewModel.updateDaySchedule()
+        viewModel.scheduleMeta = sched
+        viewModel.pushMeta()
         if sched.priorities.count <= 1 { isRemoveMode = false }
     }
 
-    private func copyPreviousDay() {
-        guard let uid = session.userModel?.id else { return }
-        viewModel.copyPreviousDaySchedule(to: dayViewState.selectedDate, userId: uid) { _ in }
-    }
 
     // ─────────────────────────────────────────
     // MARK: – Date navigation
@@ -819,18 +615,8 @@ struct DayView: View {
     }
 
     private func loadScheduleIfNeeded() {
-        if viewModel.schedule == nil, let uid = session.userModel?.id {
-            viewModel.loadDaySchedule(for: dayViewState.selectedDate, userId: uid)
-        }
-    }
-
-    private func handleSchedulePublish(_ sched: DaySchedule?) {
-        guard let s = sched else { return }
-        let today = Calendar.current.startOfDay(for: Date())
-        if s.date > today && s.timeBlocks.isEmpty {
-            viewModel.regenerateBlocks()
-            viewModel.updateDaySchedule()
-            viewModel.schedule = viewModel.schedule  // republish
+        if viewModel.scheduleMeta == nil, let uid = session.userModel?.id {
+            viewModel.loadDay(for: dayViewState.selectedDate, userId: uid)
         }
     }
 
@@ -846,13 +632,13 @@ struct DayView: View {
     }
 
     private func applyDefaultTimesIfNeeded(wake: Date?, sleep: Date?) {
-        guard let w = wake, let s = sleep, var sched = viewModel.schedule else { return }
+        guard let w = wake, let s = sleep, var sched = viewModel.scheduleMeta else { return }
         let today = Calendar.current.startOfDay(for: Date())
         guard sched.date > today else { return }
         sched.wakeUpTime = w
         sched.sleepTime  = s
-        viewModel.schedule = sched
-        viewModel.regenerateBlocks()
+        viewModel.scheduleMeta = sched
+        viewModel.pushMeta()
     }
 
     private func performImportUnfinished() {
@@ -862,7 +648,7 @@ struct DayView: View {
         ) else { return }
         let yStart = Calendar.current.startOfDay(for: yesterday)
         viewModel.fetchUnfinishedPriorities(for: yStart, userId: uid) { arr in
-            guard var sched = viewModel.schedule else { return }
+            guard var sched = viewModel.scheduleMeta else { return }
             let existing = Set(sched.priorities.map(\.title))
             for old in arr where !existing.contains(old.title) {
                 sched.priorities.append(
@@ -874,8 +660,8 @@ struct DayView: View {
                     )
                 )
             }
-            viewModel.schedule = sched
-            viewModel.updateDaySchedule()
+            viewModel.scheduleMeta = sched
+            viewModel.pushMeta()
         }
     }
 }

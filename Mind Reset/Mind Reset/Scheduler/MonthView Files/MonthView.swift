@@ -229,7 +229,8 @@ struct MonthView: View {
         ) { day in
             guard let uid = session.current_user?.uid, day <= Date() else { return }
             selectedDay = day
-            dayVM.loadDaySchedule(for: day, userId: uid)
+            dayVM.scheduleMeta = nil            // optional: clear old data
+            dayVM.loadDay(for: day, userId: uid)
             withAnimation { showDayPopup = true }
         }
     }

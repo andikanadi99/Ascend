@@ -9,10 +9,17 @@ import FirebaseFirestore
 import Combine
 
 class DayViewModel: ObservableObject {
-    @Published var schedule: DaySchedule?
+    @Published var scheduleMeta: DaySchedule?      // wake/sleep/priorities
+    @Published var blocks: [TimelineBlock] = []    // draggable blocks
+    
+    @Published var isLoadingDay = false
+    private var metaDidRespond   = false
+    private var blocksDidRespond = false
     
     private let db = Firestore.firestore()
-    private var listenerRegistration: ListenerRegistration?
+    private var metaListener:   ListenerRegistration?
+    private var blocksListener: ListenerRegistration?
+    
     private let decodeQueue = DispatchQueue(label: "day-decoder", qos: .userInitiated)
 
     private static let isoFormatter: DateFormatter = {
@@ -28,39 +35,104 @@ class DayViewModel: ObservableObject {
     }()
 
     deinit {
-        listenerRegistration?.remove()
+        metaListener?.remove()
+        blocksListener?.remove()
     }
 
-    func loadDaySchedule(for date: Date, userId: String) {
-        listenerRegistration?.remove()
-        let startOfDay = Calendar.current.startOfDay(for: date)
-        let docId      = DayViewModel.isoFormatter.string(from: startOfDay)
-        let docRef = db
-            .collection("users")
-            .document(userId)
-            .collection("daySchedules")
-            .document(docId)
+    func loadDay(for date: Date, userId: String) {
+        clearLocalState()
 
-        listenerRegistration = docRef.addSnapshotListener(includeMetadataChanges: false) { [weak self] snapshot, error in
+        let dayId  = DayViewModel.isoFormatter.string(
+                       from: Calendar.current.startOfDay(for: date))
+        let dayDoc = db.collection("users").document(userId)
+                       .collection("days").document(dayId)
+
+        // META listener
+        metaListener?.remove()
+        metaListener = dayDoc.addSnapshotListener { [weak self] snap, err in
             guard let self = self else { return }
-            if let error = error {
-                print("Error loading day schedule:", error)
+            if let err = err {
+                print("meta listen:", err)
                 return
             }
             self.decodeQueue.async {
-                if let snap = snapshot, snap.exists,
-                   let daySchedule = try? snap.data(as: DaySchedule.self) {
+                if let d = snap, d.exists,
+                   let meta = try? d.data(as: DaySchedule.self) {
+                    // 1) Found an existing schedule in Firestore
                     DispatchQueue.main.async {
-                        self.schedule = daySchedule
+                        self.scheduleMeta     = meta
+                        self.metaDidRespond   = true
+                        self.tryFinishLoading()
                     }
                 } else {
-                    self.createDefaultDaySchedule(date: startOfDay, userId: userId)
+                    // 2) No doc → create default, then treat that as “response”
+                    self.createDefaultMeta(for: date, userId: userId)
+                    DispatchQueue.main.async {
+                        self.metaDidRespond   = true
+                        self.tryFinishLoading()
+                    }
                 }
             }
         }
-    }
 
-    private func createDefaultDaySchedule(date: Date, userId: String) {
+
+        // BLOCKS listener
+        blocksListener?.remove()
+            blocksListener = dayDoc.collection("blocks")
+              .addSnapshotListener { [weak self] snap, _ in
+                guard let self = self else { return }
+                self.decodeQueue.async {
+                  let arr = snap?.documents.compactMap {
+                    try? $0.data(as: TimelineBlock.self)
+                  } ?? []
+                  DispatchQueue.main.async {
+                    self.blocks = arr.sorted { $0.start < $1.start }
+                    self.blocksDidRespond = true    // mark we got blocks (even if empty)
+                    self.tryFinishLoading()
+                  }
+                }
+              }
+      }
+    private func tryFinishLoading() {
+        // once we've heard back from both listeners, stop loading
+        if metaDidRespond && blocksDidRespond {
+          isLoadingDay = false
+          // no need to reset the flags here unless you reload again
+        }
+      }
+    
+    private var metaLoaded  = false
+      private var blocksLoaded = false
+
+      private func finishLoadingIfReady() {
+        // Called once per listener callback
+        if scheduleMeta != nil { metaLoaded = true }
+        if !blocks.isEmpty   { blocksLoaded = true }
+        if metaLoaded && blocksLoaded {
+          isLoadingDay = false
+          // reset flags for next load
+          metaLoaded = false
+          blocksLoaded = false
+        }
+      }
+    
+    func clearLocalState() {
+        DispatchQueue.main.async {
+          self.scheduleMeta = nil
+          self.blocks       = []
+          self.isLoadingDay = true
+          // reset our “we’ve heard back” flags
+          self.metaDidRespond   = false
+          self.blocksDidRespond = false
+        }
+      }
+
+    // REPLACE the placeholder section inside createDefaultMeta
+    private func createDefaultMeta(for date: Date, userId: String) {
+        let startOfDay = Calendar.current.startOfDay(for: date)
+        let dayId      = DayViewModel.isoFormatter.string(from: startOfDay)
+
+        // Default wake/sleep pulled from UserDefaults (or fallbacks)
         let storedWake = UserDefaults.standard
             .object(forKey: "DefaultWakeUpTime") as? Date
             ?? Calendar.current.date(bySettingHour: 7, minute: 0, second: 0, of: date)!
@@ -68,136 +140,55 @@ class DayViewModel: ObservableObject {
             .object(forKey: "DefaultSleepTime") as? Date
             ?? Calendar.current.date(bySettingHour: 22, minute: 0, second: 0, of: date)!
 
-        // Note: initialize isCompleted = false
-        let defaultPriorities = [
-            TodayPriority(
-              id: UUID(),
-              title: "What matters most today",
-              progress: 0.0,
-              isCompleted: false
+        // Build a DaySchedule _without_ an ID so Firestore's @DocumentID stays nil
+        let meta = DaySchedule(
+                id:         dayId,          // ← pass the string ID directly
+                userId:     userId,
+                date:       startOfDay,
+                wakeUpTime: storedWake,
+                sleepTime:  storedSleep,
+                priorities: [],
+                timeBlocks: []
             )
-        ]
-
-        let defaultSchedule = DaySchedule(
-            id: DayViewModel.isoFormatter.string(from: date),
-            userId: userId,
-            date: date,
-            wakeUpTime: storedWake,
-            sleepTime: storedSleep,
-            priorities: [],                        // ← leave empty by default
-            timeBlocks: generateTimeBlocks(from: storedWake, to: storedSleep)
-        )
 
         do {
-            try db
-                .collection("users")
-                .document(userId)
-                .collection("daySchedules")
-                .document(defaultSchedule.id!)
-                .setData(from: defaultSchedule)
-            DispatchQueue.main.async {
-                self.schedule = defaultSchedule
-            }
-        } catch {
-            print("Error creating default schedule:", error)
-        }
-    }
+               // Firestore will ignore @DocumentID on writes, so no conflict
+               try db
+                 .collection("users").document(userId)
+                 .collection("days").document(dayId)
+                 .setData(from: meta)
 
-    func updateDaySchedule() {
-        guard let schedule = schedule, let docId = schedule.id else { return }
+               DispatchQueue.main.async {
+                   self.scheduleMeta = meta
+               }
+           } catch {
+               print("Error creating default day meta:", error)
+           }
+       }
+
+
+
+    func pushMeta() {
+        guard let meta = scheduleMeta, let id = meta.id else { return }
         do {
-            try db
-                .collection("users")
-                .document(schedule.userId)
-                .collection("daySchedules")
-                .document(docId)
-                .setData(from: schedule)
-        } catch {
-            print("Error updating day schedule:", error)
-        }
+            try db.collection("users").document(meta.userId)
+                .collection("days").document(id)
+                .setData(from: meta)
+        } catch { print("pushMeta error:", error) }
     }
 
-    func regenerateBlocks() {
-        guard let oldSchedule = schedule else { return }
-        let cal = Calendar.current
-
-        // ── 1. Map "label" → original text, tolerate duplicates ─────────
-        let taskByLabel = Dictionary(
-            oldSchedule.timeBlocks.map {
-                // generate the same “h:mm a” label you’ll use below
-                let lbl = DayViewModel.timeFormatter.string(from: $0.start)
-                return (lbl, $0.task)
-            },
-            uniquingKeysWith: { first, _ in first }
-        )
-        // ── 2. Determine bounds and rounding info ───────────────────────
-        let wake  = oldSchedule.wakeUpTime
-        let sleep = oldSchedule.sleepTime
-        let wakeMinutes = cal.component(.minute, from: wake)
-
-        // If sleep ≤ wake, treat sleep as next day
-        let sleepCorrected: Date = (sleep <= wake)
-            ? cal.date(byAdding: .day, value: 1, to: sleep)!
-            : sleep
-
-        // Helper to format labels
-        func label(_ date: Date) -> String {
-            DayViewModel.timeFormatter.string(from: date)
-        }
-
-        // ── 3. Build new block array ────────────────────────────────────
-        var blocks: [TimeBlock] = []
-
-        // a) Exact wake-slot *only* if wake time has minutes > 0
-        if wakeMinutes != 0 && wake <= sleepCorrected {
-                let slotEnd = cal.date(byAdding: .hour, value: 1, to: wake)!
-                blocks.append(
-                    TimeBlock(id: UUID(),
-                              start: wake,
-                              end:   slotEnd,
-                              task:  taskByLabel[label(wake)] ?? "")
-                )
-            }
-
-            // b) Start cursor at the next full hour (or same hour if minutes == 0)
-            let hourOnly = cal.date(
-                from: cal.dateComponents([.year, .month, .day, .hour], from: wake)
-            )!
-            var cursor = (wakeMinutes == 0)
-                ? hourOnly
-                : cal.date(byAdding: .hour, value: 1, to: hourOnly)!
-
-            // c) March hour-by-hour until sleep
-            while cursor <= sleepCorrected {
-                let lbl = label(cursor)
-                let slotEnd = cal.date(byAdding: .hour, value: 1, to: cursor)!
-                blocks.append(
-                    TimeBlock(id: UUID(),
-                              start: cursor,
-                              end:   slotEnd,
-                              task:  taskByLabel[lbl] ?? "")
-                )
-                cursor = slotEnd
-            }
-
-        // ── 4. Publish and persist ──────────────────────────────────────
-        var updated = oldSchedule
-        updated.timeBlocks = blocks
-        schedule = updated            // @Published → UI refresh
-        updateDaySchedule()           // Firestore sync
-    }
 
     // MARK: – Toggle Completion on a Priority
     func togglePriorityCompletion(_ id: UUID) {
-        guard var sched = schedule,
+        guard var sched = scheduleMeta,
               let idx = sched.priorities.firstIndex(where: { $0.id == id }) else { return }
 
         let nowCompleted = !sched.priorities[idx].isCompleted
         sched.priorities[idx].isCompleted = nowCompleted
-        sched.priorities[idx].progress    = nowCompleted ? 1.0 : 0.0   // optional
+        sched.priorities[idx].progress    = nowCompleted ? 1.0 : 0.0
 
-        schedule = sched
-        updateDaySchedule()
+        scheduleMeta = sched
+        pushMeta()   // ← replaces updateDaySchedule()
     }
 
     // ─────────────────────────────────────────────────────────
@@ -211,131 +202,109 @@ class DayViewModel: ObservableObject {
         return fmt
     }()
 
-    /// Called by your DayTimelineHost when the user drops a new block.
-    /// Converts its `start` into an “HH:mm” string, appends a new
-    /// TimeBlock, and persists to Firestore.
-    func appendTimelineBlock(_ tb: TimelineBlock) {
-        guard var sched = schedule else { return }
-        sched.timeBlocks.append(
-            TimeBlock(
-                id:    tb.id,
-                start: tb.start,
-                end:   tb.end,
-                task:  ""
-            )
-        )
-        // publish & persist
-        DispatchQueue.main.async {
-            self.schedule = sched
-            self.updateDaySchedule()
-        }
-    }
 
     // MARK: – Reorder priorities
     func movePriorities(indices: IndexSet, to newOffset: Int) {
-        guard var sched = schedule else { return }
+        guard var sched = scheduleMeta else { return }
         sched.priorities.move(fromOffsets: indices, toOffset: newOffset)
-        schedule = sched
-        updateDaySchedule()
+        scheduleMeta = sched
+        pushMeta()
     }
 
     // MARK: — Helpers
-    private func generateTimeBlocks(from start: Date, to end: Date) -> [TimeBlock] {
-        // We intentionally return an empty array.
-        // All blocks will be created by the user through the timeline UI.
-        return []
+    func deleteAllBlocks(for date: Date, userId: String, completion: @escaping () -> Void = {}) {
+        let dayId = DayViewModel.isoFormatter.string(
+                      from: Calendar.current.startOfDay(for: date))
+        let coll  = db.collection("users")
+                       .document(userId)
+                       .collection("days")
+                       .document(dayId)
+                       .collection("blocks")
+
+        coll.getDocuments { [weak self] snap, err in
+            guard let self = self else { completion(); return }
+            if let err = err {
+                print("deleteAllBlocks:", err); completion(); return
+            }
+            let batch = self.db.batch()
+            snap?.documents.forEach { batch.deleteDocument($0.reference) }
+            batch.commit { _ in
+                DispatchQueue.main.async { self.blocks = [] }
+                completion()
+            }
+        }
     }
 
-
-    func copyPreviousDaySchedule(
-      to targetDate: Date,
-      userId: String,
-      completion: @escaping (Bool) -> Void
+    func copyPreviousDayBlocks(
+        to targetDate: Date,
+        userId: String,
+        completion: @escaping (_ added: Int) -> Void = { _ in }
     ) {
         let cal        = Calendar.current
         let sourceDate = cal.date(byAdding: .day, value: -1, to: targetDate)!
         let sourceId   = DayViewModel.isoFormatter.string(
-          from: cal.startOfDay(for: sourceDate)
-        )
+                           from: cal.startOfDay(for: sourceDate))
         let targetId   = DayViewModel.isoFormatter.string(
-          from: cal.startOfDay(for: targetDate)
-        )
+                           from: cal.startOfDay(for: targetDate))
 
-        let sourceRef = db
-            .collection("users").document(userId)
-            .collection("daySchedules").document(sourceId)
+        let sourceColl = self.db.collection("users").document(userId)
+                           .collection("days").document(sourceId)
+                           .collection("blocks")
+        let targetColl = self.db.collection("users").document(userId)
+                           .collection("days").document(targetId)
+                           .collection("blocks")
 
-        let targetRef = db
-            .collection("users").document(userId)
-            .collection("daySchedules").document(targetId)
-
-        sourceRef.getDocument { [weak self] snap, error in
-            guard let self = self else { return }
-            if let error = error {
-                print("Error fetching source schedule:", error)
-                return completion(false)
-            }
-            guard let snap = snap, snap.exists,
-                  let sourceSchedule = try? snap.data(as: DaySchedule.self) else {
-                print("Source schedule not found.")
-                return completion(false)
+        sourceColl.getDocuments { [weak self] sourceSnap, error in
+            guard let self = self else { completion(0); return }
+            guard let sourceDocs = sourceSnap?.documents else {
+                completion(0); return
             }
 
-            // ─────────── Build a brand-new Schedule for “today” ───────────
-            //
-            // Instead of doing:
-            //     var targetSchedule = sourceSchedule
-            //     targetSchedule.id = targetId
-            //     targetSchedule.date = <today>
-            // which simply copies the struct but preserves child‐IDs (so editing one
-            // mutates both), we explicitly rebuild each array element with a fresh UUID.
+            targetColl.getDocuments { [weak self] targetSnap, _ in
+                guard let self = self else { completion(0); return }
+                let existingIDs = Set(targetSnap?.documents.map { $0.documentID } ?? [])
+                let batch = self.db.batch()      // ← explicit self.db
+                var addedCount = 0
 
-            // 1) Deep‐copy timeBlocks:
-            let newTimeBlocks: [TimeBlock] = sourceSchedule.timeBlocks.map { oldBlock in
-                TimeBlock(
-                    id:    UUID(),
-                    start: oldBlock.start,
-                    end:   oldBlock.end,
-                    task:  oldBlock.task
-                )
-            }
+                for doc in sourceDocs {
+                    let id = doc.documentID
+                    if existingIDs.contains(id) { continue }
+                    if let block = try? doc.data(as: TimelineBlock.self) {
+                        let ref = targetColl.document(id)
+                        do {
+                            try batch.setData(from: block, forDocument: ref)
+                            addedCount += 1
+                        } catch {
+                            print("Batch setData error:", error)
+                        }
+                    }
+                }
 
-            // 2) Deep‐copy priorities:
-            let newPriorities: [TodayPriority] = sourceSchedule.priorities.map { oldPriority in
-                TodayPriority(
-                    id: UUID(),               // NEW UUID
-                    title: oldPriority.title,
-                    progress: oldPriority.progress,
-                    isCompleted: oldPriority.isCompleted
-                )
-            }
-
-            // 3) Create a brand‐new DaySchedule struct (with today’s ID and date):
-            let todayStart = cal.startOfDay(for: targetDate)
-            let newSchedule = DaySchedule(
-                id: targetId,
-                userId: sourceSchedule.userId,
-                date: todayStart,
-                wakeUpTime: sourceSchedule.wakeUpTime,
-                sleepTime: sourceSchedule.sleepTime,
-                priorities: newPriorities,
-                timeBlocks: newTimeBlocks
-            )
-
-            // 4) Immediately publish locally so the UI updates:
-            DispatchQueue.main.async {
-                self.schedule = newSchedule
-            }
-
-            // 5) Persist under a distinct Firestore document (so you don’t overwrite yesterday):
-            do {
-                try targetRef.setData(from: newSchedule)
-                completion(true)
-            } catch {
-                print("Error saving target schedule:", error)
-                completion(false)
+                batch.commit { err in
+                    if let err = err {
+                        print("Batch commit error:", err)
+                    }
+                    completion(addedCount)
+                }
             }
         }
+    }
+
+    
+    func upsertBlock(_ block: TimelineBlock) {
+        guard let meta = scheduleMeta, let dayId = meta.id else { return }
+        let ref = db.collection("users").document(meta.userId)
+                    .collection("days").document(dayId)
+                    .collection("blocks").document(block.id.uuidString)
+        try? ref.setData(from: block)
+    }
+
+    func deleteBlock(id: UUID) {
+        guard let meta = scheduleMeta, let dayId = meta.id else { return }
+        db.collection("users").document(meta.userId)
+          .collection("days").document(dayId)
+          .collection("blocks").document(id.uuidString)
+          .delete(completion: nil)
     }
 
 
@@ -355,11 +324,8 @@ class DayViewModel: ObservableObject {
         let startOfThatDay = calendar.startOfDay(for: date)
         let docId = DayViewModel.isoFormatter.string(from: startOfThatDay)
 
-        let docRef = db
-            .collection("users")
-            .document(userId)
-            .collection("daySchedules")
-            .document(docId)
+        let docRef = db.collection("users").document(userId)
+            .collection("days").document(docId)
 
         // Firestore read for that document
         docRef.getDocument { snapshot, error in

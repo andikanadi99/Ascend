@@ -18,6 +18,7 @@ struct TimelineView: View {
     let visibleStartHour: Int
     let visibleEndHour: Int
     @Binding var blocks: [TimelineBlock]
+    let showHourLabels: Bool
     let accentColor: RGBAColor
     var onBlocksChange: (([TimelineBlock]) -> Void)? = nil
     var onEdit: (TimelineBlock) -> Void
@@ -41,6 +42,28 @@ struct TimelineView: View {
     private var px: CGFloat { rowHeight / 60 }
     private var gutter: CGFloat { hourLabelWidth + hourLabelTrailing }
     private var accentUI: Color { accentColor.swiftUIColor }
+    
+    init(
+           dayDate: Date,
+           visibleStartHour: Int,
+           visibleEndHour: Int,
+           blocks: Binding<[TimelineBlock]>,
+           accentColor: RGBAColor,
+           showHourLabels: Bool = true,
+           onBlocksChange: (([TimelineBlock]) -> Void)? = nil,
+           onEdit: @escaping (TimelineBlock) -> Void,
+           onCreateDraft: @escaping (TimelineBlock) -> Void
+       ) {
+           self.dayDate          = dayDate
+           self.visibleStartHour = visibleStartHour
+           self.visibleEndHour   = visibleEndHour
+           self._blocks          = blocks
+           self.accentColor      = accentColor
+           self.showHourLabels   = showHourLabels
+           self.onBlocksChange   = onBlocksChange
+           self.onEdit           = onEdit
+           self.onCreateDraft    = onCreateDraft
+       }
 
     var body: some View {
         GeometryReader { geo in

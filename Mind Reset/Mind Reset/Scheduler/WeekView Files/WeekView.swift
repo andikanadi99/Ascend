@@ -23,8 +23,18 @@ struct WeekView: View {
     @State private var isRemoveMode = false
     @State private var editMode = EditMode.inactive
     @State private var weeklyPriorityListHeight: CGFloat = 1
+    
+    private enum WeekMode: String, CaseIterable { case priorities = "Priorities", schedule = "Schedule" }
+    @State private var weekMode: WeekMode = .priorities
+    
     @State private var hasPreviousUnfinished = false
     
+    // ── New: toggle between day-cards list and weekly-timeline ──
+    private enum WeekContent: String, CaseIterable {
+        case tasks    = "Day List"
+        case schedule = "Timeline"
+    }
+    @State private var contentMode: WeekContent = .tasks
 
 
     var body: some View {
@@ -94,22 +104,26 @@ struct WeekView: View {
                     }
 
                     // Separator
-                    Divider()
-                        .background(Color.white.opacity(0.5))
-                        .padding(.vertical, 8)
+                    // ─────────── Picker to switch view ───────────
+                        Picker("", selection: $contentMode) {
+                            ForEach(WeekContent.allCases, id: \.self) { m in
+                                Text(m.rawValue).tag(m)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .tint(.gray)
+                        .background(Color.gray)
+                        .cornerRadius(8)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 4)
 
-                    // Seven day cards
-                    VStack(spacing: 16) {
-                        ForEach(days, id: \.self) { day in
-                            DayCardView(
-                                accentColor: accentColor,
-                                day: day,
-                                priorities: viewModel.prioritiesBinding(for: day),
-                                priorityFocus: $isDayCardPriorityFocused
-                            )
-                            .id(day)
-                            .environmentObject(viewModel)
-                            .focused($focusedDay, equals: day)
+                    Group {
+                        switch contentMode {
+                        case .tasks:
+                            tasksListView
+
+                        case .schedule:
+                            weeklyTimelineContainer
                         }
                     }
 
@@ -133,6 +147,49 @@ struct WeekView: View {
             }
         }
     }
+    
+    @ViewBuilder
+        private var weeklyTimelineContainer: some View {
+            WeekListView(
+                weekStart:    weekViewState.currentWeekStart,
+                blocksPerDay: viewModel.dayTimelineStorage,
+                accentColor:  RGBAColor(color: .cyan),
+                onEdit:       { blk in viewModel.upsertBlock(blk, for: blk.start) },
+                onCreateDraft:{ blk in viewModel.upsertBlock(blk, for: blk.start) },
+                onDelete:     { blk in viewModel.deleteBlock(id: blk.id, for: blk.start) }
+            )
+            .environmentObject(viewModel)
+        }
+
+
+    // ➊ Extract a helper to compute the week’s days:
+    private var weekDays: [Date] {
+        (0..<7).compactMap { offset in
+            Calendar.current.date(
+                byAdding: .day,
+                value: offset,
+                to: weekViewState.currentWeekStart
+            )
+        }
+    }
+
+    // ➋ Now use `weekDays` inside tasksListView:
+    private var tasksListView: some View {
+        VStack(spacing: 16) {
+            ForEach(weekDays, id: \.self) { day in
+                DayCardView(
+                    accentColor: accentColor,
+                    day: day,
+                    priorities: viewModel.prioritiesBinding(for: day),
+                    priorityFocus: $isDayCardPriorityFocused
+                )
+                .id(day)
+                .environmentObject(viewModel)
+                .focused($focusedDay, equals: day)
+            }
+        }
+    }
+
 
     // MARK: – Helpers
     private func loadWeekSchedule() {

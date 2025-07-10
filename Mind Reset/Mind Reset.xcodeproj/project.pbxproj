@@ -23,9 +23,33 @@
 		48D4B75D2CEFB63B0031EBA1 /* Ascend.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ascend.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		48909CE62E1FED02006B8B57 /* Exceptions for "Mind Reset" folder in "Ascento" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Scheduler/WeekView Files/WeekDate.Swift",
+			);
+			target = 48D4B75C2CEFB63B0031EBA1 /* Ascento */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		48909CE72E1FED02006B8B57 /* Exceptions for "Mind Reset" folder in "Copy Bundle Resources" phase from "Ascento" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = 48D4B75B2CEFB63B0031EBA1 /* Resources */;
+			membershipExceptions = (
+				"Scheduler/WeekView Files/WeekDate.Swift",
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		48D4B75F2CEFB63B0031EBA1 /* Mind Reset */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				48909CE62E1FED02006B8B57 /* Exceptions for "Mind Reset" folder in "Ascento" target */,
+				48909CE72E1FED02006B8B57 /* Exceptions for "Mind Reset" folder in "Copy Bundle Resources" phase from "Ascento" target */,
+			);
 			path = "Mind Reset";
 			sourceTree = "<group>";
 		};

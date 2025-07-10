@@ -433,7 +433,6 @@ struct DayView: View {
     // ─────────────────────────────────────────
     @ViewBuilder
     private var timeBlocksSection: some View {
-        // Always show the interactive timeline using the refactored VM
         if let sched = viewModel.scheduleMeta {
             DayTimelineHost(
                 dayDate:          dayViewState.selectedDate,
@@ -444,9 +443,21 @@ struct DayView: View {
                 }(),
                 blocks:           viewModel.blocks,
                 accentColor:      RGBAColor(color: darkCyan),
-                onDraftSaved:     { blk in viewModel.upsertBlock(blk) },
-                onDeleteBlock:    { blk in viewModel.deleteBlock(id: blk.id) }
-            )
+
+                onDraftSaved:     { blk in
+                        viewModel.upsertBlock(blk)           // create / edit
+                    },
+                    onDeleteBlock:    { blk in
+                        viewModel.deleteBlock(id: blk.id)    // delete
+                    },
+                    onBlocksChange:   { updated in           // drag-move / resize finished
+                        viewModel.replaceBlocks(             // ① persist to Firestore
+                            updated,
+                            for: dayViewState.selectedDate
+                        )
+                        viewModel.blocks = updated               // ② refresh local state instantly
+                    }
+                )
             .environmentObject(viewModel)
             .padding(.top, 8)
         } else {
@@ -454,6 +465,7 @@ struct DayView: View {
                 .frame(height: 800)
         }
     }
+
     
     private func copyPreviousDayTimeline() {
         guard let uid = session.userModel?.id else { return }

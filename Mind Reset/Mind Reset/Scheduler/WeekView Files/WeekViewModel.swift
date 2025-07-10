@@ -15,9 +15,17 @@ final class WeekViewModel: ObservableObject {
     @Published var schedule: WeeklySchedule?
     @Published var errorMessage: String?
 
-    // ───────── PER-DAY STORAGE ────
+    // ───────── PER-DAY PRIORITIES ────────
     @Published var dayPriorityStorage: [Date:[TodayPriority]] = [:]
     @Published var dayPriorityStatus : [Date:(done: Int, total: Int)] = [:]
+
+    // ───────── TIMELINE STORAGE ───────────
+    @Published var dayTimelineStorage: [Date:[TimelineBlock]] = [:]    // ➊ live data for WeeklyTimelineView
+    private var blockListeners: [Date: ListenerRegistration] = [:]
+    
+    private func key(of date: Date) -> Date {
+        Calendar.current.startOfDay(for: date)
+    }
 
     // ───────── Firestore plumbing ─
     private let db = Firestore.firestore()
@@ -37,6 +45,10 @@ final class WeekViewModel: ObservableObject {
 
         // ── Clean up any previous listener
         listener?.remove()
+        listener?.remove()
+        blockListeners.values.forEach { $0.remove() }
+        blockListeners.removeAll()
+        dayTimelineStorage.removeAll()
 
         // ── Normalise anchor + document IDs
         let weekStart = Calendar.current.startOfDay(for: startOfWeek)
@@ -302,16 +314,136 @@ final class WeekViewModel: ObservableObject {
 
     // MARK: – FETCH 7 DAY DOCS
     private func fetchSevenDaySchedules(from weekStart: Date, uid: String) {
+        // ── 1) tear down any old block listeners
+        blockListeners.values.forEach { $0.remove() }
+        blockListeners.removeAll()
+        dayTimelineStorage.removeAll()
+
         let cal = Calendar.current
         for offs in 0..<7 {
-            if let day = cal.date(byAdding: .day, value: offs, to: weekStart) {
-                fetchDaySchedule(for: day, uid: uid)
+            guard let day = cal.date(byAdding: .day, value: offs, to: weekStart) else { continue }
+            fetchDaySchedule(for: day, uid: uid)    // existing priorities
+            fetchDayBlocks   (for: day, uid: uid)   // NEW: load blocks
+        }
+    }
+    /* Helpers for Timesheet calendar view */
+    /// Expose blocks as a SwiftUI Binding
+    func blocksBinding(for day: Date) -> Binding<[TimelineBlock]> {
+        let key = key(of: day)
+        return Binding(
+            get: { self.dayTimelineStorage[key] ?? [] },
+            set: { _ in /* direct writes happen via upsert/delete */ }
+        )
+    }
+
+    /// Write a single block back into Firestore for a given day
+    func upsertBlock(_ blk: TimelineBlock, for date: Date) {
+        let k = key(of: date)
+        var arr = dayTimelineStorage[k] ?? []
+        if let i = arr.firstIndex(where: { $0.id == blk.id }) {
+            arr[i] = blk
+        } else {
+            arr.append(blk)
+        }
+        dayTimelineStorage[k] = arr
+        saveBlocksToFirestore(arr, for: date)
+    }
+
+    /// Remove a block by its UUID on a given day
+    func deleteBlock(id: UUID, for date: Date) {
+        let k = key(of: date)
+        guard var arr = dayTimelineStorage[k] else { return }
+        arr.removeAll { $0.id == id }
+        dayTimelineStorage[k] = arr
+        saveBlocksToFirestore(arr, for: date)
+    }
+    
+
+    func moveBlock(
+      _ block: TimelineBlock,
+      from oldDay: Date,
+      to newDay: Date,
+      newStart: Date,
+      newEnd: Date,
+      userId: String
+    ) {
+      // 1) Remove it from the old day's subcollection:
+        deleteBlock(id: block.id, for: oldDay)
+
+      // 2) Create a new block object with updated times:
+      var moved = block
+      moved.start = newStart
+      moved.end   = newEnd
+
+      // 3) Write it into the new day's subcollection:
+        upsertBlock(moved, for: newDay)
+      // 4) Locally update so UI is instant:
+        let oldKey = Calendar.current.startOfDay(for: oldDay)
+        dayTimelineStorage[oldKey]?.removeAll { $0.id == block.id }
+
+        let newKey = Calendar.current.startOfDay(for: newDay)
+        dayTimelineStorage[newKey, default: []].append(moved)
+        dayTimelineStorage[newKey]!.sort { $0.start < $1.start }
+    }
+    
+    func replaceBlocks(_ new: [TimelineBlock], for date: Date) {
+        let k = key(of: date)
+        dayTimelineStorage[k] = new
+        saveBlocksToFirestore(new, for: date)
+    }
+
+    /// Listens to “/days/{dayId}/blocks” and updates `dayBlocksStorage`
+    private func fetchDayBlocks(for day: Date, uid: String) {
+        let key   = Calendar.current.startOfDay(for: day)
+        let docID = Self.iso.string(from: key)
+        let coll  = db.collection("users").document(uid)
+                      .collection("days").document(docID)
+                      .collection("blocks")
+
+        let listener = coll.addSnapshotListener { [weak self] snap, err in
+            guard let self = self else { return }
+            if let err = err {
+                print("blocks listen error:", err)
+                return
+            }
+            let blocks: [TimelineBlock] = snap?.documents.compactMap {
+                try? $0.data(as: TimelineBlock.self)
+            } ?? []
+            // keep them sorted by start time
+            self.dayTimelineStorage[key] = blocks.sorted { $0.start < $1.start }
+        }
+        blockListeners[key] = listener
+    }
+    /// Syncs an entire day’s blocks to Firestore (one doc per block)
+    private func saveBlocksToFirestore(_ blocks: [TimelineBlock], for date: Date) {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        let dayID = Self.iso.string(from: key(of: date))
+        let col   = db.collection("users").document(uid)
+                      .collection("days").document(dayID)
+                      .collection("blocks")
+        
+        // Write or overwrite each block
+        for blk in blocks {
+            try? col.document(blk.id.uuidString).setData(from: blk)
+        }
+        // Remove stale documents
+        col.getDocuments { snap, _ in
+            snap?.documents.forEach { doc in
+                if !blocks.contains(where: { $0.id.uuidString == doc.documentID }) {
+                    doc.reference.delete()
+                }
             }
         }
     }
+
+
     private func fetchDaySchedule(for day: Date, uid: String) {
         let key   = Calendar.current.startOfDay(for: day)
         let docID = Self.iso.string(from: key)
+        let base  = db.collection("users").document(uid)
+                      .collection("days").document(docID)
+        
+        // 1️⃣ Priorities (unchanged)
         db.collection("users").document(uid)
           .collection("daySchedules").document(docID)
           .getDocument(as: DaySchedule.self) { [weak self] res in
@@ -320,7 +452,22 @@ final class WeekViewModel: ObservableObject {
             self.dayPriorityStorage[key] = list
             self.dayPriorityStatus[key]  = (list.filter(\.isCompleted).count, list.count)
           }
+
+        // 2️⃣ Blocks listener (NEW)
+        blockListeners[key]?.remove()   // remove any old
+        blockListeners[key] = base
+          .collection("blocks")
+          .addSnapshotListener { [weak self] snap, _ in
+            guard let self else { return }
+            let arr: [TimelineBlock] = snap?.documents.compactMap {
+                try? $0.data(as: TimelineBlock.self)
+            } ?? []
+            Task { @MainActor in
+                self.dayTimelineStorage[key] = arr.sorted { $0.start < $1.start }
+            }
+          }
     }
+
     private func persistDayPriorities(_ key: Date, _ list: [TodayPriority]) {
         guard let uid = Auth.auth().currentUser?.uid else { return }
         dayPriorityStatus[key] = (list.filter(\.isCompleted).count, list.count)

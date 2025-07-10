@@ -6,6 +6,7 @@
 
 import SwiftUI
 import FirebaseFirestore
+import FirebaseAuth
 import Combine
 
 class DayViewModel: ObservableObject {
@@ -234,6 +235,44 @@ class DayViewModel: ObservableObject {
             }
         }
     }
+
+    @MainActor
+    func replaceBlocks(_ newBlocks: [TimelineBlock], for date: Date) {
+        // 1) Normalize date to midnight
+        let key = Calendar.current.startOfDay(for: date)
+
+        // 2) Ensure we have a signed-in user
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+
+        // 3) Build Firestore collection reference for that day’s blocks
+        let dayID = Self.isoFormatter.string(from: key)
+        let colRef = db
+            .collection("users")
+            .document(uid)
+            .collection("days")
+            .document(dayID)
+            .collection("blocks")
+
+        // 4) Upsert each block document
+        for blk in newBlocks {
+            try? colRef.document(blk.id.uuidString).setData(from: blk)
+        }
+
+        // 5) Remove any Firestore docs no longer in newBlocks
+        colRef.getDocuments { snapshot, _ in
+            snapshot?.documents.forEach { doc in
+                if !newBlocks.contains(where: { $0.id.uuidString == doc.documentID }) {
+                    doc.reference.delete()
+                }
+            }
+        }
+
+        // 6) Update published `blocks` so SwiftUI refreshes immediately
+        DispatchQueue.main.async {
+            self.blocks = newBlocks
+        }
+    }
+
 
     func copyPreviousDayBlocks(
         to targetDate: Date,

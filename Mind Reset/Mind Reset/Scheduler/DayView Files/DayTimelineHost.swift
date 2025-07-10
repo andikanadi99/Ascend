@@ -19,6 +19,8 @@ struct DayTimelineHost: View {
     let onDraftSaved:  (TimelineBlock) -> Void
     /// Persist deletions
     let onDeleteBlock: (TimelineBlock) -> Void
+    
+    let onBlocksChange:  ([TimelineBlock]) -> Void
 
     // ── Internal modal state ───────────────────────────────────────
     @State private var draftBlock:  TimelineBlock? = nil    // quick-add sheet
@@ -75,6 +77,11 @@ struct DayTimelineHost: View {
                     visibleEndHour:   visibleEndHour,
                     blocks:           $blocks,
                     accentColor:      accentColor,
+                    // ← NEW: Commit the entire updated list whenever you drag or resize
+                    onBlocksChange: { newBlocks in
+                          blocks = newBlocks
+                          onBlocksChange(newBlocks)
+                      },
                     onEdit:           { editorBlock = $0 },
                     onCreateDraft:    { draftBlock  = $0 }
                 )
@@ -255,28 +262,29 @@ struct FullEditor: View {
     }
 }
 
-#if DEBUG
-@available(iOS 16.0, *)
-struct DayTimelineHost_Previews: PreviewProvider {
-    static var previews: some View {
-        DayTimelineHost(
-            dayDate: Date(),
-            visibleStartHour: 7,
-            visibleEndHour:   22,
-            blocks: [
-                TimelineBlock(
-                    start: Calendar.current.date(
-                        bySettingHour: 14, minute: 0, second: 0, of: Date())!,
-                    end:   Calendar.current.date(
-                        bySettingHour: 15, minute: 0, second: 0, of: Date())!,
-                    title: "Meeting",
-                    description: "Sync-up",
-                    color: .cyan)
-            ],
-            accentColor:   RGBAColor(color: .cyan),
-            onDraftSaved:  { _ in },
-            onDeleteBlock: { _ in }
-        )
-    }
-}
-#endif
+//#if DEBUG
+//@available(iOS 16.0, *)
+//struct DayTimelineHost_Previews: PreviewProvider {
+//    static var previews: some View {
+//        DayTimelineHost(
+//            dayDate: Date(),
+//            visibleStartHour: 7,
+//            visibleEndHour:   22,
+//            blocks: [
+//                TimelineBlock(
+//                    start: Calendar.current.date(
+//                        bySettingHour: 14, minute: 0, second: 0, of: Date())!,
+//                    end:   Calendar.current.date(
+//                        bySettingHour: 15, minute: 0, second: 0, of: Date())!,
+//                    title: "Meeting",
+//                    description: "Sync-up",
+//                    color: .cyan)
+//            ],
+//            accentColor:   RGBAColor(color: .cyan),
+//            onBlocksChange: { _ in },
+//            onDraftSaved:  { _ in },
+//            onDeleteBlock: { _ in }
+//        )
+//    }
+//}
+//#endif

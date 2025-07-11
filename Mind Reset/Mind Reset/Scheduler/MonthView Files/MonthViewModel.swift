@@ -12,7 +12,9 @@
 //  • Expose helpers to persist edits from the popup or the priorities section
 //
 
+
 import Foundation
+import SwiftUI  
 import FirebaseFirestore
 import FirebaseAuth
 import Combine
@@ -45,6 +47,9 @@ final class MonthViewModel: ObservableObject {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM"; return f
     }()
 
+    /// Keeps track of active snapshot listeners for daySchedules documents
+    private var priorityListeners: [Date: ListenerRegistration] = [:]
+
 
     // ─────────────────────────────────────────────────────────────────────────
     // MARK: – Month-level loading
@@ -57,7 +62,7 @@ final class MonthViewModel: ObservableObject {
                     .document(monthID)
 
         ref.getDocument { [weak self] snap, err in
-            guard let self else { return }
+            guard let self = self else { return }
 
             // 1️⃣ if the document exists → decode it
             if let snap, snap.exists,
@@ -70,12 +75,12 @@ final class MonthViewModel: ObservableObject {
 
             // 2️⃣ otherwise create a blank MonthSchedule so the UI is editable
             let fresh = MonthSchedule(
-                id:                    monthID,
-                userId:                uid,
-                yearMonth:             monthID,
-                monthlyPriorities:     [],
-                dayCompletions:        [:],        // ← add this line
-                dailyPrioritiesByDay:  [:]
+                id:                   monthID,
+                userId:               uid,
+                yearMonth:            monthID,
+                monthlyPriorities:    [],
+                dayCompletions:       [:],
+                dailyPrioritiesByDay: [:]
             )
             try? ref.setData(from: fresh)
             self.schedule = fresh
@@ -83,40 +88,36 @@ final class MonthViewModel: ObservableObject {
         }
     }
 
-    
+
     // ─────────────────────────────────────────────────────────────────────────
     // MARK: – Day-level helpers (for popup)
     // ─────────────────────────────────────────────────────────────────────────
-    
     func patchDayPriorities(_ keyStr: String,
-                                    uid: String,
-                                    _ list: [TodayPriority]) {
+                            uid: String,
+                            _ list: [TodayPriority]) {
         let ref = db.collection("users")
                     .document(uid)
                     .collection("daySchedules")
                     .document(keyStr)
 
-        // convert TodayPriority → [String:Any]
-        let dictArr = list.map { $0.asDictionary }   // relies on extension used elsewhere
-
-        ref.setData(["priorities": dictArr], merge: true)   // ⬅️ ONLY this field
+        let dictArr = list.map { $0.asDictionary }
+        ref.setData(["priorities": dictArr], merge: true)
     }
 
-    
     func saveDayPriorities(for date: Date,
                            newPriorities: [TodayPriority]) {
         guard let uid = Auth.auth().currentUser?.uid else { return }
 
-        let key   = Calendar.current.startOfDay(for: date)
+        let key    = Calendar.current.startOfDay(for: date)
         let keyStr = Self.isoDay.string(from: key)
 
-        // 🔒 patch instead of overwriting whole DaySchedule
         patchDayPriorities(keyStr, uid: uid, newPriorities)
 
-        // ------- update caches & month doc exactly as before -------
         dayPriorityStorage[key] = newPriorities
-        dayPriorityStatus[key]  = (newPriorities.filter(\.isCompleted).count,
-                                   newPriorities.count)
+        dayPriorityStatus[key]  = (
+            newPriorities.filter(\.isCompleted).count,
+            newPriorities.count
+        )
 
         if var sched = schedule {
             sched.dailyPrioritiesByDay[keyStr] = newPriorities
@@ -124,7 +125,22 @@ final class MonthViewModel: ObservableObject {
             updateMonthSchedule()
         }
     }
+    
+    // MARK: – Convenient Binding for a single day
+    func prioritiesBinding(for day: Date) -> Binding<[TodayPriority]> {
+        let key = Calendar.current.startOfDay(for: day)
 
+        return Binding(
+            get: {                                   // read
+                self.dayPriorityStorage[key] ?? []
+            },
+            set: { newVal in                         // write-back
+                self.dayPriorityStorage[key] = newVal
+                self.saveDayPriorities(for: day,
+                                       newPriorities: newVal)
+            }
+        )
+    }
 
 
 
@@ -138,7 +154,6 @@ final class MonthViewModel: ObservableObject {
               .collection("monthSchedules")
               .document(sched.yearMonth)
               .setData(from: sched, merge: true)
-
         // dayPriorityStatus will be refreshed by didSet when `schedule` is reassigned
     }
 
@@ -146,28 +161,39 @@ final class MonthViewModel: ObservableObject {
     // ─────────────────────────────────────────────────────────────────────────
     // MARK: – Private helpers
     // ─────────────────────────────────────────────────────────────────────────
-    /// Pull the seven (…31) DaySchedule docs in the given month to warm caches
+
+    /// Attaches a live listener per day so DayView edits sync immediately
     private func fetchDaySchedules(for month: Date, uid: String) {
         for day in generateDays(in: month) {
             let key   = Calendar.current.startOfDay(for: day)
             let docID = Self.isoDay.string(from: key)
+            let doc   = db.collection("users")
+                           .document(uid)
+                           .collection("daySchedules")
+                           .document(docID)
 
-            db.collection("users")
-              .document(uid)
-              .collection("daySchedules")
-              .document(docID)
-              .getDocument(as: DaySchedule.self) { [weak self] result in
-                  guard let self else { return }
-                  switch result {
-                  case .success(let ds):
-                      let done = ds.priorities.filter(\.isCompleted).count
-                      self.dayPriorityStorage[key] = ds.priorities
-                      self.dayPriorityStatus[key]  = (done, ds.priorities.count)
-                  case .failure:
-                      self.dayPriorityStorage[key] = []
-                      self.dayPriorityStatus[key]  = (0,0)
-                  }
-              }
+            // Remove any existing listener for this day
+            priorityListeners[key]?.remove()
+
+            // Add real-time snapshot listener (creates doc if missing)
+            let listener = doc.addSnapshotListener { [weak self] snap, _ in
+                guard let self = self else { return }
+
+                if let snap = snap,
+                   snap.exists,
+                   let ds = try? snap.data(as: DaySchedule.self) {
+
+                    let done = ds.priorities.filter(\.isCompleted).count
+                    self.dayPriorityStorage[key] = ds.priorities
+                    self.dayPriorityStatus[key]  = (done, ds.priorities.count)
+
+                } else {
+                    // No document yet: treat as empty
+                    self.dayPriorityStorage[key] = []
+                    self.dayPriorityStatus[key]  = (0, 0)
+                }
+            }
+            priorityListeners[key] = listener
         }
     }
 
@@ -199,3 +225,4 @@ final class MonthViewModel: ObservableObject {
         return out
     }
 }
+

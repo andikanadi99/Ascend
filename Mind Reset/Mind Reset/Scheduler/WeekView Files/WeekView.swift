@@ -105,18 +105,25 @@ struct WeekView: View {
 
                     // Separator
                     // ─────────── Picker to switch view ───────────
-                        Picker("", selection: $contentMode) {
-                            ForEach(WeekContent.allCases, id: \.self) { m in
-                                Text(m.rawValue).tag(m)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .tint(.gray)
-                        .background(Color.gray)
-                        .cornerRadius(8)
-                        .padding(.horizontal, 10)
+//                        Picker("", selection: $contentMode) {
+//                            ForEach(WeekContent.allCases, id: \.self) { m in
+//                                Text(m.rawValue).tag(m)
+//                            }
+//                        }
+//                        .pickerStyle(.segmented)
+//                        .tint(.gray)
+//                        .background(Color.gray)
+//                        .cornerRadius(8)
+//                        .padding(.horizontal, 10)
+//                        .padding(.top, 4)
+                    
+                    Text("Daily Priorities for the Week")
+                        .font(.title2)
+                        .foregroundColor(accentColor)              
+                        .frame(maxWidth: .infinity)
+                        .multilineTextAlignment(.center)
                         .padding(.top, 4)
-
+                    
                     Group {
                         switch contentMode {
                         case .tasks:

@@ -226,11 +226,14 @@ final class WeekViewModel: ObservableObject {
                              priorities: [TodayPriority],
                              userId: String) {
         let docID = Self.iso.string(from: Calendar.current.startOfDay(for: date))
+        let data: [String: Any] = [
+            "priorities": priorities.map { $0.asDictionary }
+        ]
         db.collection("users")
           .document(userId)
-          .collection("daySchedules")
+          .collection("days")           // ← same “days” collection as DayView
           .document(docID)
-          .updateData(["priorities": priorities.map { $0.asDictionary }])
+          .setData(data, merge: true)
     }
 
     // MARK: – IMPORT LAST WEEK’S UNFINISHED
@@ -436,37 +439,79 @@ final class WeekViewModel: ObservableObject {
         }
     }
 
+    /// Keep track of active snapshot listeners for daySchedules documents
+    private var priorityListeners: [Date: ListenerRegistration] = [:]
 
+    /// Fetches both priorities and timeline blocks for a given day, with real-time updates and de-duplication.
     private func fetchDaySchedule(for day: Date, uid: String) {
         let key   = Calendar.current.startOfDay(for: day)
         let docID = Self.iso.string(from: key)
-        let base  = db.collection("users").document(uid)
-                      .collection("days").document(docID)
-        
-        // 1️⃣ Priorities (unchanged)
-        db.collection("users").document(uid)
-          .collection("daySchedules").document(docID)
-          .getDocument(as: DaySchedule.self) { [weak self] res in
-            guard let self else { return }
-            let list = (try? res.get().priorities) ?? []
-            self.dayPriorityStorage[key] = list
-            self.dayPriorityStatus[key]  = (list.filter(\.isCompleted).count, list.count)
-          }
 
-        // 2️⃣ Blocks listener (NEW)
-        blockListeners[key]?.remove()   // remove any old
-        blockListeners[key] = base
-          .collection("blocks")
-          .addSnapshotListener { [weak self] snap, _ in
-            guard let self else { return }
-            let arr: [TimelineBlock] = snap?.documents.compactMap {
+        // ── 1️⃣ Real-time listener for daily priorities ────────────
+        let priDocRef = db.collection("users")
+                          .document(uid)
+                          .collection("days")        // ← now matches DayViewModel
+                          .document(docID)
+
+        // Remove any previous listener for this day
+        priorityListeners[key]?.remove()
+
+        // Add a new snapshot listener
+        let priListener = priDocRef.addSnapshotListener { [weak self] snap, err in
+            guard let self = self, let snap = snap, snap.exists else { return }
+            if let schedule = try? snap.data(as: DaySchedule.self) {
+                let list = schedule.priorities
+                self.dayPriorityStorage[key] = list
+                self.dayPriorityStatus[key]  = (
+                    list.filter(\.isCompleted).count,
+                    list.count
+                )
+            }
+        }
+        priorityListeners[key] = priListener
+
+        // ── 2️⃣ Real-time listener for timeline blocks ────────────
+        let blocksColl = db.collection("users")
+                          .document(uid)
+                          .collection("days")
+                          .document(docID)
+                          .collection("blocks")
+
+        // Remove old block listener if any
+        blockListeners[key]?.remove()
+
+        // Add snapshot listener with de-duplication
+        let blockListener = blocksColl.addSnapshotListener { [weak self] snap, err in
+            guard let self = self else { return }
+            if let err = err {
+                print("blocks listen error:", err)
+                return
+            }
+
+            // Decode raw blocks array
+            let raw: [TimelineBlock] = snap?.documents.compactMap {
                 try? $0.data(as: TimelineBlock.self)
             } ?? []
+
+            // 🔧 Replace the tuple key with a String key
+            let unique = Dictionary(
+                grouping: raw,
+                by: { blk in
+                    "\(blk.start.timeIntervalSince1970)|" +
+                    "\(blk.end.timeIntervalSince1970)|" +
+                    "\(blk.title ?? "")"
+                }
+            )
+            .compactMap { $0.value.first }
+
+            // Sort & publish on main actor
             Task { @MainActor in
-                self.dayTimelineStorage[key] = arr.sorted { $0.start < $1.start }
+                self.dayTimelineStorage[key] = unique.sorted { $0.start < $1.start }
             }
-          }
+        }
+        blockListeners[key] = blockListener
     }
+
 
     private func persistDayPriorities(_ key: Date, _ list: [TodayPriority]) {
         guard let uid = Auth.auth().currentUser?.uid else { return }

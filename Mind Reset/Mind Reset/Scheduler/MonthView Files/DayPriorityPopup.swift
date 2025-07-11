@@ -21,17 +21,12 @@ struct DayPriorityPopup: View {
     @State private var isRemoveMode = false
     @State private var toDelete: TodayPriority?
 
-    // ─────────── Style palette ─────────────────────
     private let accentCyan = Color(red: 0, green: 1, blue: 1)
 
-    // ╔══════════════════════════════════════════════╗
-    // ║                    Body                      ║
-    // ╚══════════════════════════════════════════════╝
     var body: some View {
         VStack(spacing: 8) {
             header
 
-            // ▼ Scrollable list of priorities
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach($priorities) { $pr in
@@ -46,7 +41,7 @@ struct DayPriorityPopup: View {
             controls
         }
         .padding(12)
-        .background(Color.gray.opacity(0.8))     // darker popup bg
+        .background(Color.gray.opacity(0.8))
         .cornerRadius(12)
         .alert(item: $toDelete) { pr in
             Alert(
@@ -54,7 +49,7 @@ struct DayPriorityPopup: View {
                 message: Text("Delete “\(pr.title)” ?"),
                 primaryButton: .destructive(Text("Delete")) {
                     priorities.removeAll { $0.id == pr.id }
-                    persist()
+                    onSave(priorities)    // write once after explicit delete
                     if priorities.isEmpty { isRemoveMode = false }
                 },
                 secondaryButton: .cancel()
@@ -70,7 +65,10 @@ struct DayPriorityPopup: View {
                 .font(.headline)
                 .foregroundColor(.white)
             Spacer()
-            Button(action: onClose) {
+            Button(action: {
+                onSave(priorities)  // one-shot save of all edits
+                onClose()
+            }) {
                 Image(systemName: "xmark.circle.fill")
                     .font(.title2)
                     .foregroundColor(.white)
@@ -84,8 +82,8 @@ struct DayPriorityPopup: View {
         let isPast = Calendar.current.startOfDay(for: date) < todayStart
 
         return HStack(spacing: 8) {
-
-            // editable text field
+            // No more onChange here—user’s edits live-update the binding,
+            // but we only persist once on close.
             TextField("Priority", text: pr.title)
                 .font(.body)
                 .foregroundColor(.white)
@@ -93,15 +91,13 @@ struct DayPriorityPopup: View {
                 .padding(.horizontal, 4)
                 .background(Color.black)
                 .cornerRadius(6)
-                .onChange(of: pr.title.wrappedValue) { _ in persist() }
 
             Spacer()
 
-            // check/x icon – hidden when in remove mode
             if !isRemoveMode {
                 Button {
                     pr.wrappedValue.isCompleted.toggle()
-                    persist()
+                    onSave(priorities)  // explicit toggle → persist
                 } label: {
                     Image(systemName: pr.isCompleted.wrappedValue
                           ? "checkmark.circle.fill"
@@ -115,7 +111,6 @@ struct DayPriorityPopup: View {
                 }
             }
 
-            // red minus icon appears *only* in remove mode
             if isRemoveMode {
                 Button(role: .destructive) { toDelete = pr.wrappedValue } label: {
                     Image(systemName: "minus.circle")
@@ -137,13 +132,13 @@ struct DayPriorityPopup: View {
                                   progress: 0,
                                   isCompleted: false)
                 )
-                persist()
+                onSave(priorities)  // explicit add → persist
             }
             .font(.headline)
             .foregroundColor(accentCyan)
             .padding(.vertical, 8)
             .padding(.horizontal, 16)
-            .background(Color.black)          // black like rows
+            .background(Color.black)
             .cornerRadius(8)
 
             Spacer()
@@ -156,21 +151,19 @@ struct DayPriorityPopup: View {
                 .foregroundColor(.red)
                 .padding(.vertical, 8)
                 .padding(.horizontal, 16)
-                .background(Color.black)      // black like rows
+                .background(Color.black)
                 .cornerRadius(8)
             }
         }
     }
 
     // ─────────── Helpers ───────────────────────────
-    private func persist() { onSave(priorities) }
-
     private var listHeight: CGFloat {
         CGFloat(max(priorities.count, 1)) * 90
     }
-
     private func dateFormatted(_ d: Date) -> String {
         let f = DateFormatter(); f.dateStyle = .medium
         return f.string(from: d)
     }
 }
+

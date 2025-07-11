@@ -236,24 +236,37 @@ struct MonthView: View {
     }
 
     // ────────────────────────── POPUP OVERLAY
+    // MonthView.swift
+
     @ViewBuilder
     private var dayPopupOverlay: some View {
-        if showDayPopup, let day = selectedDay {
-            let key = Calendar.current.startOfDay(for: day)
-            if monthVM.dayPriorityStorage[key] != nil {
-                DayPriorityPopup(
-                    priorities: Binding(
-                        get: { monthVM.dayPriorityStorage[key]! },
-                        set: { monthVM.dayPriorityStorage[key] = $0 }
-                    ),
-                    date:   day,
-                    onSave: { monthVM.saveDayPriorities(for: day, newPriorities: $0) },
-                    onClose: { withAnimation { showDayPopup = false } }
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black.opacity(0.7).ignoresSafeArea())
-                .transition(.opacity)
-            }
+        if showDayPopup,
+           let day = selectedDay,
+           let meta = dayVM.scheduleMeta,
+           Calendar.current.isDate(meta.date, inSameDayAs: day)
+        {
+            DayPriorityPopup(
+                // Bind straight into dayVM.scheduleMeta.priorities
+                priorities: Binding(
+                    get: { meta.priorities },
+                    set: { new in
+                        var updated = meta
+                        updated.priorities = new
+                        dayVM.scheduleMeta = updated
+                        dayVM.pushMeta()    // persist back to Firestore
+                    }
+                ),
+                date: day,
+                onSave: { newList in
+                        monthVM.saveDayPriorities(for: day, newPriorities: newList)
+                    },
+                onClose: {
+                    withAnimation { showDayPopup = false }
+                }
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.black.opacity(0.7).ignoresSafeArea())
+            .transition(.opacity)
         }
     }
 

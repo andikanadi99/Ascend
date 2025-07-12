@@ -244,7 +244,8 @@ struct TimelineView: View {
         guard let outline = previewBlock else { return AnyView(EmptyView()) }
         let y0 = yPos(outline.start)
         let y1 = yPos(outline.end)
-        let h  = max(y1 - y0, px * CGFloat(snapInterval))
+        let minMinutes = 15 
+        let h  = max(y1 - y0, px * CGFloat(minMinutes))
         let w  = fullWidth - gutter
         let centerX = gutter + w / 2
 
@@ -357,8 +358,9 @@ private struct DraggableBlockView: View {
 
     var body: some View {
         // ───── Geometry constants ─────
-        let height = max(CGFloat(block.durationMinutes) * px,
-                         px * CGFloat(snapInterval))
+        let minMinutes = 15                         // show at least a quarter-hour
+        let height     = max(CGFloat(block.durationMinutes),
+                             CGFloat(minMinutes)) * px
         let width  = UIScreen.main.bounds.width - gutter
         let yPos   = yPos(block.start) + height / 2
 
